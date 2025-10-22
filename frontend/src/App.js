@@ -1,44 +1,23 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { CartProvider } from './context/CartContext';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
-import Home from './pages/Home';
+import DebugPage from './pages/DebugPage';
 import DataPlans from './pages/DataPlans';
-import Cart from './pages/Cart';
 import Login from './pages/Login';
-import Signup from './pages/Signup';
-import Checkout from './pages/Checkout';
-import PaymentSuccess from './pages/PaymentSuccess';
-import OrderTracking from './pages/OrderTracking';
-import AdminDashboard from './pages/AdminDashboard';
-import UserProfile from './pages/UserProfile';
-import './App.css';
+import Register from './pages/Register';
 
 function App() {
   return (
-    <CartProvider>
-      <Router>
-        <div className="App">
-          <Navbar />
-          <main>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/plans" element={<DataPlans />} />
-              <Route path="/cart" element={<Cart />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/checkout" element={<Checkout />} />
-              <Route path="/payment-success" element={<PaymentSuccess />} />
-              <Route path="/order-tracking" element={<OrderTracking />} />
-              <Route path="/admin-dashboard" element={<AdminDashboard />} />
-              <Route path="/profile" element={<UserProfile />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </Router>
-    </CartProvider>
+    <Router>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<DataPlans />} />
+          <Route path="/debug" element={<DebugPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/plans" element={<DataPlans />} />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 
