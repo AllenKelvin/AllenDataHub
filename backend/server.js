@@ -433,3 +433,14 @@ app.listen(PORT, () => {
   console.log(`🌐 MongoDB: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
   console.log(`📊 Available Data Plans: MTN (1GB - 100GB) & Telecel (5GB - 100GB)`);
 });
+
+// Update CORS to allow your frontend domains
+app.use(cors({
+  origin: [
+    'https://allendatahub.vercel.app',
+    'https://allendatahub.tech',
+    'http://localhost:3000',
+    'https://allendatahub-frontend.vercel.app'
+  ],
+  credentials: true
+}));
