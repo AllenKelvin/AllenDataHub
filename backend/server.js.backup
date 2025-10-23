@@ -16,7 +16,7 @@ app.use(express.json());
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/allendatahub';
 
 console.log('🔗 Attempting to connect to MongoDB...');
-console.log('📁 Connection string:', MONGODB_URI.replace(/:[^:]*@/, ':****@'));
+console.log('📁 Connection string:', MONGODB_URI.replace(/:[^:]*@/, ':****@')); // Hide password in logs
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -25,6 +25,7 @@ mongoose.connect(MONGODB_URI, {
 .then(() => console.log('✅ MongoDB Connected Successfully'))
 .catch(err => {
   console.log('❌ MongoDB Connection Error:', err.message);
+  console.log('💡 Tip: Make sure MongoDB is running or check your Atlas connection string');
 });
 
 // MongoDB Schemas
@@ -79,27 +80,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'allendatahub-super-secret-jwt-key-
 const authMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    console.log('🔐 Auth middleware - Token received:', token ? 'Yes' : 'No');
-    
     if (!token) {
-      console.log('❌ No token provided');
       return res.status(401).json({ error: 'No token, authorization denied' });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('✅ Token decoded, user ID:', decoded.userId);
-    
     req.user = await User.findById(decoded.userId).select('-password');
-    
-    if (!req.user) {
-      console.log('❌ User not found for ID:', decoded.userId);
-      return res.status(401).json({ error: 'User not found' });
-    }
-    
-    console.log('✅ User authenticated:', req.user.username);
     next();
   } catch (error) {
-    console.error('❌ Token verification error:', error.message);
     res.status(401).json({ error: 'Token is not valid' });
   }
 };
@@ -111,7 +99,13 @@ app.get('/', (req, res) => {
   res.json({ 
     message: '🚀 AllenDataHub API is running!',
     version: '1.0.0',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      auth: '/api/auth/register, /api/auth/login',
+      plans: '/api/plans',
+      orders: '/api/orders',
+      admin: '/api/admin/stats'
+    }
   });
 });
 
@@ -204,6 +198,7 @@ app.get('/api/plans', async (req, res) => {
     
     // If no plans in database, create sample data
     if (plans.length === 0) {
+      console.log('📦 Creating sample data plans...');
       const samplePlans = [
         { network: 'MTN', size: '1GB', price: 5, validity: '30 days', popular: true },
         { network: 'MTN', size: '2GB', price: 10, validity: '30 days' },
@@ -215,6 +210,7 @@ app.get('/api/plans', async (req, res) => {
       
       await DataPlan.insertMany(samplePlans);
       plans = await DataPlan.find();
+      console.log('✅ Sample data plans created');
     }
 
     res.json(plans);
@@ -224,80 +220,53 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// Create Order - FIXED VERSION
+// Create Order
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
-    console.log('🛒 Order creation request received');
-    console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('👤 User making order:', req.user.username);
-
     const { items, total, recipientEmail, recipientPhone, paymentMethod } = req.body;
 
-    // Validate required fields
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Order must contain at least one item' });
-    }
-
-    if (!total || total <= 0) {
-      return res.status(400).json({ error: 'Invalid order total' });
-    }
-
-    // Create order
     const order = new Order({
       orderId: 'ORD' + Date.now(),
       userId: req.user._id,
-      items: items,
-      total: total,
-      recipientEmail: recipientEmail,
-      recipientPhone: recipientPhone,
-      paymentMethod: paymentMethod || 'mobile_money',
+      items,
+      total,
+      recipientEmail,
+      recipientPhone,
+      paymentMethod,
       status: 'placed'
     });
 
     await order.save();
-    console.log(`✅ Order created successfully: ${order.orderId}`);
 
-    // Return the complete order data
-    res.status(201).json({
-      message: 'Order created successfully',
-      order: {
-        _id: order._id,
-        orderId: order.orderId,
-        userId: order.userId,
-        items: order.items,
-        total: order.total,
-        status: order.status,
-        recipientEmail: order.recipientEmail,
-        recipientPhone: order.recipientPhone,
-        paymentMethod: order.paymentMethod,
-        createdAt: order.createdAt
-      }
-    });
+    console.log(`✅ Order created: ${order.orderId} for user: ${req.user.username}`);
 
-    // Simulate order processing (in background)
+    // Simulate processing and delivery
     setTimeout(async () => {
-      try {
-        order.status = 'processing';
-        await order.save();
-        console.log(`🔄 Order status updated to processing: ${order.orderId}`);
-      } catch (error) {
-        console.error('Error updating order status to processing:', error);
-      }
+      order.status = 'processing';
+      await order.save();
+      console.log(`🔄 Order processing: ${order.orderId}`);
     }, 5000);
 
     setTimeout(async () => {
-      try {
-        order.status = 'delivered';
-        await order.save();
-        console.log(`🎉 Order status updated to delivered: ${order.orderId}`);
-      } catch (error) {
-        console.error('Error updating order status to delivered:', error);
-      }
+      order.status = 'delivered';
+      await order.save();
+      console.log(`🎉 Order delivered: ${order.orderId}`);
     }, 15000);
 
+    res.status(201).json({
+      message: 'Order created successfully',
+      order: {
+        id: order._id,
+        orderId: order.orderId,
+        items: order.items,
+        total: order.total,
+        status: order.status,
+        createdAt: order.createdAt
+      }
+    });
   } catch (error) {
-    console.error('❌ Order creation error:', error);
-    res.status(500).json({ error: 'Failed to create order: ' + error.message });
+    console.error('Order creation error:', error);
+    res.status(500).json({ error: 'Failed to create order' });
   }
 });
 
@@ -309,6 +278,25 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Orders fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Get Order by ID
+app.get('/api/orders/:id', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findOne({ 
+      _id: req.params.id, 
+      userId: req.user._id 
+    });
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Order fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch order' });
   }
 });
 
@@ -349,16 +337,20 @@ app.get('/api/admin/stats', async (req, res) => {
       { $group: { _id: '$items.network', count: { $sum: 1 } } }
     ]);
 
+    // Data volume calculation
+    const dataVolumeResult = await Order.aggregate([
+      { $unwind: '$items' },
+      { $addFields: { 
+        sizeNumber: { $toDouble: { $arrayElemAt: [{ $split: ['$items.size', 'GB'] }, 0] } } 
+      }},
+      { $group: { _id: null, total: { $sum: '$sizeNumber' } } }
+    ]);
+
     const stats = {
       today: {
         totalOrders: todayOrders.length,
         totalRevenue: todayOrders.reduce((sum, order) => sum + order.total, 0),
-        totalDataVolume: todayOrders.reduce((sum, order) => {
-          return sum + order.items.reduce((itemSum, item) => {
-            const size = parseInt(item.size);
-            return itemSum + (isNaN(size) ? 0 : size);
-          }, 0);
-        }, 0) + 'GB'
+        totalDataVolume: dataVolumeResult.length > 0 ? `${dataVolumeResult[0].total}GB` : '0GB'
       },
       allTime: {
         totalOrders,
@@ -377,28 +369,36 @@ app.get('/api/admin/stats', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/api/health', async (req, res) => {
+// Initialize Paystack Payment
+app.post('/api/payment/initialize', async (req, res) => {
   try {
-    const userCount = await User.countDocuments();
-    const orderCount = await Order.countDocuments();
-    const planCount = await DataPlan.countDocuments();
-    
-    res.json({ 
-      status: 'OK', 
-      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-      collections: {
-        users: userCount,
-        orders: orderCount,
-        dataPlans: planCount
+    const { amount, email, reference } = req.body;
+
+    // In production, you would call Paystack API here
+    const paymentData = {
+      success: true,
+      message: 'Payment initialized successfully',
+      data: {
+        authorization_url: `https://paystack.com/pay/allendatahub-${reference}`,
+        access_code: 'mock_access_code',
+        reference: reference
       }
-    });
+    };
+
+    res.json(paymentData);
   } catch (error) {
-    res.status(500).json({ 
-      status: 'ERROR', 
-      error: error.message 
-    });
+    console.error('Payment init error:', error);
+    res.status(500).json({ error: 'Payment initialization failed' });
   }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Start Server
@@ -406,5 +406,8 @@ app.listen(PORT, () => {
   console.log(`\n🚀 AllenDataHub Backend Server Started!`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🔗 API: http://localhost:${PORT}`);
+  console.log(`📊 Health: http://localhost:${PORT}/api/health`);
   console.log(`🌐 MongoDB: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
+  console.log(`⏰ Started at: ${new Date().toLocaleString()}`);
+  console.log(`=========================================\n`);
 });

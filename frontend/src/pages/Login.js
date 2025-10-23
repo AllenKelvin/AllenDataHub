@@ -192,7 +192,7 @@ const Login = () => {
           textAlign: 'center'
         }}>
           <p style={{ margin: 0, fontSize: '0.9rem', color: '#389e0d' }}>
-            <strong>Real Authentication:</strong>
+            <strong>Real Authentication:</strong> Connected to MongoDB database
           </p>
         </div>
 
@@ -205,7 +205,11 @@ const Login = () => {
           borderRadius: '5px',
           fontSize: '0.8rem'
         }}>
-          
+          <p style={{ margin: 0, color: '#0050b3' }}>
+            <strong>Debug Info:</strong><br />
+            • Backend: http://localhost:5000<br />
+            • Check browser Console (F12) for details
+          </p>
         </div>
       </div>
     </div>
