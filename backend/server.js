@@ -301,6 +301,234 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== ENHANCED MTN CALLBACK ROUTE ====================
+
+// MTN API Webhook Callback
+app.post('/api/mtn/callback', (req, res) => {
+  const callbackId = 'CB_' + Date.now();
+  
+  console.log('\n📞 ======== MTN CALLBACK RECEIVED ========');
+  console.log(`🆔 Callback ID: ${callbackId}`);
+  console.log(`🕒 Timestamp: ${new Date().toISOString()}`);
+  console.log(`📨 Headers:`, JSON.stringify(req.headers, null, 2));
+  console.log(`📦 Body:`, JSON.stringify(req.body, null, 2));
+  console.log('=========================================\n');
+
+  try {
+    // Validate required fields
+    if (!req.body || Object.keys(req.body).length === 0) {
+      console.log(`❌ ${callbackId}: Empty request body`);
+      return res.status(400).json({ 
+        status: 'error',
+        message: 'Empty request body',
+        callbackId: callbackId
+      });
+    }
+
+    // Handle different MTN webhook types
+    switch (req.body.type) {
+      case 'payment':
+        console.log(`💰 ${callbackId}: Processing payment notification`);
+        handlePaymentCallback(req.body, callbackId);
+        break;
+        
+      case 'sms_delivery':
+        console.log(`📱 ${callbackId}: Processing SMS delivery report`);
+        handleSmsCallback(req.body, callbackId);
+        break;
+        
+      case 'ussd':
+        console.log(`🔘 ${callbackId}: Processing USSD interaction`);
+        handleUssdCallback(req.body, callbackId);
+        break;
+        
+      default:
+        console.log(`🔍 ${callbackId}: Unknown callback type: ${req.body.type}`);
+        console.log(`📋 ${callbackId}: Full payload:`, JSON.stringify(req.body, null, 2));
+    }
+
+    // Always respond quickly (MTN requirement)
+    const response = {
+      status: 'success',
+      message: 'Callback processed successfully',
+      callbackId: callbackId,
+      timestamp: new Date().toISOString(),
+      receivedType: req.body.type || 'unknown'
+    };
+
+    console.log(`✅ ${callbackId}: Responding with:`, JSON.stringify(response, null, 2));
+    
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error(`❌ ${callbackId}: Callback processing error:`, error);
+    
+    // Still return 200 to prevent MTN from retrying excessively
+    res.status(200).json({ 
+      status: 'error_handled',
+      message: 'Error processed internally',
+      callbackId: callbackId,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Helper functions for different callback types
+function handlePaymentCallback(data, callbackId) {
+  const { transactionId, amount, status, phoneNumber } = data;
+  
+  console.log(`💳 ${callbackId}: Payment Details:`, {
+    transactionId,
+    amount,
+    currency: data.currency || 'GHS',
+    status,
+    phoneNumber,
+    customerName: data.customerName || 'N/A'
+  });
+
+  // TODO: Update your database here
+  // Example: Update order status based on transactionId
+  if (status === 'success') {
+    console.log(`🎉 ${callbackId}: Payment successful, updating order status`);
+    // await Order.findOneAndUpdate(
+    //   { paymentReference: transactionId },
+    //   { status: 'paid', paymentStatus: 'completed' }
+    // );
+  } else {
+    console.log(`⚠️ ${callbackId}: Payment failed or pending`);
+  }
+}
+
+function handleSmsCallback(data, callbackId) {
+  const { messageId, status, recipient } = data;
+  
+  console.log(`✉️ ${callbackId}: SMS Delivery Report:`, {
+    messageId,
+    status,
+    recipient,
+    deliveryTime: data.timestamp || new Date().toISOString()
+  });
+
+  // TODO: Update SMS delivery status in your database
+}
+
+function handleUssdCallback(data, callbackId) {
+  const { sessionId, phoneNumber, input } = data;
+  
+  console.log(`*️⃣ ${callbackId}: USSD Interaction:`, {
+    sessionId,
+    phoneNumber,
+    input,
+    serviceCode: data.serviceCode || 'N/A'
+  });
+
+  // TODO: Handle USSD interactions
+}
+
+// Test endpoint to verify callback configuration
+app.get('/api/mtn/debug', (req, res) => {
+  const testData = {
+    endpoint: 'http://localhost:5000/api/mtn/callback',
+    status: 'active',
+    serverTime: new Date().toISOString(),
+    testPayloads: {
+      payment: {
+        type: 'payment',
+        transactionId: 'TEST_' + Date.now(),
+        amount: 100,
+        currency: 'GHS',
+        status: 'success',
+        phoneNumber: '233123456789'
+      },
+      sms: {
+        type: 'sms_delivery',
+        messageId: 'MSG_TEST_' + Date.now(),
+        status: 'delivered',
+        recipient: '233123456789'
+      }
+    }
+  };
+  
+  res.json(testData);
+});
+const mtnService = require('./services/mtnService');
+
+// Add these routes AFTER your existing routes but BEFORE app.listen()
+
+// Test MTN Connection
+app.get('/api/mtn/test', async (req, res) => {
+  try {
+    console.log('🧪 Testing MTN API connection...');
+    const result = await mtnService.testConnection();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Test Data Transfer
+app.post('/api/mtn/transfer', async (req, res) => {
+  try {
+    const { receiverPhone, productCode, amount } = req.body;
+    
+    const result = await mtnService.transferData(
+      process.env.MTN_SENDER_MSISDN,
+      receiverPhone,
+      productCode,
+      amount
+    );
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Server status
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    status: 'Server is running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      mtnTest: 'GET /api/mtn/test',
+      mtnTransfer: 'POST /api/mtn/transfer'
+    }
+  });
+});
+
+// services/mtnService.js - SIMPLE VERSION
+class MTNService {
+  async testConnection() {
+    console.log('🧪 MTN Test connection called');
+    return {
+      success: true,
+      message: '✅ Mock MTN API connection successful!',
+      environment: 'MOCK',
+      hasToken: true
+    };
+  }
+
+  async transferData(senderPhone, receiverPhone, productCode, amount) {
+    console.log('🔄 Mock data transfer called');
+    return {
+      success: true,
+      data: {
+        statusCode: '2000',
+        statusMessage: 'Success',
+        transactionId: 'MOCK_' + Date.now()
+      }
+    };
+  }
+}
+
+module.exports = new MTNService();
+
 // Get User Orders
 app.get('/api/orders', authMiddleware, async (req, res) => {
   try {
@@ -408,3 +636,4 @@ app.listen(PORT, () => {
   console.log(`🔗 API: http://localhost:${PORT}`);
   console.log(`🌐 MongoDB: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
 });
+

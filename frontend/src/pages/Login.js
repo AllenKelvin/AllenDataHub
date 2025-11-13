@@ -176,25 +176,8 @@ const Login = () => {
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', margin: 0 }}>
-          Don't have an account?{' '}
-          <Link to="/signup" style={{ color: '#1890ff', textDecoration: 'none' }}>
-            Sign up here
-          </Link>
-        </p>
-
-        <div style={{ 
-          marginTop: '1.5rem', 
-          padding: '1rem', 
-          backgroundColor: '#f6ffed', 
-          border: '1px solid #b7eb8f',
-          borderRadius: '5px',
-          textAlign: 'center'
-        }}>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#389e0d' }}>
-            <strong>Real Authentication:</strong> Connected to MongoDB database
-          </p>
-        </div>
+        
+        
 
         {/* Debug info */}
         <div style={{ 
@@ -206,9 +189,7 @@ const Login = () => {
           fontSize: '0.8rem'
         }}>
           <p style={{ margin: 0, color: '#0050b3' }}>
-            <strong>Debug Info:</strong><br />
-            • Backend: http://localhost:5000<br />
-            • Check browser Console (F12) for details
+            
           </p>
         </div>
       </div>
