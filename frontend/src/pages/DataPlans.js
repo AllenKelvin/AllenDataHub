@@ -13,7 +13,7 @@ const DataPlans = () => {
   // Ghanaian phone number validation
   const isValidGhanaNumber = (phone) => {
     const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-    const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059)\d{7}$/;
+    const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
     return ghanaRegex.test(cleanPhone);
   };
 
