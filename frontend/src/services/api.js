@@ -1,8 +1,5 @@
 const BUILD_TIMESTAMP = "20260116-192449-FIX";
 
-// ADD THIS EXACT LINE at the very top of api.js:
-const BUILD_TIMESTAMP = '2024-01-16-1545-FIX';
-
 import axios from 'axios';
 
 // CRITICAL FIX: Use environment variable for production
