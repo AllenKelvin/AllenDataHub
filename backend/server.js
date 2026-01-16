@@ -637,3 +637,14 @@ app.listen(PORT, () => {
   console.log(`🌐 MongoDB: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
 });
 
+// Replace current CORS setup with:
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',  // Local development
+    'https://your-vercel-app.vercel.app',  // Your Vercel URL
+    'https://allendatahub.com'  // Your custom domain (if you have one)
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
