@@ -8,10 +8,8 @@ const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Check if user is logged in on component mount and when location changes
   useEffect(() => {
     const userData = localStorage.getItem('user');
-    console.log('Navbar checking user data:', userData);
     if (userData) {
       try {
         setUser(JSON.parse(userData));
@@ -23,7 +21,7 @@ const Navbar = () => {
     } else {
       setUser(null);
     }
-  }, [location]); // Re-run when route changes
+  }, [location]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -40,14 +38,12 @@ const Navbar = () => {
   return (
     <nav className="navbar">
       <div className="navbar-container">
-        {/* Logo */}
         <div className="navbar-logo">
           <Link to="/" style={{ color: 'white', textDecoration: 'none' }}>
             <h1>📱 Allen Data Hub</h1>
           </Link>
         </div>
         
-        {/* Desktop Menu */}
         <div className="navbar-menu desktop">
           <Link to="/">Home</Link>
           <Link to="/plans">Data Plans</Link>
@@ -60,25 +56,16 @@ const Navbar = () => {
               <Link to="/profile" className="user-profile">
                 👤 {user.username}
               </Link>
-              <button 
-                onClick={handleContactUs}
-                className="contact-btn"
-              >
+              <button onClick={handleContactUs} className="contact-btn">
                 📞 Contact Us
               </button>
-              <button 
-                onClick={handleLogout}
-                className="logout-btn"
-              >
+              <button onClick={handleLogout} className="logout-btn">
                 🚪 Logout
               </button>
             </>
           ) : (
             <>
-              <button 
-                onClick={handleContactUs}
-                className="contact-btn"
-              >
+              <button onClick={handleContactUs} className="contact-btn">
                 📞 Contact Us
               </button>
               <Link to="/login" className="login-btn">Login</Link>
@@ -87,7 +74,6 @@ const Navbar = () => {
           )}
         </div>
         
-        {/* Mobile Menu Button */}
         <button 
           className="mobile-menu-btn"
           onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -96,7 +82,6 @@ const Navbar = () => {
         </button>
       </div>
       
-      {/* Mobile Dropdown Menu */}
       {isMenuOpen && (
         <div className="mobile-dropdown">
           <Link to="/" onClick={() => setIsMenuOpen(false)}>Home</Link>
@@ -110,34 +95,16 @@ const Navbar = () => {
               <Link to="/profile" onClick={() => setIsMenuOpen(false)}>
                 👤 {user.username}
               </Link>
-              <button 
-                onClick={() => {
-                  handleContactUs();
-                  setIsMenuOpen(false);
-                }}
-                className="contact-btn"
-              >
+              <button onClick={() => { handleContactUs(); setIsMenuOpen(false); }} className="contact-btn">
                 📞 Contact Us
               </button>
-              <button 
-                onClick={() => {
-                  handleLogout();
-                  setIsMenuOpen(false);
-                }}
-                className="logout-btn"
-              >
+              <button onClick={() => { handleLogout(); setIsMenuOpen(false); }} className="logout-btn">
                 🚪 Logout
               </button>
             </>
           ) : (
             <>
-              <button 
-                onClick={() => {
-                  handleContactUs();
-                  setIsMenuOpen(false);
-                }}
-                className="contact-btn"
-              >
+              <button onClick={() => { handleContactUs(); setIsMenuOpen(false); }} className="contact-btn">
                 📞 Contact Us
               </button>
               <Link to="/login" onClick={() => setIsMenuOpen(false)} className="login-btn">Login</Link>
