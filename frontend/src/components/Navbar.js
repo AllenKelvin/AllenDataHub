@@ -1,5 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+// frontend/src/components/Navbar.js
+import React, { useState } from 'react';
+import './Navbar.css';
+
+function Navbar() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  return (
+    <nav className="navbar">
+      <div className="navbar-container">
+        {/* Logo */}
+        <div className="navbar-logo">
+          <h1>Allen Data Hub</h1>
+        </div>
+        
+        {/* Desktop Menu */}
+        <div className="navbar-menu desktop">
+          <a href="/">Home</a>
+          <a href="/plans">Data Plans</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/login">Login</a>
+        </div>
+        
+        {/* Mobile Menu Button */}
+        <button 
+          className="mobile-menu-btn"
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+        >
+          ☰
+        </button>
+      </div>
+      
+      {/* Mobile Dropdown Menu */}
+      {isMenuOpen && (
+        <div className="mobile-dropdown">
+          <a href="/" onClick={() => setIsMenuOpen(false)}>Home</a>
+          <a href="/plans" onClick={() => setIsMenuOpen(false)}>Data Plans</a>
+          <a href="/dashboard" onClick={() => setIsMenuOpen(false)}>Dashboard</a>
+          <a href="/login" onClick={() => setIsMenuOpen(false)}>Login</a>
+        </div>
+      )}
+    </nav>
+  );
+}
 
 const Navbar = () => {
   const [user, setUser] = useState(null);

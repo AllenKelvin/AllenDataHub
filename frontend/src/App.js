@@ -14,6 +14,7 @@ import OrderTracking from './pages/OrderTracking';
 import AdminDashboard from './pages/AdminDashboard';
 import UserProfile from './pages/UserProfile';
 import './App.css';
+import './responsive.css';
 
 function App() {
   return (
