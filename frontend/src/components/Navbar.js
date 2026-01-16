@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 // frontend/src/components/Navbar.js
-import React, { useState } from 'react';
+
 import './Navbar.css';
 
 function Navbar() {
