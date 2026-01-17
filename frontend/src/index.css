@@ -1,28 +1,142 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+/* ===== MOBILE FIXES ===== */
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
+/* 1. Base Mobile Reset */
 * {
   box-sizing: border-box;
 }
 
-.App {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden; /* Prevents horizontal scroll */
 }
 
-main {
-  flex: 1;
-  padding: 20px;
+/* 2. Text Readability Fixes */
+body {
+  font-size: 16px; /* Minimum readable size */
+  line-height: 1.6; /* Better line spacing */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 3. Container Padding for Mobile */
+.container, .app-container, #root > div {
+  padding: 16px !important; /* Add safe spacing */
+  max-width: 100% !important;
+}
+
+/* 4. Fix Crowded Text */
+p, h1, h2, h3, h4, h5, h6 {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+p {
+  margin-bottom: 1em;
+  line-height: 1.6;
+}
+
+/* 5. Button/Tap Target Sizing */
+button, a.button, [role="button"] {
+  min-height: 44px !important;
+  min-width: 44px !important;
+  padding: 12px 20px !important;
+  font-size: 16px !important; /* Prevents iOS zoom */
+}
+
+/* 6. Form Elements */
+input, textarea, select {
+  font-size: 16px !important; /* Prevents iOS zoom */
+  padding: 12px !important;
+  min-height: 44px !important;
+}
+
+/* 7. Fix Images */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* 8. Flex/Grid Fixes for Mobile */
+.row, .flex-container {
+  flex-wrap: wrap !important;
+  margin-left: -8px !important;
+  margin-right: -8px !important;
+}
+
+.col, .flex-item {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+  width: 100% !important; /* Stack vertically on mobile */
+  margin-bottom: 16px !important;
+}
+
+/* 9. Tables on Mobile */
+table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* 10. Modal/Dialog Fixes */
+.modal, .dialog, .popup {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 20px !important;
+}
+
+/* ===== MEDIA QUERIES ===== */
+
+/* Small Phones (320px - 374px) */
+@media (max-width: 374px) {
+  body {
+    font-size: 14px;
+  }
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.25rem; }
+}
+
+/* Standard Phones (375px - 767px) */
+@media (min-width: 375px) and (max-width: 767px) {
+  .container {
+    padding: 20px !important;
+  }
+  
+  /* Stack elements vertically */
+  .flex-row, .row {
+    flex-direction: column !important;
+  }
+  
+  /* Reduce padding on very small screens */
+  .card, .box, .panel {
+    padding: 12px !important;
+    margin: 8px 0 !important;
+  }
+}
+
+/* Tablet (768px+) - Show 2 columns */
+@media (min-width: 768px) {
+  .col, .flex-item {
+    width: 50% !important;
+  }
+}
+
+/* Desktop (1024px+) */
+@media (min-width: 1024px) {
+  .col, .flex-item {
+    width: auto !important;
+  }
 }
