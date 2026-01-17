@@ -57,7 +57,7 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   status: { 
     type: String, 
-    enum: ['pending', 'paid', 'processing', 'delivered', 'failed', 'cancelled'], 
+    enum: ['pending', 'paid', 'processing', 'delivered', 'failed', 'cancelled', 'partially_delivered'], 
     default: 'pending' 
   },
   recipientEmail: String,
@@ -68,6 +68,16 @@ const orderSchema = new mongoose.Schema({
   paystackReference: String,
   paystackAccessCode: String,
   paystackAuthorizationUrl: String,
+  deliveryDetails: [{
+    network: String,
+    size: String,
+    recipient: String,
+    success: Boolean,
+    transactionId: String,
+    message: String,
+    timestamp: Date
+  }],
+  deliveredAt: Date,
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -101,6 +111,135 @@ const paystack = axios.create({
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET;
 
+// Portal-02 Service
+class Portal02Service {
+  constructor() {
+    this.apiKey = process.env.PORTAL02_API_KEY;
+    this.baseURL = 'https://portal-02.com/api/v1';
+    
+    this.client = axios.create({
+      baseURL: this.baseURL,
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      timeout: 30000
+    });
+  }
+
+  async testConnection() {
+    try {
+      console.log('🔍 Testing Portal-02.com API connection');
+      const response = await this.client.get('/balance');
+      
+      return {
+        success: true,
+        platform: 'Portal-02.com',
+        message: 'Connected successfully',
+        data: response.data
+      };
+      
+    } catch (error) {
+      console.error('Portal-02 connection error:', error.response?.data || error.message);
+      
+      return {
+        success: false,
+        platform: 'Portal-02.com',
+        error: error.message,
+        details: error.response?.data
+      };
+    }
+  }
+
+  async purchaseDataBundle(phoneNumber, bundleSize, network) {
+    try {
+      console.log(`📦 Portal-02: Purchasing ${bundleSize} for ${phoneNumber} (${network})`);
+      
+      const formattedPhone = this.formatPhoneNumber(phoneNumber);
+      
+      const payload = {
+        network: network.toLowerCase(),
+        amount: this.calculateAmount(bundleSize, network),
+        mobile_number: formattedPhone,
+        plan: `${network.toLowerCase()}-${bundleSize.toLowerCase().replace(' ', '-')}`,
+        Ported_number: true,
+        airtime_type: 'data'
+      };
+      
+      const response = await this.client.post('/data', payload);
+      
+      return {
+        success: response.data.status === 'success',
+        transactionId: response.data.transaction_id || `PORTAL02_${Date.now()}`,
+        reference: response.data.reference,
+        status: response.data.status || 'pending',
+        message: response.data.message || 'Data purchase initiated',
+        raw: response.data
+      };
+      
+    } catch (error) {
+      console.error('Portal-02 purchase error:', error.response?.data || error.message);
+      
+      return {
+        success: false,
+        platform: 'Portal-02.com',
+        error: error.response?.data?.message || error.message,
+        code: error.response?.status || 500
+      };
+    }
+  }
+
+  async checkBalance() {
+    try {
+      const response = await this.client.get('/balance');
+      
+      return {
+        success: true,
+        balance: response.data.balance || response.data.amount || 0,
+        currency: response.data.currency || 'GHS',
+        raw: response.data
+      };
+    } catch (error) {
+      console.error('Portal-02 balance error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  formatPhoneNumber(phone) {
+    let cleaned = phone.replace(/\D/g, '');
+    
+    if (cleaned.startsWith('0')) {
+      cleaned = '233' + cleaned.substring(1);
+    }
+    
+    if (cleaned.startsWith('+233')) {
+      cleaned = cleaned.substring(1);
+    }
+    
+    if (cleaned.length === 9) {
+      cleaned = '233' + cleaned;
+    }
+    
+    return cleaned;
+  }
+
+  calculateAmount(bundleSize, network) {
+    const prices = {
+      'MTN': { '1GB': 5, '2GB': 10, '5GB': 20 },
+      'Telecel': { '1GB': 4, '2GB': 8, '5GB': 18 },
+      'AirtelTigo': { '1GB': 4, '2GB': 8, '5GB': 18 }
+    };
+    
+    return prices[network]?.[bundleSize] || 0;
+  }
+}
+
+const portal02Service = new Portal02Service();
+
 // Auth Middleware
 const authMiddleware = async (req, res, next) => {
   try {
@@ -132,7 +271,11 @@ app.get('/', (req, res) => {
   res.json({ 
     message: '🚀 AllenDataHub API is running!',
     version: '1.0.0',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    services: {
+      paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured',
+      portal02: process.env.PORTAL02_API_KEY ? 'Configured' : 'Not Configured'
+    }
   });
 });
 
@@ -146,6 +289,10 @@ app.get('/api/health', async (req, res) => {
     res.json({ 
       status: 'OK', 
       database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+      services: {
+        paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured',
+        portal02: process.env.PORTAL02_API_KEY ? 'Configured' : 'Not Configured'
+      },
       collections: {
         users: userCount,
         orders: orderCount,
@@ -162,6 +309,36 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Portal-02 Test Connection
+app.get('/api/portal02/test', async (req, res) => {
+  try {
+    const testResult = await portal02Service.testConnection();
+    
+    if (!testResult.success) {
+      return res.status(500).json({
+        error: 'Portal-02 API connection failed',
+        details: testResult
+      });
+    }
+    
+    const balance = await portal02Service.checkBalance();
+    
+    res.json({
+      platform: 'Portal-02.com',
+      connection: 'SUCCESS',
+      balance: balance,
+      testResult: testResult,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      error: 'Portal-02 API test failed',
+      details: error.message
+    });
+  }
+});
+
 // User Registration
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -172,7 +349,6 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if user exists
     const existingUser = await User.findOne({ 
       $or: [{ email }, { username }] 
     });
@@ -259,7 +435,7 @@ app.get('/api/plans', async (req, res) => {
   try {
     const plans = await DataPlan.find().sort({ network: 1, price: 1 });
     
-    // If no plans in database, create default plans (ONLY SHOW PLANS - NO AUTO ORDER)
+    // If no plans in database, create default plans
     if (plans.length === 0) {
       const defaultPlans = [
         { network: 'MTN', size: '1GB', price: 5, validity: '30 days', popular: true },
@@ -282,9 +458,7 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// ==================== ORDER & PAYMENT FLOW ====================
-
-// Create Order (REAL - No test mode)
+// Create Order
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { items, total, recipientEmail, recipientPhone } = req.body;
@@ -305,11 +479,11 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     // Check if Paystack is configured
     if (!PAYSTACK_SECRET_KEY) {
       return res.status(503).json({ 
-        error: 'Payment system is temporarily unavailable. Please try again later.' 
+        error: 'Payment system is temporarily unavailable' 
       });
     }
 
-    // Create order with PENDING status
+    // Create order
     const order = new Order({
       orderId: 'ORD' + Date.now() + Math.random().toString(36).substr(2, 9),
       userId: req.userId,
@@ -343,7 +517,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Initialize Paystack Payment (REAL - No test mode)
+// Initialize Paystack Payment
 app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email } = req.body;
@@ -356,22 +530,21 @@ app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
     // Verify order exists and belongs to user
     const order = await Order.findOne({
       orderId: orderId,
-      userId: req.userId  // ✅ CRITICAL: Check user ownership
+      userId: req.userId
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Check if order is already paid
     if (order.paymentStatus === 'success') {
       return res.status(400).json({ error: 'This order has already been paid' });
     }
 
-    // Convert amount to kobo (Paystack uses kobo)
+    // Convert amount to kobo
     const amountInKobo = Math.round(order.total * 100);
 
-    // Initialize REAL Paystack transaction
+    // Initialize Paystack transaction
     const paystackResponse = await paystack.post('/transaction/initialize', {
       email: email,
       amount: amountInKobo,
@@ -402,54 +575,97 @@ app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Paystack initialization error:', error.response?.data || error.message);
     
-    // Check if Paystack key is invalid
     if (error.response?.status === 401) {
       return res.status(503).json({ 
-        error: 'Payment service configuration error. Please contact support.' 
+        error: 'Payment service configuration error' 
       });
     }
     
     res.status(500).json({ 
-      error: 'Failed to initialize payment. Please try again.' 
+      error: 'Failed to initialize payment' 
     });
   }
 });
 
-// Verify Paystack Payment (REAL - No auto-delivery simulation)
+// Verify Paystack Payment
 app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
 
-    // Verify payment with REAL Paystack API
+    // Verify payment with Paystack
     const verificationResponse = await paystack.get(`/transaction/verify/${reference}`);
     const { data } = verificationResponse.data;
 
-    // Find order by Paystack reference
+    // Find order
     const order = await Order.findOne({ paystackReference: reference });
     
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // ✅ CRITICAL SECURITY CHECK: Ensure user owns this order
+    // Security check
     if (order.userId.toString() !== req.userId.toString()) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Update order based on REAL payment status
     if (data.status === 'success') {
       order.status = 'paid';
       order.paymentStatus = 'success';
       order.paymentReference = data.reference;
       
-      // Order is paid but NOT delivered yet (needs telecom API)
-      order.status = 'processing'; // Waiting for telecom API integration
+      // Mark as processing - will be delivered via Portal-02
+      order.status = 'processing';
       await order.save();
+      
+      // AUTO-DELIVER via Portal-02 if configured
+      if (process.env.PORTAL02_API_KEY) {
+        try {
+          const deliveries = [];
+          for (const item of order.items) {
+            const delivery = await portal02Service.purchaseDataBundle(
+              item.recipientPhone || order.recipientPhone,
+              item.size,
+              item.network
+            );
+            
+            deliveries.push({
+              network: item.network,
+              size: item.size,
+              recipient: item.recipientPhone || order.recipientPhone,
+              success: delivery.success,
+              transactionId: delivery.transactionId,
+              message: delivery.message,
+              timestamp: new Date()
+            });
+            
+            // Small delay between purchases
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          const allDelivered = deliveries.every(d => d.success);
+          order.deliveryDetails = deliveries;
+          
+          if (allDelivered) {
+            order.status = 'delivered';
+            order.deliveredAt = new Date();
+          } else {
+            order.status = deliveries.some(d => d.success) ? 'partially_delivered' : 'processing';
+          }
+          
+          await order.save();
+          
+        } catch (deliveryError) {
+          console.error('Auto-delivery failed:', deliveryError);
+          order.status = 'processing'; // Manual intervention needed
+          await order.save();
+        }
+      }
       
       res.json({
         success: true,
-        message: 'Payment successful! Your order is being processed.',
-        note: 'Data delivery will begin once telecom API is integrated.',
+        message: process.env.PORTAL02_API_KEY ? 
+          'Payment successful! Data bundle is being delivered.' :
+          'Payment successful! Data delivery pending.',
         order: {
           _id: order._id,
           orderId: order.orderId,
@@ -461,11 +677,7 @@ app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
         }
       });
 
-      // NO AUTO-DELIVERY SIMULATION - WAITING FOR REAL TELECOM API
-      console.log(`💰 Payment successful for order ${order.orderId}. Waiting for telecom API integration.`);
-
     } else {
-      // Payment failed
       order.status = 'failed';
       order.paymentStatus = 'failed';
       await order.save();
@@ -485,14 +697,111 @@ app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Payment verification error:', error);
     res.status(500).json({ 
-      error: 'Failed to verify payment. Please check your payment status in your dashboard.' 
+      error: 'Failed to verify payment' 
     });
   }
 });
 
-// ==================== USER DATA ISOLATION ====================
+// Deliver Data Bundle via Portal-02
+app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find order
+    const order = await Order.findOne({
+      _id: id,
+      userId: req.userId
+    });
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
-// Get User Orders (ONLY user's own orders)
+    if (order.paymentStatus !== 'success') {
+      return res.status(400).json({ error: 'Order not paid yet' });
+    }
+
+    if (order.status === 'delivered') {
+      return res.status(400).json({ error: 'Order already delivered' });
+    }
+
+    // Check Portal-02 configuration
+    if (!process.env.PORTAL02_API_KEY) {
+      return res.status(503).json({ 
+        error: 'Data delivery service is not configured' 
+      });
+    }
+
+    // Check Portal-02 balance
+    const balanceCheck = await portal02Service.checkBalance();
+    if (!balanceCheck.success || balanceCheck.balance < order.total) {
+      return res.status(402).json({ 
+        error: 'Insufficient balance on data delivery account',
+        balance: balanceCheck.balance,
+        required: order.total
+      });
+    }
+
+    // Process each item
+    const deliveries = [];
+    for (const item of order.items) {
+      const delivery = await portal02Service.purchaseDataBundle(
+        item.recipientPhone || order.recipientPhone,
+        item.size,
+        item.network
+      );
+      
+      deliveries.push({
+        network: item.network,
+        size: item.size,
+        recipient: item.recipientPhone || order.recipientPhone,
+        success: delivery.success,
+        transactionId: delivery.transactionId,
+        message: delivery.message,
+        timestamp: new Date()
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Update order status
+    const allSuccessful = deliveries.every(d => d.success);
+    order.deliveryDetails = deliveries;
+    
+    if (allSuccessful) {
+      order.status = 'delivered';
+      order.deliveredAt = new Date();
+    } else {
+      order.status = deliveries.some(d => d.success) ? 'partially_delivered' : 'processing';
+    }
+    
+    await order.save();
+
+    res.json({
+      success: allSuccessful,
+      platform: 'Portal-02.com',
+      message: allSuccessful ? 
+        'All data bundles delivered successfully!' :
+        'Some bundles failed to deliver',
+      deliveries: deliveries,
+      order: {
+        id: order._id,
+        orderId: order.orderId,
+        status: order.status,
+        deliveredAt: order.deliveredAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Delivery error:', error);
+    res.status(500).json({ 
+      error: 'Delivery failed',
+      details: error.message 
+    });
+  }
+});
+
+// Get User Orders
 app.get('/api/orders', authMiddleware, async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.userId }).sort({ createdAt: -1 });
@@ -503,12 +812,12 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Single Order (WITH OWNERSHIP CHECK)
+// Get Single Order
 app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
     const order = await Order.findOne({
       _id: req.params.id,
-      userId: req.userId  // ✅ CRITICAL: Only return if user owns it
+      userId: req.userId
     });
     
     if (!order) {
@@ -522,7 +831,7 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Dashboard (ONLY user's data)
+// Get User Dashboard
 app.get('/api/dashboard', authMiddleware, async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(10);
@@ -533,9 +842,9 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
         userId: req.userId, 
         status: 'pending' 
       }),
-      completedOrders: await Order.countDocuments({ 
+      deliveredOrders: await Order.countDocuments({ 
         userId: req.userId, 
-        status: { $in: ['delivered', 'processing'] } 
+        status: 'delivered' 
       }),
       totalSpent: await Order.aggregate([
         { $match: { userId: req.userId, paymentStatus: 'success' } },
@@ -575,91 +884,6 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// ==================== ADMIN ROUTES (WITH SECURITY) ====================
-
-// Admin Middleware (Add isAdmin field to userSchema first)
-const adminMiddleware = async (req, res, next) => {
-  try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId);
-    
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
-    req.user = user;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid authentication token' });
-  }
-};
-
-// Admin: Get All Orders (Protected)
-app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
-  try {
-    const orders = await Order.find().sort({ createdAt: -1 });
-    res.json(orders);
-  } catch (error) {
-    console.error('Admin orders fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
-// Admin: Get Dashboard Statistics
-app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Today's orders
-    const todayOrders = await Order.find({
-      createdAt: { $gte: today, $lt: tomorrow }
-    });
-
-    // All-time stats
-    const totalOrders = await Order.countDocuments();
-    const totalRevenueResult = await Order.aggregate([
-      { $match: { paymentStatus: 'success' } },
-      { $group: { _id: null, total: { $sum: '$total' } } }
-    ]);
-
-    const stats = {
-      today: {
-        totalOrders: todayOrders.length,
-        totalRevenue: todayOrders.reduce((sum, order) => sum + order.total, 0),
-        successfulPayments: todayOrders.filter(o => o.paymentStatus === 'success').length
-      },
-      allTime: {
-        totalOrders,
-        totalRevenue: totalRevenueResult.length > 0 ? totalRevenueResult[0].total : 0,
-        successfulPayments: await Order.countDocuments({ paymentStatus: 'success' })
-      }
-    };
-
-    res.json(stats);
-  } catch (error) {
-    console.error('Stats fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch statistics' });
-  }
-});
-
-// ==================== OTHER ROUTES ====================
-
-// Get Paystack Public Key
-app.get('/api/payments/public-key', (req, res) => {
-  res.json({
-    publicKey: PAYSTACK_PUBLIC_KEY
-  });
-});
-
 // Paystack Webhook
 app.post('/api/webhook/paystack', async (req, res) => {
   try {
@@ -684,20 +908,62 @@ app.post('/api/webhook/paystack', async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Handle REAL payment events
+    // Handle payment events
     if (event.event === 'charge.success') {
       order.status = 'paid';
       order.paymentStatus = 'success';
       order.paymentReference = reference;
-      order.status = 'processing'; // Waiting for telecom API
+      
+      // Auto-deliver via Portal-02 if configured
+      if (process.env.PORTAL02_API_KEY) {
+        try {
+          const deliveries = [];
+          for (const item of order.items) {
+            const delivery = await portal02Service.purchaseDataBundle(
+              item.recipientPhone || order.recipientPhone,
+              item.size,
+              item.network
+            );
+            
+            deliveries.push({
+              network: item.network,
+              size: item.size,
+              recipient: item.recipientPhone || order.recipientPhone,
+              success: delivery.success,
+              transactionId: delivery.transactionId,
+              message: delivery.message,
+              timestamp: new Date()
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          order.deliveryDetails = deliveries;
+          const allDelivered = deliveries.every(d => d.success);
+          
+          if (allDelivered) {
+            order.status = 'delivered';
+            order.deliveredAt = new Date();
+          } else {
+            order.status = deliveries.some(d => d.success) ? 'partially_delivered' : 'processing';
+          }
+          
+        } catch (deliveryError) {
+          console.error('Webhook auto-delivery failed:', deliveryError);
+          order.status = 'processing';
+        }
+      } else {
+        order.status = 'processing';
+      }
+      
       await order.save();
-      console.log(`✅ REAL Payment successful for order ${order.orderId}`);
+      console.log(`✅ Payment successful via webhook for order ${order.orderId}`);
       
     } else if (event.event === 'charge.failed') {
       order.status = 'failed';
       order.paymentStatus = 'failed';
       await order.save();
-      console.log(`❌ REAL Payment failed for order ${order.orderId}`);
+      console.log(`❌ Payment failed via webhook for order ${order.orderId}`);
     }
 
     res.sendStatus(200);
@@ -705,6 +971,53 @@ app.post('/api/webhook/paystack', async (req, res) => {
   } catch (error) {
     console.error('Webhook error:', error);
     res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Get Paystack Public Key
+app.get('/api/payments/public-key', (req, res) => {
+  res.json({
+    publicKey: PAYSTACK_PUBLIC_KEY
+  });
+});
+
+// Portal-02 Purchase Test
+app.post('/api/portal02/purchase-test', authMiddleware, async (req, res) => {
+  try {
+    const { phoneNumber, network, size } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+    
+    if (!process.env.PORTAL02_API_KEY) {
+      return res.status(503).json({ error: 'Portal-02 API key not configured' });
+    }
+    
+    const testNetwork = network || 'MTN';
+    const testSize = size || '1GB';
+    
+    const result = await portal02Service.purchaseDataBundle(
+      phoneNumber,
+      testSize,
+      testNetwork
+    );
+    
+    res.json({
+      platform: 'Portal-02.com',
+      test: 'Data Purchase Test',
+      phone: phoneNumber,
+      network: testNetwork,
+      size: testSize,
+      result: result
+    });
+    
+  } catch (error) {
+    console.error('Portal-02 purchase test error:', error);
+    res.status(500).json({ 
+      error: 'Purchase test failed', 
+      details: error.message 
+    });
   }
 });
 
@@ -731,7 +1044,7 @@ app.listen(PORT, () => {
   console.log(`\n🚀 AllenDataHub Backend Server Started!`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'REAL PAYMENTS' : 'NOT CONFIGURED'}`);
+  console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
+  console.log(`📦 Portal-02: ${process.env.PORTAL02_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 User Data Isolation: ACTIVE`);
-  console.log(`🚫 No Test/Bypass Modes: ACTIVE`);
 });
