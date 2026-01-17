@@ -111,12 +111,14 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = await User.findById(decoded.userId).select('-password');
+    req.userId = decoded.userId;
     
-    if (!req.user) {
+    const user = await User.findById(req.userId).select('-password');
+    if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
     
+    req.user = user;
     next();
   } catch (error) {
     res.status(401).json({ error: 'Invalid authentication token' });
@@ -130,8 +132,7 @@ app.get('/', (req, res) => {
   res.json({ 
     message: '🚀 AllenDataHub API is running!',
     version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured'
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -145,7 +146,6 @@ app.get('/api/health', async (req, res) => {
     res.json({ 
       status: 'OK', 
       database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-      paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured',
       collections: {
         users: userCount,
         orders: orderCount,
@@ -259,7 +259,7 @@ app.get('/api/plans', async (req, res) => {
   try {
     const plans = await DataPlan.find().sort({ network: 1, price: 1 });
     
-    // If no plans in database, create default plans
+    // If no plans in database, create default plans (ONLY SHOW PLANS - NO AUTO ORDER)
     if (plans.length === 0) {
       const defaultPlans = [
         { network: 'MTN', size: '1GB', price: 5, validity: '30 days', popular: true },
@@ -282,7 +282,9 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// Create Order
+// ==================== ORDER & PAYMENT FLOW ====================
+
+// Create Order (REAL - No test mode)
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { items, total, recipientEmail, recipientPhone } = req.body;
@@ -300,10 +302,17 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Recipient phone number is required' });
     }
 
-    // Create order
+    // Check if Paystack is configured
+    if (!PAYSTACK_SECRET_KEY) {
+      return res.status(503).json({ 
+        error: 'Payment system is temporarily unavailable. Please try again later.' 
+      });
+    }
+
+    // Create order with PENDING status
     const order = new Order({
-      orderId: 'ORD' + Date.now(),
-      userId: req.user._id,
+      orderId: 'ORD' + Date.now() + Math.random().toString(36).substr(2, 9),
+      userId: req.userId,
       items: items,
       total: total,
       recipientEmail: recipientEmail,
@@ -315,7 +324,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     await order.save();
 
     res.status(201).json({
-      message: 'Order created successfully',
+      message: 'Order created successfully. Please proceed to payment.',
       order: {
         _id: order._id,
         orderId: order.orderId,
@@ -334,7 +343,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Initialize Paystack Payment
+// Initialize Paystack Payment (REAL - No test mode)
 app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email } = req.body;
@@ -347,25 +356,30 @@ app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
     // Verify order exists and belongs to user
     const order = await Order.findOne({
       orderId: orderId,
-      userId: req.user._id
+      userId: req.userId  // ✅ CRITICAL: Check user ownership
     });
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    // Check if order is already paid
+    if (order.paymentStatus === 'success') {
+      return res.status(400).json({ error: 'This order has already been paid' });
+    }
+
     // Convert amount to kobo (Paystack uses kobo)
     const amountInKobo = Math.round(order.total * 100);
 
-    // Initialize Paystack transaction
+    // Initialize REAL Paystack transaction
     const paystackResponse = await paystack.post('/transaction/initialize', {
       email: email,
       amount: amountInKobo,
-      reference: orderId,
+      reference: order.orderId,
       callback_url: `${FRONTEND_URL}/payment/verify`,
       metadata: {
-        orderId: orderId,
-        userId: req.user._id.toString(),
+        orderId: order.orderId,
+        userId: req.userId.toString(),
         customer_name: req.user.username
       }
     });
@@ -387,19 +401,26 @@ app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error('Paystack initialization error:', error.response?.data || error.message);
+    
+    // Check if Paystack key is invalid
+    if (error.response?.status === 401) {
+      return res.status(503).json({ 
+        error: 'Payment service configuration error. Please contact support.' 
+      });
+    }
+    
     res.status(500).json({ 
-      error: 'Failed to initialize payment',
-      details: error.response?.data?.message || error.message
+      error: 'Failed to initialize payment. Please try again.' 
     });
   }
 });
 
-// Verify Paystack Payment
+// Verify Paystack Payment (REAL - No auto-delivery simulation)
 app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
 
-    // Verify payment with Paystack
+    // Verify payment with REAL Paystack API
     const verificationResponse = await paystack.get(`/transaction/verify/${reference}`);
     const { data } = verificationResponse.data;
 
@@ -410,121 +431,71 @@ app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Check if order belongs to user
-    if (order.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Unauthorized access' });
+    // ✅ CRITICAL SECURITY CHECK: Ensure user owns this order
+    if (order.userId.toString() !== req.userId.toString()) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Update order based on payment status
+    // Update order based on REAL payment status
     if (data.status === 'success') {
       order.status = 'paid';
       order.paymentStatus = 'success';
       order.paymentReference = data.reference;
       
-      // Mark as processing (data will be delivered)
-      order.status = 'processing';
+      // Order is paid but NOT delivered yet (needs telecom API)
+      order.status = 'processing'; // Waiting for telecom API integration
       await order.save();
       
       res.json({
         success: true,
-        message: 'Payment successful! Your data bundle is being processed.',
-        order: order
+        message: 'Payment successful! Your order is being processed.',
+        note: 'Data delivery will begin once telecom API is integrated.',
+        order: {
+          _id: order._id,
+          orderId: order.orderId,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          total: order.total,
+          items: order.items,
+          recipientPhone: order.recipientPhone
+        }
       });
 
-      // Simulate delivery after 10 seconds
-      setTimeout(async () => {
-        try {
-          order.status = 'delivered';
-          await order.save();
-          console.log(`✅ Order ${order.orderId} marked as delivered`);
-        } catch (error) {
-          console.error('Error updating order to delivered:', error);
-        }
-      }, 10000);
+      // NO AUTO-DELIVERY SIMULATION - WAITING FOR REAL TELECOM API
+      console.log(`💰 Payment successful for order ${order.orderId}. Waiting for telecom API integration.`);
 
     } else {
+      // Payment failed
       order.status = 'failed';
       order.paymentStatus = 'failed';
       await order.save();
 
       res.json({
         success: false,
-        message: 'Payment failed. Please try again.',
-        order: order
+        message: 'Payment failed or was cancelled.',
+        order: {
+          _id: order._id,
+          orderId: order.orderId,
+          status: order.status,
+          paymentStatus: order.paymentStatus
+        }
       });
     }
 
   } catch (error) {
     console.error('Payment verification error:', error);
     res.status(500).json({ 
-      error: 'Failed to verify payment'
+      error: 'Failed to verify payment. Please check your payment status in your dashboard.' 
     });
   }
 });
 
-// Paystack Webhook
-app.post('/api/webhook/paystack', async (req, res) => {
-  try {
-    // Get the signature from header
-    const signature = req.headers['x-paystack-signature'];
-    
-    // Verify signature
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
-      .update(JSON.stringify(req.body))
-      .digest('hex');
-    
-    if (hash !== signature) {
-      console.error('Invalid webhook signature');
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
+// ==================== USER DATA ISOLATION ====================
 
-    const event = req.body;
-    const { reference } = event.data;
-
-    // Find order
-    const order = await Order.findOne({ paystackReference: reference });
-    
-    if (!order) {
-      console.error('Order not found for reference:', reference);
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Handle events
-    if (event.event === 'charge.success') {
-      order.status = 'paid';
-      order.paymentStatus = 'success';
-      order.paymentReference = reference;
-      order.status = 'processing';
-      await order.save();
-      console.log(`✅ Payment successful via webhook for order ${order.orderId}`);
-      
-    } else if (event.event === 'charge.failed') {
-      order.status = 'failed';
-      order.paymentStatus = 'failed';
-      await order.save();
-      console.log(`❌ Payment failed via webhook for order ${order.orderId}`);
-    }
-
-    // Always respond with 200
-    res.sendStatus(200);
-
-  } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(500).json({ error: 'Webhook processing failed' });
-  }
-});
-
-// Get Paystack Public Key
-app.get('/api/payments/public-key', (req, res) => {
-  res.json({
-    publicKey: PAYSTACK_PUBLIC_KEY
-  });
-});
-
-// Get User Orders
+// Get User Orders (ONLY user's own orders)
 app.get('/api/orders', authMiddleware, async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    const orders = await Order.find({ userId: req.userId }).sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {
     console.error('Orders fetch error:', error);
@@ -532,12 +503,12 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Single Order
+// Get Single Order (WITH OWNERSHIP CHECK)
 app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
     const order = await Order.findOne({
       _id: req.params.id,
-      userId: req.user._id
+      userId: req.userId  // ✅ CRITICAL: Only return if user owns it
     });
     
     if (!order) {
@@ -548,6 +519,43 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Order fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// Get User Dashboard (ONLY user's data)
+app.get('/api/dashboard', authMiddleware, async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(10);
+    
+    const stats = {
+      totalOrders: await Order.countDocuments({ userId: req.userId }),
+      pendingOrders: await Order.countDocuments({ 
+        userId: req.userId, 
+        status: 'pending' 
+      }),
+      completedOrders: await Order.countDocuments({ 
+        userId: req.userId, 
+        status: { $in: ['delivered', 'processing'] } 
+      }),
+      totalSpent: await Order.aggregate([
+        { $match: { userId: req.userId, paymentStatus: 'success' } },
+        { $group: { _id: null, total: { $sum: '$total' } } }
+      ]).then(result => result.length > 0 ? result[0].total : 0)
+    };
+
+    res.json({
+      user: {
+        id: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        phone: req.user.phone
+      },
+      recentOrders: orders,
+      stats: stats
+    });
+  } catch (error) {
+    console.error('Dashboard fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
 
@@ -567,8 +575,33 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// Admin: Get All Orders
-app.get('/api/admin/orders', authMiddleware, async (req, res) => {
+// ==================== ADMIN ROUTES (WITH SECURITY) ====================
+
+// Admin Middleware (Add isAdmin field to userSchema first)
+const adminMiddleware = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId);
+    
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid authentication token' });
+  }
+};
+
+// Admin: Get All Orders (Protected)
+app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   try {
     const orders = await Order.find().sort({ createdAt: -1 });
     res.json(orders);
@@ -579,7 +612,7 @@ app.get('/api/admin/orders', authMiddleware, async (req, res) => {
 });
 
 // Admin: Get Dashboard Statistics
-app.get('/api/admin/stats', authMiddleware, async (req, res) => {
+app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -594,22 +627,8 @@ app.get('/api/admin/stats', authMiddleware, async (req, res) => {
     // All-time stats
     const totalOrders = await Order.countDocuments();
     const totalRevenueResult = await Order.aggregate([
+      { $match: { paymentStatus: 'success' } },
       { $group: { _id: null, total: { $sum: '$total' } } }
-    ]);
-
-    // Network distribution
-    const networkStats = await Order.aggregate([
-      { $unwind: '$items' },
-      { $group: { _id: '$items.network', count: { $sum: 1 } } }
-    ]);
-
-    // Payment statistics
-    const paymentStats = await Order.aggregate([
-      { $group: { 
-        _id: '$paymentStatus', 
-        count: { $sum: 1 },
-        totalAmount: { $sum: '$total' }
-      } }
     ]);
 
     const stats = {
@@ -620,25 +639,72 @@ app.get('/api/admin/stats', authMiddleware, async (req, res) => {
       },
       allTime: {
         totalOrders,
-        totalRevenue: totalRevenueResult.length > 0 ? totalRevenueResult[0].total : 0
-      },
-      networkStats: networkStats.reduce((acc, stat) => {
-        acc[stat._id] = stat.count;
-        return acc;
-      }, {}),
-      paymentStats: paymentStats.reduce((acc, stat) => {
-        acc[stat._id] = {
-          count: stat.count,
-          totalAmount: stat.totalAmount
-        };
-        return acc;
-      }, {})
+        totalRevenue: totalRevenueResult.length > 0 ? totalRevenueResult[0].total : 0,
+        successfulPayments: await Order.countDocuments({ paymentStatus: 'success' })
+      }
     };
 
     res.json(stats);
   } catch (error) {
     console.error('Stats fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+// ==================== OTHER ROUTES ====================
+
+// Get Paystack Public Key
+app.get('/api/payments/public-key', (req, res) => {
+  res.json({
+    publicKey: PAYSTACK_PUBLIC_KEY
+  });
+});
+
+// Paystack Webhook
+app.post('/api/webhook/paystack', async (req, res) => {
+  try {
+    // Verify webhook signature
+    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+    
+    if (hash !== req.headers['x-paystack-signature']) {
+      console.error('Invalid webhook signature');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    const event = req.body;
+    const { reference } = event.data;
+
+    // Find order
+    const order = await Order.findOne({ paystackReference: reference });
+    
+    if (!order) {
+      console.error('Order not found for reference:', reference);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Handle REAL payment events
+    if (event.event === 'charge.success') {
+      order.status = 'paid';
+      order.paymentStatus = 'success';
+      order.paymentReference = reference;
+      order.status = 'processing'; // Waiting for telecom API
+      await order.save();
+      console.log(`✅ REAL Payment successful for order ${order.orderId}`);
+      
+    } else if (event.event === 'charge.failed') {
+      order.status = 'failed';
+      order.paymentStatus = 'failed';
+      await order.save();
+      console.log(`❌ REAL Payment failed for order ${order.orderId}`);
+    }
+
+    res.sendStatus(200);
+
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
@@ -665,5 +731,7 @@ app.listen(PORT, () => {
   console.log(`\n🚀 AllenDataHub Backend Server Started!`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED - Set PAYSTACK_SECRET_KEY'}`);
+  console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'REAL PAYMENTS' : 'NOT CONFIGURED'}`);
+  console.log(`🔐 User Data Isolation: ACTIVE`);
+  console.log(`🚫 No Test/Bypass Modes: ACTIVE`);
 });
