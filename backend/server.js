@@ -3,20 +3,28 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const axios = require('axios');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'https://allendatahub.com',
+    'https://allen-data-hub.vercel.app'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/allendatahub';
-
-console.log('🔗 Attempting to connect to MongoDB...');
-console.log('📁 Connection string:', MONGODB_URI.replace(/:[^:]*@/, ':****@'));
+const MONGODB_URI = process.env.MONGODB_URI;
 
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -38,7 +46,7 @@ const userSchema = new mongoose.Schema({
 
 const orderSchema = new mongoose.Schema({
   orderId: { type: String, required: true, unique: true },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
     network: String,
     size: String,
@@ -49,13 +57,17 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   status: { 
     type: String, 
-    enum: ['placed', 'processing', 'delivered'], 
-    default: 'placed' 
+    enum: ['pending', 'paid', 'processing', 'delivered', 'failed', 'cancelled'], 
+    default: 'pending' 
   },
   recipientEmail: String,
   recipientPhone: String,
-  paymentMethod: String,
+  paymentMethod: { type: String, default: 'paystack' },
   paymentReference: String,
+  paymentStatus: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
+  paystackReference: String,
+  paystackAccessCode: String,
+  paystackAuthorizationUrl: String,
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -72,35 +84,42 @@ const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const DataPlan = mongoose.model('DataPlan', dataPlanSchema);
 
+// Paystack Configuration
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://allen-data-hub.vercel.app';
+
+// Initialize Paystack API
+const paystack = axios.create({
+  baseURL: 'https://api.paystack.co',
+  headers: {
+    'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+    'Content-Type': 'application/json'
+  }
+});
+
 // JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'allendatahub-super-secret-jwt-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Auth Middleware
 const authMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    console.log('🔐 Auth middleware - Token received:', token ? 'Yes' : 'No');
     
     if (!token) {
-      console.log('❌ No token provided');
-      return res.status(401).json({ error: 'No token, authorization denied' });
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('✅ Token decoded, user ID:', decoded.userId);
-    
     req.user = await User.findById(decoded.userId).select('-password');
     
     if (!req.user) {
-      console.log('❌ User not found for ID:', decoded.userId);
       return res.status(401).json({ error: 'User not found' });
     }
     
-    console.log('✅ User authenticated:', req.user.username);
     next();
   } catch (error) {
-    console.error('❌ Token verification error:', error.message);
-    res.status(401).json({ error: 'Token is not valid' });
+    res.status(401).json({ error: 'Invalid authentication token' });
   }
 };
 
@@ -111,14 +130,47 @@ app.get('/', (req, res) => {
   res.json({ 
     message: '🚀 AllenDataHub API is running!',
     version: '1.0.0',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured'
   });
+});
+
+// Health check
+app.get('/api/health', async (req, res) => {
+  try {
+    const userCount = await User.countDocuments();
+    const orderCount = await Order.countDocuments();
+    const planCount = await DataPlan.countDocuments();
+    
+    res.json({ 
+      status: 'OK', 
+      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+      paystack: PAYSTACK_SECRET_KEY ? 'Configured' : 'Not Configured',
+      collections: {
+        users: userCount,
+        orders: orderCount,
+        dataPlans: planCount
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // User Registration
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
+
+    // Validation
+    if (!username || !email || !phone || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
 
     // Check if user exists
     const existingUser = await User.findOne({ 
@@ -166,6 +218,11 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Validation
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
     // Find user
     const user = await User.findOne({ email });
     if (!user) {
@@ -200,11 +257,11 @@ app.post('/api/auth/login', async (req, res) => {
 // Get Data Plans
 app.get('/api/plans', async (req, res) => {
   try {
-    let plans = await DataPlan.find();
+    const plans = await DataPlan.find().sort({ network: 1, price: 1 });
     
-    // If no plans in database, create sample data
+    // If no plans in database, create default plans
     if (plans.length === 0) {
-      const samplePlans = [
+      const defaultPlans = [
         { network: 'MTN', size: '1GB', price: 5, validity: '30 days', popular: true },
         { network: 'MTN', size: '2GB', price: 10, validity: '30 days' },
         { network: 'MTN', size: '5GB', price: 20, validity: '30 days' },
@@ -213,8 +270,9 @@ app.get('/api/plans', async (req, res) => {
         { network: 'Telecel', size: '5GB', price: 18, validity: '30 days' }
       ];
       
-      await DataPlan.insertMany(samplePlans);
-      plans = await DataPlan.find();
+      await DataPlan.insertMany(defaultPlans);
+      const updatedPlans = await DataPlan.find().sort({ network: 1, price: 1 });
+      return res.json(updatedPlans);
     }
 
     res.json(plans);
@@ -224,22 +282,22 @@ app.get('/api/plans', async (req, res) => {
   }
 });
 
-// Create Order - FIXED VERSION
+// Create Order
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
-    console.log('🛒 Order creation request received');
-    console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
-    console.log('👤 User making order:', req.user.username);
+    const { items, total, recipientEmail, recipientPhone } = req.body;
 
-    const { items, total, recipientEmail, recipientPhone, paymentMethod } = req.body;
-
-    // Validate required fields
+    // Validation
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Order must contain at least one item' });
     }
 
     if (!total || total <= 0) {
       return res.status(400).json({ error: 'Invalid order total' });
+    }
+
+    if (!recipientPhone) {
+      return res.status(400).json({ error: 'Recipient phone number is required' });
     }
 
     // Create order
@@ -250,284 +308,218 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       total: total,
       recipientEmail: recipientEmail,
       recipientPhone: recipientPhone,
-      paymentMethod: paymentMethod || 'mobile_money',
-      status: 'placed'
+      status: 'pending',
+      paymentStatus: 'pending'
     });
 
     await order.save();
-    console.log(`✅ Order created successfully: ${order.orderId}`);
 
-    // Return the complete order data
     res.status(201).json({
       message: 'Order created successfully',
       order: {
         _id: order._id,
         orderId: order.orderId,
-        userId: order.userId,
         items: order.items,
         total: order.total,
         status: order.status,
         recipientEmail: order.recipientEmail,
         recipientPhone: order.recipientPhone,
-        paymentMethod: order.paymentMethod,
         createdAt: order.createdAt
       }
     });
 
-    // Simulate order processing (in background)
-    setTimeout(async () => {
-      try {
-        order.status = 'processing';
-        await order.save();
-        console.log(`🔄 Order status updated to processing: ${order.orderId}`);
-      } catch (error) {
-        console.error('Error updating order status to processing:', error);
-      }
-    }, 5000);
-
-    setTimeout(async () => {
-      try {
-        order.status = 'delivered';
-        await order.save();
-        console.log(`🎉 Order status updated to delivered: ${order.orderId}`);
-      } catch (error) {
-        console.error('Error updating order status to delivered:', error);
-      }
-    }, 15000);
-
   } catch (error) {
-    console.error('❌ Order creation error:', error);
-    res.status(500).json({ error: 'Failed to create order: ' + error.message });
+    console.error('Order creation error:', error);
+    res.status(500).json({ error: 'Failed to create order' });
   }
 });
 
-// ==================== ENHANCED MTN CALLBACK ROUTE ====================
-
-// MTN API Webhook Callback
-app.post('/api/mtn/callback', (req, res) => {
-  const callbackId = 'CB_' + Date.now();
-  
-  console.log('\n📞 ======== MTN CALLBACK RECEIVED ========');
-  console.log(`🆔 Callback ID: ${callbackId}`);
-  console.log(`🕒 Timestamp: ${new Date().toISOString()}`);
-  console.log(`📨 Headers:`, JSON.stringify(req.headers, null, 2));
-  console.log(`📦 Body:`, JSON.stringify(req.body, null, 2));
-  console.log('=========================================\n');
-
+// Initialize Paystack Payment
+app.post('/api/payments/initialize', authMiddleware, async (req, res) => {
   try {
-    // Validate required fields
-    if (!req.body || Object.keys(req.body).length === 0) {
-      console.log(`❌ ${callbackId}: Empty request body`);
-      return res.status(400).json({ 
-        status: 'error',
-        message: 'Empty request body',
-        callbackId: callbackId
+    const { orderId, email } = req.body;
+
+    // Validate
+    if (!orderId || !email) {
+      return res.status(400).json({ error: 'Order ID and email are required' });
+    }
+
+    // Verify order exists and belongs to user
+    const order = await Order.findOne({
+      orderId: orderId,
+      userId: req.user._id
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Convert amount to kobo (Paystack uses kobo)
+    const amountInKobo = Math.round(order.total * 100);
+
+    // Initialize Paystack transaction
+    const paystackResponse = await paystack.post('/transaction/initialize', {
+      email: email,
+      amount: amountInKobo,
+      reference: orderId,
+      callback_url: `${FRONTEND_URL}/payment/verify`,
+      metadata: {
+        orderId: orderId,
+        userId: req.user._id.toString(),
+        customer_name: req.user.username
+      }
+    });
+
+    const { data } = paystackResponse.data;
+
+    // Update order with Paystack info
+    order.paystackReference = data.reference;
+    order.paystackAccessCode = data.access_code;
+    order.paystackAuthorizationUrl = data.authorization_url;
+    await order.save();
+
+    res.json({
+      success: true,
+      authorization_url: data.authorization_url,
+      access_code: data.access_code,
+      reference: data.reference
+    });
+
+  } catch (error) {
+    console.error('Paystack initialization error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to initialize payment',
+      details: error.response?.data?.message || error.message
+    });
+  }
+});
+
+// Verify Paystack Payment
+app.get('/api/payments/verify/:reference', authMiddleware, async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    // Verify payment with Paystack
+    const verificationResponse = await paystack.get(`/transaction/verify/${reference}`);
+    const { data } = verificationResponse.data;
+
+    // Find order by Paystack reference
+    const order = await Order.findOne({ paystackReference: reference });
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if order belongs to user
+    if (order.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Unauthorized access' });
+    }
+
+    // Update order based on payment status
+    if (data.status === 'success') {
+      order.status = 'paid';
+      order.paymentStatus = 'success';
+      order.paymentReference = data.reference;
+      
+      // Mark as processing (data will be delivered)
+      order.status = 'processing';
+      await order.save();
+      
+      res.json({
+        success: true,
+        message: 'Payment successful! Your data bundle is being processed.',
+        order: order
+      });
+
+      // Simulate delivery after 10 seconds
+      setTimeout(async () => {
+        try {
+          order.status = 'delivered';
+          await order.save();
+          console.log(`✅ Order ${order.orderId} marked as delivered`);
+        } catch (error) {
+          console.error('Error updating order to delivered:', error);
+        }
+      }, 10000);
+
+    } else {
+      order.status = 'failed';
+      order.paymentStatus = 'failed';
+      await order.save();
+
+      res.json({
+        success: false,
+        message: 'Payment failed. Please try again.',
+        order: order
       });
     }
 
-    // Handle different MTN webhook types
-    switch (req.body.type) {
-      case 'payment':
-        console.log(`💰 ${callbackId}: Processing payment notification`);
-        handlePaymentCallback(req.body, callbackId);
-        break;
-        
-      case 'sms_delivery':
-        console.log(`📱 ${callbackId}: Processing SMS delivery report`);
-        handleSmsCallback(req.body, callbackId);
-        break;
-        
-      case 'ussd':
-        console.log(`🔘 ${callbackId}: Processing USSD interaction`);
-        handleUssdCallback(req.body, callbackId);
-        break;
-        
-      default:
-        console.log(`🔍 ${callbackId}: Unknown callback type: ${req.body.type}`);
-        console.log(`📋 ${callbackId}: Full payload:`, JSON.stringify(req.body, null, 2));
-    }
-
-    // Always respond quickly (MTN requirement)
-    const response = {
-      status: 'success',
-      message: 'Callback processed successfully',
-      callbackId: callbackId,
-      timestamp: new Date().toISOString(),
-      receivedType: req.body.type || 'unknown'
-    };
-
-    console.log(`✅ ${callbackId}: Responding with:`, JSON.stringify(response, null, 2));
-    
-    res.status(200).json(response);
-
   } catch (error) {
-    console.error(`❌ ${callbackId}: Callback processing error:`, error);
-    
-    // Still return 200 to prevent MTN from retrying excessively
-    res.status(200).json({ 
-      status: 'error_handled',
-      message: 'Error processed internally',
-      callbackId: callbackId,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Helper functions for different callback types
-function handlePaymentCallback(data, callbackId) {
-  const { transactionId, amount, status, phoneNumber } = data;
-  
-  console.log(`💳 ${callbackId}: Payment Details:`, {
-    transactionId,
-    amount,
-    currency: data.currency || 'GHS',
-    status,
-    phoneNumber,
-    customerName: data.customerName || 'N/A'
-  });
-
-  // TODO: Update your database here
-  // Example: Update order status based on transactionId
-  if (status === 'success') {
-    console.log(`🎉 ${callbackId}: Payment successful, updating order status`);
-    // await Order.findOneAndUpdate(
-    //   { paymentReference: transactionId },
-    //   { status: 'paid', paymentStatus: 'completed' }
-    // );
-  } else {
-    console.log(`⚠️ ${callbackId}: Payment failed or pending`);
-  }
-}
-
-function handleSmsCallback(data, callbackId) {
-  const { messageId, status, recipient } = data;
-  
-  console.log(`✉️ ${callbackId}: SMS Delivery Report:`, {
-    messageId,
-    status,
-    recipient,
-    deliveryTime: data.timestamp || new Date().toISOString()
-  });
-
-  // TODO: Update SMS delivery status in your database
-}
-
-function handleUssdCallback(data, callbackId) {
-  const { sessionId, phoneNumber, input } = data;
-  
-  console.log(`*️⃣ ${callbackId}: USSD Interaction:`, {
-    sessionId,
-    phoneNumber,
-    input,
-    serviceCode: data.serviceCode || 'N/A'
-  });
-
-  // TODO: Handle USSD interactions
-}
-
-// Test endpoint to verify callback configuration
-app.get('/api/mtn/debug', (req, res) => {
-  const testData = {
-    endpoint: 'http://localhost:5000/api/mtn/callback',
-    status: 'active',
-    serverTime: new Date().toISOString(),
-    testPayloads: {
-      payment: {
-        type: 'payment',
-        transactionId: 'TEST_' + Date.now(),
-        amount: 100,
-        currency: 'GHS',
-        status: 'success',
-        phoneNumber: '233123456789'
-      },
-      sms: {
-        type: 'sms_delivery',
-        messageId: 'MSG_TEST_' + Date.now(),
-        status: 'delivered',
-        recipient: '233123456789'
-      }
-    }
-  };
-  
-  res.json(testData);
-});
-const mtnService = require('./services/mtnService');
-
-// Add these routes AFTER your existing routes but BEFORE app.listen()
-
-// Test MTN Connection
-app.get('/api/mtn/test', async (req, res) => {
-  try {
-    console.log('🧪 Testing MTN API connection...');
-    const result = await mtnService.testConnection();
-    res.json(result);
-  } catch (error) {
+    console.error('Payment verification error:', error);
     res.status(500).json({ 
-      success: false, 
-      error: error.message 
+      error: 'Failed to verify payment'
     });
   }
 });
 
-// Test Data Transfer
-app.post('/api/mtn/transfer', async (req, res) => {
+// Paystack Webhook
+app.post('/api/webhook/paystack', async (req, res) => {
   try {
-    const { receiverPhone, productCode, amount } = req.body;
+    // Get the signature from header
+    const signature = req.headers['x-paystack-signature'];
     
-    const result = await mtnService.transferData(
-      process.env.MTN_SENDER_MSISDN,
-      receiverPhone,
-      productCode,
-      amount
-    );
+    // Verify signature
+    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
     
-    res.json(result);
+    if (hash !== signature) {
+      console.error('Invalid webhook signature');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    const event = req.body;
+    const { reference } = event.data;
+
+    // Find order
+    const order = await Order.findOne({ paystackReference: reference });
+    
+    if (!order) {
+      console.error('Order not found for reference:', reference);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Handle events
+    if (event.event === 'charge.success') {
+      order.status = 'paid';
+      order.paymentStatus = 'success';
+      order.paymentReference = reference;
+      order.status = 'processing';
+      await order.save();
+      console.log(`✅ Payment successful via webhook for order ${order.orderId}`);
+      
+    } else if (event.event === 'charge.failed') {
+      order.status = 'failed';
+      order.paymentStatus = 'failed';
+      await order.save();
+      console.log(`❌ Payment failed via webhook for order ${order.orderId}`);
+    }
+
+    // Always respond with 200
+    res.sendStatus(200);
+
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
-// Server status
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    status: 'Server is running',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      mtnTest: 'GET /api/mtn/test',
-      mtnTransfer: 'POST /api/mtn/transfer'
-    }
+// Get Paystack Public Key
+app.get('/api/payments/public-key', (req, res) => {
+  res.json({
+    publicKey: PAYSTACK_PUBLIC_KEY
   });
 });
-
-// services/mtnService.js - SIMPLE VERSION
-class MTNService {
-  async testConnection() {
-    console.log('🧪 MTN Test connection called');
-    return {
-      success: true,
-      message: '✅ Mock MTN API connection successful!',
-      environment: 'MOCK',
-      hasToken: true
-    };
-  }
-
-  async transferData(senderPhone, receiverPhone, productCode, amount) {
-    console.log('🔄 Mock data transfer called');
-    return {
-      success: true,
-      data: {
-        statusCode: '2000',
-        statusMessage: 'Success',
-        transactionId: 'MOCK_' + Date.now()
-      }
-    };
-  }
-}
-
-module.exports = new MTNService();
 
 // Get User Orders
 app.get('/api/orders', authMiddleware, async (req, res) => {
@@ -540,8 +532,43 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Admin: Get All Orders (for dashboard)
-app.get('/api/admin/orders', async (req, res) => {
+// Get Single Order
+app.get('/api/orders/:id', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+    
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    res.json(order);
+  } catch (error) {
+    console.error('Order fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// User Profile
+app.get('/api/profile', authMiddleware, async (req, res) => {
+  try {
+    res.json({
+      id: req.user._id,
+      username: req.user.username,
+      email: req.user.email,
+      phone: req.user.phone,
+      createdAt: req.user.createdAt
+    });
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Admin: Get All Orders
+app.get('/api/admin/orders', authMiddleware, async (req, res) => {
   try {
     const orders = await Order.find().sort({ createdAt: -1 });
     res.json(orders);
@@ -552,11 +579,10 @@ app.get('/api/admin/orders', async (req, res) => {
 });
 
 // Admin: Get Dashboard Statistics
-app.get('/api/admin/stats', async (req, res) => {
+app.get('/api/admin/stats', authMiddleware, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -577,16 +603,20 @@ app.get('/api/admin/stats', async (req, res) => {
       { $group: { _id: '$items.network', count: { $sum: 1 } } }
     ]);
 
+    // Payment statistics
+    const paymentStats = await Order.aggregate([
+      { $group: { 
+        _id: '$paymentStatus', 
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$total' }
+      } }
+    ]);
+
     const stats = {
       today: {
         totalOrders: todayOrders.length,
         totalRevenue: todayOrders.reduce((sum, order) => sum + order.total, 0),
-        totalDataVolume: todayOrders.reduce((sum, order) => {
-          return sum + order.items.reduce((itemSum, item) => {
-            const size = parseInt(item.size);
-            return itemSum + (isNaN(size) ? 0 : size);
-          }, 0);
-        }, 0) + 'GB'
+        successfulPayments: todayOrders.filter(o => o.paymentStatus === 'success').length
       },
       allTime: {
         totalOrders,
@@ -594,6 +624,13 @@ app.get('/api/admin/stats', async (req, res) => {
       },
       networkStats: networkStats.reduce((acc, stat) => {
         acc[stat._id] = stat.count;
+        return acc;
+      }, {}),
+      paymentStats: paymentStats.reduce((acc, stat) => {
+        acc[stat._id] = {
+          count: stat.count,
+          totalAmount: stat.totalAmount
+        };
         return acc;
       }, {})
     };
@@ -605,46 +642,28 @@ app.get('/api/admin/stats', async (req, res) => {
   }
 });
 
-// Health check
-app.get('/api/health', async (req, res) => {
-  try {
-    const userCount = await User.countDocuments();
-    const orderCount = await Order.countDocuments();
-    const planCount = await DataPlan.countDocuments();
-    
-    res.json({ 
-      status: 'OK', 
-      database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-      collections: {
-        users: userCount,
-        orders: orderCount,
-        dataPlans: planCount
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      status: 'ERROR', 
-      error: error.message 
-    });
-  }
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Error Handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
 });
 
 // Start Server
 app.listen(PORT, () => {
   console.log(`\n🚀 AllenDataHub Backend Server Started!`);
   console.log(`📍 Port: ${PORT}`);
-  console.log(`🔗 API: http://localhost:${PORT}`);
-  console.log(`🌐 MongoDB: ${MONGODB_URI.replace(/:[^:]*@/, ':****@')}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED - Set PAYSTACK_SECRET_KEY'}`);
 });
-
-// Replace current CORS setup with:
-const corsOptions = {
-  origin: [
-    'http://localhost:3000',  // Local development
-    'https://your-vercel-app.vercel.app',  // Your Vercel URL
-    'https://allendatahub.com'  // Your custom domain (if you have one)
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
