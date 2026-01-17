@@ -1,7 +1,6 @@
-const BUILD_TIMESTAMP = "20260116-192449-FIX";
-
 import axios from 'axios';
 
+const BUILD_TIMESTAMP = "20260116-192449-FIX";
 // CRITICAL FIX: Use environment variable for production
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? `${process.env.REACT_APP_API_URL}/api`
