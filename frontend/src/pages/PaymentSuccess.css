@@ -1,0 +1,289 @@
+/* PaymentSuccess.css */
+
+.success-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  transition: all 0.3s ease;
+}
+
+.success-container.light {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.success-container.dark {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.success-card {
+  background: white;
+  border-radius: 20px;
+  padding: 3rem;
+  text-align: center;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.6s ease;
+}
+
+.dark .success-card {
+  background: rgba(30, 41, 59, 0.95);
+  color: #f8fafc;
+}
+
+.success-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.success-card h1 {
+  margin: 0 0 2rem 0;
+  color: #52c41a;
+  font-size: 2.5rem;
+}
+
+/* Order Details */
+.order-details {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 2rem;
+  margin: 2rem 0;
+  text-align: left;
+}
+
+.dark .order-details {
+  background: #1e293b;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dark .detail-item {
+  border-bottom-color: #475569;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.detail-item strong {
+  color: #334155;
+}
+
+.dark .detail-item strong {
+  color: #cbd5e1;
+}
+
+.trx-code {
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  color: #1890ff;
+  background: #e6f7ff;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+}
+
+.dark .trx-code {
+  background: #1e3a8a;
+  color: #dbeafe;
+}
+
+.amount {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #52c41a;
+}
+
+.status.delivered {
+  background: #d9f7be;
+  color: #237804;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-weight: 600;
+}
+
+.dark .status.delivered {
+  background: #162312;
+  color: #b7eb8f;
+}
+
+/* Success Message */
+.success-message {
+  margin: 2rem 0;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.success-message p {
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+.dark .success-message p {
+  color: #94a3b8;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.dashboard-btn,
+.copy-btn {
+  flex: 1;
+  padding: 1rem;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dashboard-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.copy-btn {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.dark .copy-btn {
+  background: #475569;
+  color: #f8fafc;
+}
+
+.copy-btn:hover {
+  background: #e0e0e0;
+  transform: translateY(-2px);
+}
+
+.dark .copy-btn:hover {
+  background: #64748b;
+}
+
+/* Next Steps */
+.next-steps {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid #e2e8f0;
+  text-align: left;
+}
+
+.dark .next-steps {
+  border-top-color: #475569;
+}
+
+.next-steps h3 {
+  margin-top: 0;
+  color: #1890ff;
+}
+
+.dark .next-steps h3 {
+  color: #93c5fd;
+}
+
+.next-steps ul {
+  margin: 1rem 0;
+  padding-left: 1.2rem;
+}
+
+.next-steps li {
+  margin-bottom: 0.8rem;
+  color: #666;
+}
+
+.dark .next-steps li {
+  color: #94a3b8;
+}
+
+/* Loading Container */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  text-align: center;
+}
+
+.loading-container h2 {
+  color: #666;
+}
+
+.dark .loading-container h2 {
+  color: #94a3b8;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .success-card {
+    padding: 2rem;
+    margin: 1rem;
+  }
+  
+  .success-card h1 {
+    font-size: 2rem;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+  }
+  
+  .detail-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .trx-code {
+    font-size: 0.9rem;
+    padding: 0.3rem 0.6rem;
+  }
+}

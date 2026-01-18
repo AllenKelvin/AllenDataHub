@@ -82,33 +82,115 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (userData) => api.post('/auth/register', userData),
   login: (credentials) => api.post('/auth/login', credentials),
+  logout: () => api.post('/auth/logout'),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 };
 
 export const plansAPI = {
   getAll: () => api.get('/plans'),
+  getByNetwork: (network) => api.get(`/plans/network/${network}`),
 };
 
 export const ordersAPI = {
+  // Order Verification (new)
+  verify: (orderData) => {
+    console.log('✅ Verifying order with backend:', orderData);
+    return api.post('/orders/verify', orderData);
+  },
+  
+  // Create Order
   create: (orderData) => {
     console.log('🛒 Creating order:', orderData);
     return api.post('/orders', orderData);
   },
-  getMyOrders: () => api.get('/orders'),
+  
+  // Get user's orders
+  getMyOrders: () => {
+    console.log('📋 Fetching user orders');
+    return api.get('/orders/my-orders');
+  },
+  
+  // Get single order
   getOrder: (id) => api.get(`/orders/${id}`),
+  
+  // Get order by TRX code
+  getOrderByTrx: (trxCode) => api.get(`/orders/trx/${trxCode}`),
+  
+  // Cancel order
+  cancel: (id) => api.delete(`/orders/${id}`),
+  
+  // Get recent transactions for dashboard
+  getRecentTransactions: (limit = 10) => 
+    api.get(`/orders/recent?limit=${limit}`),
 };
 
 export const adminAPI = {
   getAllOrders: () => api.get('/admin/orders'),
   getStats: () => api.get('/admin/stats'),
+  getUserStats: (userId) => api.get(`/admin/users/${userId}/stats`),
+  updateOrderStatus: (orderId, status) => 
+    api.patch(`/admin/orders/${orderId}/status`, { status }),
 };
 
 export const paymentAPI = {
   initialize: (paymentData) => api.post('/payment/initialize', paymentData),
+  verify: (reference) => api.get(`/payment/verify/${reference}`),
+  webhook: (data) => api.post('/payment/webhook', data),
 };
 
-export const mtnAPI = {
-  testConnection: () => api.get('/mtn/test'),
-  transferData: (data) => api.post('/mtn/transfer', data),
+export const userAPI = {
+  // Get user profile
+  getProfile: () => {
+    console.log('👤 Fetching user profile');
+    return api.get('/users/profile');
+  },
+  
+  // Update user profile
+  updateProfile: (data) => {
+    console.log('✏️ Updating user profile:', data);
+    return api.put('/users/profile', data);
+  },
+  
+  // Change password
+  changePassword: (data) => api.post('/users/change-password', data),
+  
+  // Contact support
+  contactSupport: (data) => {
+    console.log('📞 Contacting support:', data);
+    return api.post('/users/contact', data);
+  },
+  
+  // Get user transaction history
+  getTransactionHistory: (page = 1, limit = 10) => 
+    api.get(`/users/transactions?page=${page}&limit=${limit}`),
+  
+  // Get user dashboard stats
+  getDashboardStats: () => api.get('/users/dashboard-stats'),
+};
+
+export const networksAPI = {
+  // MTN API
+  mtn: {
+    testConnection: () => api.get('/mtn/test'),
+    transferData: (data) => {
+      console.log('📱 MTN Data Transfer:', data);
+      return api.post('/mtn/transfer', data);
+    },
+    checkBalance: () => api.get('/mtn/balance'),
+  },
+  
+  // Telecel API
+  telecel: {
+    testConnection: () => api.get('/telecel/test'),
+    transferData: (data) => api.post('/telecel/transfer', data),
+  },
+  
+  // AirtelTigo API
+  airteltigo: {
+    testConnection: () => api.get('/airteltigo/test'),
+    transferData: (data) => api.post('/airteltigo/transfer', data),
+  },
 };
 
 // Test functions
@@ -126,6 +208,40 @@ export const testConnection = async () => {
       url: API_BASE_URL 
     };
   }
+};
+
+// Helper function to generate TRX code
+export const generateTRXCode = (orderId) => {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+  return `TRX${timestamp}${randomStr}`.slice(0, 12);
+};
+
+// Helper function to format Ghana phone numbers
+export const formatGhanaPhone = (phone) => {
+  if (!phone) return '';
+  // Remove all non-digits
+  const digits = phone.replace(/\D/g, '');
+  
+  // If starts with 0, convert to +233
+  if (digits.startsWith('0') && digits.length === 10) {
+    return `+233${digits.slice(1)}`;
+  }
+  
+  // If already has country code
+  if (digits.startsWith('233') && digits.length === 12) {
+    return `+${digits}`;
+  }
+  
+  // Return as is with + if needed
+  return digits.startsWith('+') ? phone : `+${digits}`;
+};
+
+// Helper function to validate Ghana phone number
+export const isValidGhanaNumber = (phone) => {
+  const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+  const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
+  return ghanaRegex.test(cleanPhone);
 };
 
 export default api;

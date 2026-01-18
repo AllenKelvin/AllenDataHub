@@ -1,128 +1,188 @@
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import { ordersAPI, generateTRXCode } from '../services/api';
+import './Checkout.css';
 
 const Checkout = () => {
-  const { cartItems, clearCart, createOrder } = useCart();
+  const { cartItems, clearCart } = useCart();
+  const { darkMode } = useTheme();
   const navigate = useNavigate();
-  const [paymentData, setPaymentData] = useState({
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
     email: '',
     phone: '',
-    paymentMethod: 'mobile_money'
+    paymentMethod: 'paystack'
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [user, setUser] = useState(null);
+  const [orderVerification, setOrderVerification] = useState({
+    isValid: false,
+    message: '',
+    totalAmount: 0,
+    verifiedItems: []
+  });
 
-  // Check if user is logged in
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
+    if (cartItems.length === 0) {
+      navigate('/cart');
+    }
     
-    console.log('🔐 Checkout - User logged in:', !!userData);
-    console.log('🔐 Checkout - Token available:', !!token);
-    
-    if (userData) {
-      setUser(JSON.parse(userData));
-    } else {
-      setError('Please login to complete your order');
+    // Set user email from localStorage if available
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    if (user.email) {
+      setFormData(prev => ({ ...prev, email: user.email, phone: user.phone || '' }));
     }
-  }, []);
+  }, [cartItems, navigate]);
 
-  const total = cartItems.reduce((sum, item) => sum + item.price, 0);
+  // Calculate totals
+  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+  const serviceFee = 0.50;
+  const total = subtotal + serviceFee;
 
-  const handleInputChange = (e) => {
-    setPaymentData({
-      ...paymentData,
-      [e.target.name]: e.target.value
-    });
-    setError('');
-  };
-
-  const handlePaystackPayment = async () => {
-    // Check if user is logged in
-    if (!user) {
-      setError('Please login to complete your order');
-      navigate('/login');
-      return;
-    }
-
-    if (!paymentData.email || !paymentData.phone) {
-      setError('Please fill in all required fields');
-      return;
-    }
-
-    const isValidGhanaNumber = (phone) => {
-      const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-      const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059)\d{7}$/;
-      return ghanaRegex.test(cleanPhone);
-    };
-
-    if (!isValidGhanaNumber(paymentData.phone)) {
-      setError('Please enter a valid Ghanaian phone number');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(paymentData.email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
+  // Verify order with backend
+  const verifyOrderWithBackend = async () => {
     try {
-      console.log('💰 Starting payment process...');
-      console.log('📦 Cart items:', cartItems);
-      console.log('👤 User:', user.username);
+      setLoading(true);
       
-      // Prepare order data
+      // Prepare order data for verification
       const orderData = {
         items: cartItems.map(item => ({
+          planId: item._id || item.id,
           network: item.network,
           size: item.size,
           price: item.price,
           recipientPhone: item.recipientPhone,
-          validity: item.validity
+          quantity: item.quantity || 1
         })),
-        total: total,
-        recipientEmail: paymentData.email,
-        recipientPhone: paymentData.phone,
-        paymentMethod: paymentData.paymentMethod
+        totalAmount: total,
+        customerEmail: formData.email,
+        customerPhone: formData.phone
       };
 
-      console.log('🛒 Sending order data:', orderData);
-
-      // Create order in backend
-      const order = await createOrder(orderData);
-
-      console.log('✅ Order created successfully:', order);
-
-      // Show success message
-      alert(`🎉 Order #${order.orderId} created successfully!\n\nTotal: GH₵${total}\n\nRedirecting to order tracking...`);
+      console.log('🔄 Verifying order with backend:', orderData);
       
-      // Clear cart and redirect to order tracking
-      clearCart();
-      navigate('/order-tracking');
-
-    } catch (error) {
-      console.error('❌ Payment/Order creation error:', error);
+      // Call backend to verify order
+      const response = await ordersAPI.verify(orderData);
+      console.log('✅ Verification response:', response.data);
       
-      let errorMessage = 'Order creation failed. Please try again.';
-      
-      if (error.message.includes('Network error')) {
-        errorMessage = 'Network error. Please check your internet connection.';
-      } else if (error.message.includes('authentication') || error.message.includes('token')) {
-        errorMessage = 'Session expired. Please login again.';
-        // Redirect to login
-        setTimeout(() => navigate('/login'), 2000);
-      } else if (error.message) {
-        errorMessage = error.message;
+      if (response.data.valid) {
+        setOrderVerification({
+          isValid: true,
+          message: response.data.message || 'Order verified successfully',
+          totalAmount: response.data.totalAmount || total,
+          verifiedItems: response.data.items || cartItems
+        });
+        alert('✅ Order verified! You can now proceed to payment.');
+      } else {
+        setOrderVerification({
+          isValid: false,
+          message: response.data.message || 'Order verification failed',
+          totalAmount: 0,
+          verifiedItems: []
+        });
+        alert('❌ Order verification failed: ' + (response.data.message || 'Please check your order details'));
       }
       
-      setError(errorMessage);
-      alert(`❌ Order Failed: ${errorMessage}`);
+    } catch (error) {
+      console.error('❌ Order verification error:', error);
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Failed to verify order. Please try again.';
+      
+      setOrderVerification({
+        isValid: false,
+        message: errorMessage,
+        totalAmount: 0,
+        verifiedItems: []
+      });
+      
+      alert('❌ Verification Error: ' + errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validation
+    if (!formData.email || !formData.phone) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    // Verify order first (if not already verified)
+    if (!orderVerification.isValid) {
+      alert('Please verify your order first');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      // Create order with backend
+      const orderData = {
+        items: cartItems.map(item => ({
+          planId: item._id || item.id,
+          network: item.network,
+          size: item.size,
+          price: item.price,
+          recipientPhone: item.recipientPhone,
+          quantity: item.quantity || 1
+        })),
+        totalAmount: total,
+        customerEmail: formData.email,
+        customerPhone: formData.phone,
+        paymentMethod: formData.paymentMethod
+      };
+
+      console.log('🛒 Creating order:', orderData);
+      const response = await ordersAPI.create(orderData);
+      console.log('✅ Order created:', response.data);
+      
+      if (response.data.success) {
+        // Clear cart
+        clearCart();
+        
+        // Generate unique TRX code
+        const trxCode = generateTRXCode(response.data.orderId);
+        
+        // Store order details for success page
+        const orderDetails = {
+          trxCode,
+          orderId: response.data.orderId,
+          amount: total,
+          items: cartItems,
+          customerEmail: formData.email,
+          customerPhone: formData.phone,
+          date: new Date().toISOString(),
+          status: 'processing'
+        };
+        
+        localStorage.setItem('lastOrder', JSON.stringify(orderDetails));
+        
+        // Redirect based on payment method
+        if (formData.paymentMethod === 'paystack' && response.data.paymentUrl) {
+          // For PayStack, redirect to payment gateway
+          console.log('Redirecting to payment gateway...');
+          window.location.href = response.data.paymentUrl;
+        } else {
+          // For cash/other methods, go to success page
+          console.log('Redirecting to success page...');
+          navigate('/payment-success');
+        }
+      } else {
+        throw new Error(response.data.message || 'Failed to create order');
+      }
+      
+    } catch (error) {
+      console.error('❌ Checkout error:', error);
+      alert('Checkout failed: ' + (error.response?.data?.message || error.message || 'Please try again'));
     } finally {
       setLoading(false);
     }
@@ -130,197 +190,143 @@ const Checkout = () => {
 
   if (cartItems.length === 0) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
+      <div className={`empty-cart ${darkMode ? 'dark' : ''}`}>
         <h2>Your cart is empty</h2>
-        <button 
-          onClick={() => navigate('/plans')}
-          style={{
-            padding: '1rem 2rem',
-            backgroundColor: '#1890ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            marginTop: '1rem'
-          }}
-        >
-          Browse Data Plans
-        </button>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <h2>Authentication Required</h2>
-        <p>Please login to complete your order.</p>
-        <button 
-          onClick={() => navigate('/login')}
-          style={{
-            padding: '1rem 2rem',
-            backgroundColor: '#1890ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            marginTop: '1rem'
-          }}
-        >
-          Go to Login
+        <button onClick={() => navigate('/client-dashboard')}>
+          Back to Dashboard
         </button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '2rem', color: '#1890ff' }}>
-        Checkout & Payment
-      </h1>
-
-      {error && (
-        <div style={{ 
-          padding: '1rem', 
-          backgroundColor: '#fff2f0', 
-          border: '1px solid #ffccc7',
-          borderRadius: '5px',
-          marginBottom: '2rem',
-          color: '#a8071a'
-        }}>
-          ❌ {error}
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+    <div className={`checkout-container ${darkMode ? 'dark' : ''}`}>
+      <h1>Checkout</h1>
+      
+      <div className="checkout-content">
         {/* Order Summary */}
-        <div>
-          <h3 style={{ borderBottom: '2px solid #1890ff', paddingBottom: '0.5rem' }}>
-            Order Summary
-          </h3>
-          
-          <div style={{ marginBottom: '1.5rem' }}>
+        <div className="order-summary">
+          <h2>Order Summary</h2>
+          <div className="summary-items">
             {cartItems.map((item, index) => (
-              <div key={index} style={{ 
-                border: '1px solid #e8e8e8', 
-                padding: '1rem', 
-                marginBottom: '0.5rem',
-                borderRadius: '5px',
-                backgroundColor: '#fafafa'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <strong>{item.network} {item.size}</strong>
-                  <span style={{ color: '#1890ff', fontWeight: 'bold' }}>GH₵{item.price}</span>
+              <div key={index} className="summary-item">
+                <div className="item-info">
+                  <span className="item-name">{item.network} {item.size}</span>
+                  <span className="item-price">GH₵{item.price}</span>
                 </div>
-                <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                  To: {item.recipientPhone}
+                <div className="item-details">
+                  <span className="item-recipient">To: {item.recipientPhone}</span>
+                  <span className="item-quantity">Qty: {item.quantity || 1}</span>
                 </div>
               </div>
             ))}
           </div>
-
-          <div style={{ 
-            borderTop: '2px solid #e8e8e8', 
-            paddingTop: '1rem',
-            fontSize: '1.2rem',
-            fontWeight: 'bold'
-          }}>
-            Total: GH₵{total}
+          
+          <div className="summary-totals">
+            <div className="total-row">
+              <span>Subtotal:</span>
+              <span>GH₵{subtotal.toFixed(2)}</span>
+            </div>
+            <div className="total-row">
+              <span>Service Fee:</span>
+              <span>GH₵{serviceFee.toFixed(2)}</span>
+            </div>
+            <div className="total-row grand-total">
+              <span>Total:</span>
+              <span>GH₵{total.toFixed(2)}</span>
+            </div>
           </div>
+
+          {/* Order Verification Status */}
+          {orderVerification.message && (
+            <div className={`verification-status ${orderVerification.isValid ? 'valid' : 'invalid'}`}>
+              {orderVerification.isValid ? '✅' : '❌'} {orderVerification.message}
+            </div>
+          )}
         </div>
 
-        {/* Payment Details */}
-        <div>
-          <h3 style={{ borderBottom: '2px solid #1890ff', paddingBottom: '0.5rem' }}>
-            Payment Details
-          </h3>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Email Address *
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={paymentData.email}
-              onChange={handleInputChange}
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem'
-              }}
-              placeholder="your@email.com"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Phone Number *
-            </label>
-            <input
-              type="tel"
-              name="phone"
-              value={paymentData.phone}
-              onChange={handleInputChange}
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem'
-              }}
-              placeholder="0551234567"
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Payment Method *
-            </label>
-            <select
-              name="paymentMethod"
-              value={paymentData.paymentMethod}
-              onChange={handleInputChange}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem'
-              }}
-            >
-              <option value="mobile_money">Mobile Money</option>
-              <option value="card">Credit/Debit Card</option>
-            </select>
-          </div>
-
-          <button 
-            onClick={handlePaystackPayment}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '1.2rem',
-              backgroundColor: loading ? '#d9d9d9' : '#52c41a',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              fontSize: '1.2rem',
-              fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: '1rem'
-            }}
-          >
-            {loading ? 'Processing...' : `Pay with Paystack - GH₵${total}`}
-          </button>
+        {/* Checkout Form */}
+        <div className="checkout-form-section">
+          <form onSubmit={handleSubmit}>
+            <h2>Customer Information</h2>
+            
+            <div className="form-group">
+              <label>Email Address *</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                required
+                disabled={loading}
+                placeholder="Enter your email"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Phone Number *</label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                required
+                disabled={loading}
+                placeholder="Enter your phone number"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Payment Method *</label>
+              <select
+                value={formData.paymentMethod}
+                onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})}
+                disabled={loading}
+              >
+                <option value="paystack">PayStack</option>
+                <option value="cash">Cash Payment</option>
+                <option value="mobile_money">Mobile Money</option>
+              </select>
+            </div>
+            
+            {/* Important Notice */}
+            <div className="notice-box">
+              <strong>Important:</strong>
+              <ul>
+                <li>Order will be verified with our server before payment</li>
+                <li>Ensure phone numbers are valid Ghanaian numbers</li>
+                <li>Data bundles are delivered instantly after successful payment</li>
+                <li>Contact support if you don't receive your data within 5 minutes</li>
+              </ul>
+            </div>
+            
+            <div className="checkout-actions">
+              <button
+                type="button"
+                onClick={() => navigate('/cart')}
+                className="back-btn"
+                disabled={loading}
+              >
+                Back to Cart
+              </button>
+              
+              <button
+                type="button"
+                onClick={verifyOrderWithBackend}
+                className="verify-btn"
+                disabled={loading}
+              >
+                {loading ? 'Verifying...' : 'Verify Order with Server'}
+              </button>
+              
+              <button
+                type="submit"
+                className="pay-btn"
+                disabled={loading || !orderVerification.isValid}
+                title={!orderVerification.isValid ? "Please verify order first" : ""}
+              >
+                {loading ? 'Processing...' : `Pay GH₵${total.toFixed(2)}`}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

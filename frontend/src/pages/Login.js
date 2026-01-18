@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import './Login.css';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -9,7 +11,34 @@ const Login = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [monkeyEyesClosed, setMonkeyEyesClosed] = useState(false);
+  const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check for existing session
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    
+    if (token && user) {
+      // User is already logged in, redirect to appropriate dashboard
+      const userData = JSON.parse(user);
+      if (userData.role === 'admin') {
+        navigate('/admin-dashboard');
+      } else {
+        navigate('/client-dashboard');
+      }
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    if (formData.password.length > 0) {
+      setMonkeyEyesClosed(true);
+    } else {
+      setMonkeyEyesClosed(false);
+    }
+  }, [formData.password]);
 
   const handleChange = (e) => {
     setFormData({
@@ -22,9 +51,14 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Basic validation
+    // Validation
     if (!formData.email || !formData.password) {
       setError('Please fill in all fields');
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      setError('Please enter a valid email address');
       return;
     }
 
@@ -32,165 +66,222 @@ const Login = () => {
     setError('');
 
     try {
-      console.log('Attempting login with:', { email: formData.email });
+      console.log('🔐 Attempting login with:', { email: formData.email });
       
-      // Call the real backend API
+      // Call the backend API
       const response = await authAPI.login({
         email: formData.email,
         password: formData.password
       });
 
-      console.log('Login successful response:', response.data);
+      console.log('✅ Login successful response:', response.data);
       
       if (response.data && response.data.token) {
         // Save token and user data
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         
-        console.log('User data saved to localStorage:', response.data.user);
+        console.log('💾 User data saved to localStorage:', response.data.user);
         
-        // Force page reload to update navbar and all components
-        window.location.href = '/';
+        // Show success message
+        setError(''); // Clear any previous errors
+        
+        // Redirect based on user role
+        setTimeout(() => {
+          if (response.data.user.role === 'admin') {
+            window.location.href = '/admin-dashboard';
+          } else {
+            window.location.href = '/client-dashboard';
+          }
+        }, 500);
+        
       } else {
         throw new Error('Invalid response from server');
       }
     } catch (error) {
-      console.error('Login error details:', error);
-      console.error('Error response:', error.response);
+      console.error('❌ Login error:', error);
+      
+      let errorMessage = 'Login failed. Please check your credentials.';
       
       if (error.response) {
-        // Server responded with error status
-        setError(error.response.data?.error || 'Login failed. Please check your credentials.');
+        // Server responded with error
+        errorMessage = error.response.data?.error || 
+                      error.response.data?.message || 
+                      `Server error: ${error.response.status}`;
       } else if (error.request) {
         // Request was made but no response received
-        setError('Network error. Please check your connection.');
+        errorMessage = 'Network error. Please check your internet connection.';
       } else {
         // Something else happened
-        setError('Login failed. Please try again.');
+        errorMessage = error.message || 'An unexpected error occurred.';
       }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ 
-      padding: '2rem', 
-      maxWidth: '400px', 
-      margin: '0 auto',
-      minHeight: '70vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <div style={{ 
-        width: '100%', 
-        padding: '2rem', 
-        border: '1px solid #e8e8e8', 
-        borderRadius: '10px',
-        backgroundColor: 'white',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-      }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem', color: '#1890ff' }}>
-          Welcome Back
-        </h2>
+    <div className={`login-container ${darkMode ? 'dark' : 'light'}`}>
+      {/* Theme Toggle Button */}
+      <button className="theme-toggle" onClick={toggleTheme}>
+        {darkMode ? '☀️' : '🌙'}
+      </button>
+
+      <div className="login-card">
+        {/* AllenDataHub Logo */}
+        <div className="portal-logo">
+          <div className="logo-icon">📊</div>
+          <h1>AllenDataHub</h1>
+          <p className="logo-subtitle">Secure Data Transactions Platform</p>
+        </div>
         
+        {/* Animated Monkey */}
+        <div className="monkey-container">
+          <div className="monkey-emoji">
+            <span>🐵</span>
+            <div className={`monkey-eyes ${monkeyEyesClosed ? 'closed' : ''}`}>
+              <div className="eye left-eye"></div>
+              <div className="eye right-eye"></div>
+            </div>
+          </div>
+          <h2 className="welcome-title">Welcome Back! 👋</h2>
+          <p className="welcome-subtitle">Sign in to manage your data transactions</p>
+        </div>
+        
+        {/* Error Message */}
         {error && (
-          <div style={{ 
-            padding: '1rem', 
-            backgroundColor: '#fff2f0', 
-            border: '1px solid #ffccc7',
-            borderRadius: '5px',
-            marginBottom: '1rem',
-            color: '#a8071a'
-          }}>
-            ❌ {error}
+          <div className="error-message">
+            <span className="error-icon">❌</span>
+            <span className="error-text">{error}</span>
           </div>
         )}
         
+        {/* Login Form */}
         <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+          <div className="input-group">
+            <label htmlFor="email">
+              <span className="label-icon">📧</span>
               Email Address *
             </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: error ? '1px solid #ff4d4f' : '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
-              placeholder="Enter your email"
-            />
+            <div className="input-with-icon">
+              <input
+                type="email"
+                id="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                disabled={loading}
+                placeholder="Enter your email address"
+                autoComplete="email"
+              />
+              <span className="input-icon">📧</span>
+            </div>
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+          <div className="input-group">
+            <label htmlFor="password">
+              <span className="label-icon">🔒</span>
               Password *
             </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: error ? '1px solid #ff4d4f' : '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
-              placeholder="Enter your password"
-            />
+            <div className="password-input">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                disabled={loading}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
+              <button 
+                type="button"
+                className="toggle-password"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+
+          {/* Remember Me & Forgot Password */}
+          <div className="form-options">
+            <label className="remember-me">
+              <input type="checkbox" />
+              <span className="checkmark"></span>
+              Remember me
+            </label>
+            <Link to="/forgot-password" className="forgot-password">
+              Forgot password?
+            </Link>
           </div>
 
           <button
             type="submit"
+            className="submit-btn"
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '1rem',
-              backgroundColor: loading ? '#d9d9d9' : '#52c41a',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              fontSize: '1.1rem',
-              fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: '1rem',
-              opacity: loading ? 0.6 : 1
-            }}
           >
-            {loading ? '🔐 Logging in...' : '🚀 Login'}
+            {loading ? (
+              <>
+                <span className="loading-spinner"></span>
+                Logging in...
+              </>
+            ) : (
+              <>
+                <span className="btn-icon">🚀</span>
+                Login to Dashboard
+              </>
+            )}
           </button>
         </form>
 
-        
-        
+        {/* Divider */}
+        <div className="divider">
+          <span>or</span>
+        </div>
 
-        {/* Debug info */}
-        <div style={{ 
-          marginTop: '1rem', 
-          padding: '1rem', 
-          backgroundColor: '#e6f7ff', 
-          border: '1px solid #91d5ff',
-          borderRadius: '5px',
-          fontSize: '0.8rem'
-        }}>
-          <p style={{ margin: 0, color: '#0050b3' }}>
-            
+        {/* Social Login (Optional) */}
+        <div className="social-login">
+          <button type="button" className="social-btn google-btn">
+            <span className="social-icon">🔍</span>
+            Continue with Google
+          </button>
+          <button type="button" className="social-btn github-btn">
+            <span className="social-icon">💻</span>
+            Continue with GitHub
+          </button>
+        </div>
+
+        {/* Sign Up Link */}
+        <div className="signup-prompt">
+          <p>Don't have an account?</p>
+          <Link to="/signup" className="signup-link">
+            <span className="link-icon">📝</span>
+            Create new account
+          </Link>
+        </div>
+
+        {/* Security Info */}
+        <div className="security-info">
+          <p className="security-text">
+            <span className="security-icon">🔐</span>
+            Your login is secured with 256-bit SSL encryption
           </p>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="login-footer">
+        <p>© 2024 AllenDataHub. All rights reserved.</p>
+        <div className="footer-links">
+          <Link to="/privacy">Privacy Policy</Link>
+          <Link to="/terms">Terms of Service</Link>
+          <Link to="/contact">Contact Support</Link>
         </div>
       </div>
     </div>

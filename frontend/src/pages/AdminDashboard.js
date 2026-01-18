@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { adminAPI } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import './AdminDashboard.css'; // We'll create this CSS file
 
 const AdminDashboard = () => {
   const { getDailyStats } = useCart();
@@ -8,6 +10,8 @@ const AdminDashboard = () => {
   const [allOrders, setAllOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isTableOpen, setIsTableOpen] = useState(true); // Table is open by default
+  const { darkMode, toggleTheme } = useTheme();
 
   // Fetch all data from backend on component mount and periodically
   useEffect(() => {
@@ -61,11 +65,34 @@ const AdminDashboard = () => {
 
   const recentOrders = allOrders
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5);
+    .slice(0, 10);
+
+  const toggleTable = () => {
+    setIsTableOpen(!isTableOpen);
+  };
+
+  const getStatusColor = (status) => {
+    switch(status.toLowerCase()) {
+      case 'delivered': return '#52c41a';
+      case 'processing': return '#1890ff';
+      case 'placed': return '#faad14';
+      default: return '#666';
+    }
+  };
+
+  const getPaymentColor = (paymentStatus) => {
+    switch(paymentStatus?.toLowerCase()) {
+      case 'paid': 
+      case 'completed': 
+      case 'success': return '#52c41a';
+      case 'pending': return '#faad14';
+      default: return '#ff4d4f';
+    }
+  };
 
   if (loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
+      <div className={`loading-container ${darkMode ? 'dark' : ''}`}>
         <h2>Loading Dashboard...</h2>
         <p>Please wait while we fetch the latest data.</p>
       </div>
@@ -73,224 +100,190 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '2rem', color: '#1890ff' }}>
-        📊 Admin Dashboard
-      </h1>
+    <div className={`admin-dashboard-container ${darkMode ? 'dark' : ''}`}>
+      {/* Theme Toggle */}
+      <button className="theme-toggle-btn" onClick={toggleTheme}>
+        {darkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
+      </button>
 
-      <div style={{ 
-        textAlign: 'center', 
-        marginBottom: '2rem',
-        padding: '1rem',
-        backgroundColor: '#f0f8ff',
-        borderRadius: '8px',
-        border: '1px solid #1890ff'
-      }}>
-        <h3 style={{ margin: 0, color: '#1890ff' }}>
-          Last Updated: {currentTime.toLocaleTimeString()}
-        </h3>
-      </div>
-
-      {/* Daily Statistics Cards */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-        gap: '1.5rem',
-        marginBottom: '3rem'
-      }}>
-        <div style={{ 
-          padding: '2rem', 
-          backgroundColor: '#1890ff',
-          color: 'white',
-          borderRadius: '10px',
-          textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)'
-        }}>
-          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-            {stats.today?.totalOrders || 0}
-          </div>
-          <div style={{ fontSize: '1.1rem' }}>Orders Today</div>
-        </div>
-
-        <div style={{ 
-          padding: '2rem', 
-          backgroundColor: '#52c41a',
-          color: 'white',
-          borderRadius: '10px',
-          textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(82, 196, 26, 0.3)'
-        }}>
-          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-            GH₵{stats.today?.totalRevenue || 0}
-          </div>
-          <div style={{ fontSize: '1.1rem' }}>Revenue Today</div>
-        </div>
-
-        <div style={{ 
-          padding: '2rem', 
-          backgroundColor: '#faad14',
-          color: 'white',
-          borderRadius: '10px',
-          textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(250, 173, 20, 0.3)'
-        }}>
-          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-            {stats.today?.totalDataVolume || '0GB'}
-          </div>
-          <div style={{ fontSize: '1.1rem' }}>Data Sold Today</div>
-        </div>
-
-        <div style={{ 
-          padding: '2rem', 
-          backgroundColor: '#722ed1',
-          color: 'white',
-          borderRadius: '10px',
-          textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(114, 46, 209, 0.3)'
-        }}>
-          <div style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-            {totalAllTimeOrders}
-          </div>
-          <div style={{ fontSize: '1.1rem' }}>Total Orders</div>
+      <div className="dashboard-header">
+        <h1>📊 Admin Dashboard</h1>
+        <div className="header-controls">
+          <span className="last-updated">
+            Last Updated: {currentTime.toLocaleTimeString()}
+          </span>
+          <button className="toggle-table-btn" onClick={toggleTable}>
+            {isTableOpen ? '← Hide Transactions' : 'Show Transactions →'}
+          </button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-        {/* Recent Orders */}
-        <div>
-          <h3 style={{ borderBottom: '2px solid #1890ff', paddingBottom: '0.5rem' }}>
-            📋 Recent Orders ({allOrders.length} total)
-          </h3>
+      {/* Slide-out Transaction Table */}
+      <div className={`side-table-container ${isTableOpen ? 'open' : ''}`}>
+        <div className="side-table-content">
+          <div className="table-header">
+            <h3>📋 Recent Transactions ({recentOrders.length})</h3>
+            <button className="close-table-btn" onClick={toggleTable}>
+              ×
+            </button>
+          </div>
+          
           {recentOrders.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-              No orders yet
-            </div>
+            <div className="no-data">No transactions found</div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
-              {recentOrders.map(order => (
-                <div key={order._id} style={{ 
-                  border: '1px solid #e8e8e8',
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  backgroundColor: 'white'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <strong>Order #{order.orderId}</strong>
-                    <span style={{ 
-                      padding: '0.3rem 0.8rem',
-                      backgroundColor: order.status === 'delivered' ? '#52c41a' : 
-                                     order.status === 'processing' ? '#1890ff' : '#faad14',
-                      color: 'white',
-                      borderRadius: '15px',
-                      fontSize: '0.8rem',
-                      fontWeight: 'bold'
-                    }}>
-                      {order.status}
-                    </span>
-                  </div>
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
-                    GH₵{order.total} • {order.items.length} item(s)
-                  </div>
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#999' }}>
-                    {new Date(order.createdAt).toLocaleString()}
-                  </div>
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#666' }}>
-                    📧 {order.recipientEmail} • 📞 {order.recipientPhone}
-                  </div>
-                </div>
-              ))}
+            <div className="table-responsive">
+              <table className="transactions-table">
+                <thead>
+                  <tr>
+                    <th>TRX Code</th>
+                    <th>Packages</th>
+                    <th>Amount</th>
+                    <th>Beneficiary</th>
+                    <th>Payment</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentOrders.map(order => (
+                    <tr key={order._id || order.id}>
+                      <td>
+                        <span className="trx-code">TRX{order.orderId?.slice(-6) || order._id?.slice(-6)}</span>
+                      </td>
+                      <td className="packages">
+                        {order.items?.map(item => item.network + ' ' + item.size).join(', ') || 'N/A'}
+                      </td>
+                      <td className="amount">GH₵{order.total || 0}</td>
+                      <td className="beneficiary">
+                        {order.recipientPhone || order.customerPhone || 'N/A'}
+                      </td>
+                      <td>
+                        <span 
+                          className="payment-badge"
+                          style={{ backgroundColor: getPaymentColor(order.paymentStatus || order.status) }}
+                        >
+                          {order.paymentStatus || 'Pending'}
+                        </span>
+                      </td>
+                      <td className="date-time">
+                        {new Date(order.createdAt || order.date).toLocaleString()}
+                      </td>
+                      <td>
+                        <span 
+                          className="status-badge"
+                          style={{ backgroundColor: getStatusColor(order.status) }}
+                        >
+                          {order.status || 'Placed'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
+      </div>
 
-        {/* Network Statistics */}
-        <div>
-          <h3 style={{ borderBottom: '2px solid #52c41a', paddingBottom: '0.5rem' }}>
-            📱 Network Distribution
-          </h3>
+      {/* Dashboard Content */}
+      <div className="dashboard-content">
+        {/* Statistics Cards */}
+        <div className="stats-grid">
+          <div className="stat-card" style={{ borderColor: '#1890ff' }}>
+            <div className="stat-icon">📦</div>
+            <div className="stat-value">{stats.today?.totalOrders || 0}</div>
+            <div className="stat-label">Orders Today</div>
+          </div>
+
+          <div className="stat-card" style={{ borderColor: '#52c41a' }}>
+            <div className="stat-icon">💰</div>
+            <div className="stat-value">GH₵{stats.today?.totalRevenue || 0}</div>
+            <div className="stat-label">Revenue Today</div>
+          </div>
+
+          <div className="stat-card" style={{ borderColor: '#faad14' }}>
+            <div className="stat-icon">📊</div>
+            <div className="stat-value">{stats.today?.totalDataVolume || '0GB'}</div>
+            <div className="stat-label">Data Sold Today</div>
+          </div>
+
+          <div className="stat-card" style={{ borderColor: '#722ed1' }}>
+            <div className="stat-icon">📈</div>
+            <div className="stat-value">{totalAllTimeOrders}</div>
+            <div className="stat-label">Total Orders</div>
+          </div>
+        </div>
+
+        {/* Network Distribution */}
+        <div className="network-distribution">
+          <h3>📱 Network Distribution</h3>
           {Object.keys(networkStats).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
-              No network data available
-            </div>
+            <div className="no-data">No network data available</div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="network-bars">
               {Object.entries(networkStats).map(([network, count]) => (
-                <div key={network} style={{ 
-                  border: '1px solid #e8e8e8',
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  backgroundColor: 'white'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 'bold', color: network === 'MTN' ? '#ff4d4f' : '#52c41a' }}>
-                      {network}
-                    </span>
-                    <span style={{ 
-                      padding: '0.3rem 0.8rem',
-                      backgroundColor: network === 'MTN' ? '#ff4d4f' : '#52c41a',
-                      color: 'white',
-                      borderRadius: '15px',
-                      fontSize: '0.9rem',
-                      fontWeight: 'bold'
-                    }}>
-                      {count} orders
-                    </span>
+                <div key={network} className="network-bar">
+                  <span className="network-name">{network}</span>
+                  <div className="bar-container">
+                    <div 
+                      className="bar-fill" 
+                      style={{ 
+                        width: `${(count / totalAllTimeOrders) * 100}%`,
+                        backgroundColor: network === 'MTN' ? '#ff4d4f' : 
+                                       network === 'Telecel' ? '#52c41a' : '#1890ff'
+                      }}
+                    />
                   </div>
-                  <div style={{ 
-                    marginTop: '0.5rem',
-                    height: '8px',
-                    backgroundColor: '#f0f0f0',
-                    borderRadius: '4px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      height: '100%',
-                      backgroundColor: network === 'MTN' ? '#ff4d4f' : '#52c41a',
-                      width: `${(count / totalAllTimeOrders) * 100}%`,
-                      transition: 'width 0.5s ease'
-                    }} />
-                  </div>
+                  <span className="network-count">{count} orders</span>
+                  <span className="network-percent">
+                    {Math.round((count / totalAllTimeOrders) * 100)}%
+                  </span>
                 </div>
               ))}
             </div>
           )}
         </div>
-      </div>
 
-      {/* All-time Revenue */}
-      <div style={{ 
-        marginTop: '2rem',
-        padding: '1.5rem',
-        backgroundColor: '#fff7e6',
-        border: '1px solid #ffd591',
-        borderRadius: '8px',
-        textAlign: 'center'
-      }}>
-        <h3 style={{ color: '#fa8c16', marginBottom: '0.5rem' }}>💰 All-Time Revenue</h3>
-        <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#fa8c16' }}>
-          GH₵{totalAllTimeRevenue}
+        {/* All-Time Revenue */}
+        <div className="all-time-revenue">
+          <h3>💰 All-Time Revenue</h3>
+          <div className="revenue-amount">GH₵{totalAllTimeRevenue}</div>
+          <p>Total revenue generated from {totalAllTimeOrders} orders</p>
         </div>
-        <p style={{ margin: '0.5rem 0 0 0', color: '#666' }}>
-          Total revenue generated from all {totalAllTimeOrders} orders
-        </p>
-      </div>
 
-      {/* Refresh Button */}
-      <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-        <button 
-          onClick={() => window.location.reload()}
-          style={{
-            padding: '0.8rem 1.5rem',
-            backgroundColor: '#1890ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          🔄 Refresh Dashboard
-        </button>
+        {/* Recent Orders Summary */}
+        <div className="recent-orders-summary">
+          <h3>🔄 Recent Activity</h3>
+          <div className="orders-list">
+            {recentOrders.slice(0, 5).map(order => (
+              <div key={order._id} className="order-item">
+                <div className="order-header">
+                  <span className="order-id">Order #{order.orderId || order._id?.slice(-6)}</span>
+                  <span 
+                    className="order-status"
+                    style={{ color: getStatusColor(order.status) }}
+                  >
+                    {order.status || 'Placed'}
+                  </span>
+                </div>
+                <div className="order-details">
+                  <span>GH₵{order.total} • {order.items?.length || 0} item(s)</span>
+                  <span>{new Date(order.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Refresh Button */}
+        <div className="action-buttons">
+          <button 
+            className="refresh-btn"
+            onClick={() => window.location.reload()}
+          >
+            🔄 Refresh Dashboard
+          </button>
+        </div>
       </div>
     </div>
   );
