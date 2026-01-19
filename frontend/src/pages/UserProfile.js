@@ -378,8 +378,8 @@ const UserProfile = () => {
               
               <div className="contact-info">
                 <h4>Support Information</h4>
-                <p><strong>📧 Email:</strong> support@portal02.com</p>
-                <p><strong>📞 Phone:</strong> +233 24 911 6309</p>
+                <p><strong>📧 Email:</strong> support@AllenDataHub.com</p>
+                <p><strong>📞 Phone:</strong> +233 59 2786175</p>
                 <p><strong>🕒 Hours:</strong> Monday - Friday, 9:00 AM - 5:00 PM GMT</p>
                 <p><strong>📍 Address:</strong> Accra, Ghana</p>
                 <p><strong>⚡ Response Time:</strong> Within 24 hours</p>

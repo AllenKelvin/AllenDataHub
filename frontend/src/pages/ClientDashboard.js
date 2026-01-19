@@ -452,7 +452,7 @@ const ClientDashboard = () => {
                 <strong>Email:</strong> {user.email || 'Not set'}
               </div>
               <div className="user-field">
-                <strong>Status:</strong> <span className="status-active">Active</span>
+                <strong></strong> <span className="status-active">Active</span>
               </div>
               <div className="user-field">
                 <strong>Member Since:</strong> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
@@ -465,51 +465,41 @@ const ClientDashboard = () => {
         )}
       </div>
 
-      {/* Stats Cards */}
-      <div className="stats-section">
-        <div className="stats-header">
-          <h2 className="section-title">📈 Your Statistics</h2>
-          <p className="section-subtitle">Real-time data from your orders</p>
-        </div>
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon">💰</div>
-            <div className="stat-value">GHS {stats.totalSpent.toFixed(2)}</div>
-            <div className="stat-label">Total Spent</div>
-            <div className="stat-details">
-              <span className="stat-detail">Week: GHS {stats.weekSpent.toFixed(2)}</span>
-              <span className="stat-detail">Month: GHS {stats.monthSpent.toFixed(2)}</span>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">📦</div>
-            <div className="stat-value">{stats.todayOrders}</div>
-            <div className="stat-label">Orders Today</div>
-            <div className="stat-details">
-              <span className="stat-detail">Today's Data: {stats.todayDataFormatted}</span>
-              <span className="stat-detail">Total Orders: {stats.totalOrders}</span>
-            </div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">💾</div>
-            <div className="stat-value">{stats.totalDataFormatted}</div>
-            <div className="stat-label">Total Data Volume</div>
-            <div className="stat-details">
-              <span className="stat-detail">Actual: {stats.totalDataGB.toFixed(2)} GB</span>
-              <span className="stat-detail">From {stats.totalOrders} orders</span>
-            </div>
-          </div>
-          <div className="stat-card performance-card">
-            <div className="stat-icon">📊</div>
-            <div className="stat-value">{stats.deliveredOrders}/{stats.totalOrders}</div>
-            <div className="stat-label">Delivered Orders</div>
-            <div className="stat-details">
-              <span className="stat-detail">Success Rate: {stats.orderSuccessRate}%</span>
-              <span className="stat-detail">Avg Order: GHS {stats.averageOrderValue.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      // In the stats section, replace with this simplified version:
+
+{/* Stats Cards */}
+<div className="stats-section">
+  <div className="stats-header">
+    <h2 className="section-title">📈 Your Statistics</h2>
+    <p className="section-subtitle">Real-time data from your orders</p>
+  </div>
+  <div className="stats-grid">
+    <div className="stat-card total-spent-card">
+      <div className="stat-icon">💰</div>
+      <div className="stat-value">GHS {stats.totalSpent?.toFixed(2) || '0.00'}</div>
+      <div className="stat-label">Total Spent</div>
+      <div className="stat-note">All successful orders</div>
+    </div>
+    <div className="stat-card today-orders-card">
+      <div className="stat-icon">📦</div>
+      <div className="stat-value">{stats.todayOrders || 0}</div>
+      <div className="stat-label">Orders Today</div>
+      <div className="stat-note">Orders placed today</div>
+    </div>
+    <div className="stat-card data-volume-card">
+      <div className="stat-icon">💾</div>
+      <div className="stat-value">{stats.totalDataFormatted || '0 GB'}</div>
+      <div className="stat-label">Total Data Volume</div>
+      <div className="stat-note">Total data purchased</div>
+    </div>
+    <div className="stat-card delivered-orders-card">
+      <div className="stat-icon">✅</div>
+      <div className="stat-value">{stats.deliveredOrders || 0}</div>
+      <div className="stat-label">Delivered Orders</div>
+      <div className="stat-note">Successfully delivered</div>
+    </div>
+  </div>
+</div>
 
       {/* Available Packages Section */}
       <div className="packages-section">

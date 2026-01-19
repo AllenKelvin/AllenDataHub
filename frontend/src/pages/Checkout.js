@@ -283,8 +283,6 @@ const Checkout = () => {
                 disabled={loading}
               >
                 <option value="paystack">PayStack</option>
-                <option value="cash">Cash Payment</option>
-                <option value="mobile_money">Mobile Money</option>
               </select>
             </div>
             
@@ -295,7 +293,7 @@ const Checkout = () => {
                 <li>Order will be verified with our server before payment</li>
                 <li>Ensure phone numbers are valid Ghanaian numbers</li>
                 <li>Data bundles are delivered instantly after successful payment</li>
-                <li>Contact support if you don't receive your data within 5 minutes</li>
+                <li>Contact support if you don't receive your data within 4-5 hours</li>
               </ul>
             </div>
             
