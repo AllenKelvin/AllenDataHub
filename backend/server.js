@@ -4,7 +4,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -23,17 +22,27 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// MongoDB Connection
+// MongoDB Connection with improved settings
 const MONGODB_URI = process.env.MONGODB_URI;
 
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('✅ MongoDB Connected Successfully'))
-.catch(err => {
-  console.log('❌ MongoDB Connection Error:', err.message);
-});
+// MongoDB connection with retry logic
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    });
+    console.log('✅ MongoDB Connected Successfully');
+  } catch (err) {
+    console.log('❌ MongoDB Connection Error:', err.message);
+    console.log('⚠️ Retrying connection in 5 seconds...');
+    setTimeout(connectDB, 5000); // Retry connection after 5 seconds
+  }
+};
+
+connectDB();
 
 // MongoDB Schemas
 const userSchema = new mongoose.Schema({
@@ -130,7 +139,7 @@ const isValidGhanaNumber = (phone) => {
   return ghanaRegex.test(cleanPhone);
 };
 
-// Auth Middleware
+// Auth Middleware with better error handling
 const authMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -142,6 +151,12 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
     
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.log('⚠️ MongoDB not connected, using cached data');
+      return res.status(503).json({ error: 'Database temporarily unavailable' });
+    }
+    
     const user = await User.findById(req.userId).select('-password');
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -151,7 +166,13 @@ const authMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Auth middleware error:', error.message);
-    res.status(401).json({ error: 'Invalid authentication token' });
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Invalid authentication token' });
+    }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    res.status(401).json({ error: 'Authentication failed' });
   }
 };
 
@@ -165,6 +186,13 @@ const adminMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.log('⚠️ MongoDB not connected in admin middleware');
+      return res.status(503).json({ error: 'Database temporarily unavailable' });
+    }
+    
     const user = await User.findById(decoded.userId);
     
     if (!user || user.role !== 'admin') {
@@ -180,13 +208,14 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ROUTES ====================
 
-// Health Check
+// Health Check with DB status
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK',
     service: 'AllenDataHub API',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
   });
 });
 
@@ -198,6 +227,11 @@ app.post('/api/auth/register', async (req, res) => {
     // Validation
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' });
+    }
+
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
     }
 
     // Check if user already exists
@@ -243,6 +277,9 @@ app.post('/api/auth/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
+    if (error.name === 'MongoServerError' && error.code === 11000) {
+      return res.status(400).json({ error: 'Username or email already exists' });
+    }
     res.status(500).json({ error: 'Server error during registration' });
   }
 });
@@ -255,6 +292,11 @@ app.post('/api/auth/login', async (req, res) => {
     // Validation
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
     }
 
     // Find user
@@ -406,7 +448,7 @@ app.post('/api/users/contact', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Data Plans
+// Get Data Plans with fallback
 app.get('/api/plans', async (req, res) => {
   try {
     const { network } = req.query;
@@ -414,6 +456,12 @@ app.get('/api/plans', async (req, res) => {
     
     if (network && network !== 'All') {
       query.network = network;
+    }
+
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.log('⚠️ MongoDB not connected, returning fallback plans');
+      return getFallbackPlans(network, res);
     }
 
     const plans = await DataPlan.find(query).sort({ price: 1 });
@@ -452,23 +500,65 @@ app.get('/api/plans', async (req, res) => {
     res.json(plans);
   } catch (error) {
     console.error('Plans fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch data plans' });
+    getFallbackPlans(req.query.network, res);
   }
 });
+
+// Helper function for fallback plans
+function getFallbackPlans(network, res) {
+  const fallbackPlans = [
+    // MTN Plans
+    { _id: 'mtn1', network: 'MTN', size: '1GB', price: 4.15, validity: '30 days', description: 'MTN Non Expiry', popular: true },
+    { _id: 'mtn2', network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
+    { _id: 'mtn3', network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
+    { _id: 'mtn4', network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
+    { _id: 'mtn5', network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
+    
+    // Telecel Plans
+    { _id: 'telecel1', network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
+    { _id: 'telecel2', network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
+    { _id: 'telecel3', network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
+    { _id: 'telecel4', network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
+    
+    // AirtelTigo Plans
+    { _id: 'airteltigo1', network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
+    { _id: 'airteltigo2', network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
+    { _id: 'airteltigo3', network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+    { _id: 'airteltigo4', network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+    { _id: 'airteltigo5', network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+    { _id: 'airteltigo6', network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+    { _id: 'airteltigo7', network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
+  ];
+
+  let filteredPlans = fallbackPlans;
+  if (network && network !== 'All') {
+    filteredPlans = fallbackPlans.filter(plan => plan.network === network);
+  }
+
+  res.json(filteredPlans);
+}
 
 // Get Plans by Network
 app.get('/api/plans/network/:network', async (req, res) => {
   try {
     const { network } = req.params;
+    
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.log('⚠️ MongoDB not connected, returning fallback network plans');
+      const fallbackPlans = getFallbackPlans(network, res);
+      return;
+    }
+    
     const plans = await DataPlan.find({ network }).sort({ price: 1 });
     res.json(plans);
   } catch (error) {
     console.error('Network plans fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch network plans' });
+    getFallbackPlans(req.params.network, res);
   }
 });
 
-// ORDER VERIFICATION - Updated to handle frontend data structure
+// ORDER VERIFICATION
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone } = req.body;
@@ -640,6 +730,11 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Customer email and phone are required' });
     }
 
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
+
     // Generate unique TRX code
     const trxCode = generateTRXCode();
 
@@ -677,6 +772,12 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error('Order creation error:', error);
+    if (error.name === 'MongoServerError' && error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Order ID already exists. Please try again.' 
+      });
+    }
     res.status(500).json({ 
       success: false,
       error: 'Failed to create order',
@@ -690,6 +791,11 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
+
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
 
     const orders = await Order.find({ userId: req.userId })
       .sort({ createdAt: -1 })
@@ -736,6 +842,11 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
     
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
+    
     const orders = await Order.find({ userId: req.userId })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -763,6 +874,11 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
 // Get Order by TRX Code
 app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
   try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
+    
     const order = await Order.findOne({ 
       trxCode: req.params.trxCode,
       userId: req.userId 
@@ -782,6 +898,11 @@ app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
 // Get Single Order
 app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
+    
     const order = await Order.findOne({
       _id: req.params.id,
       userId: req.userId
@@ -801,6 +922,11 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
 // Cancel Order
 app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
+    
     const order = await Order.findOne({
       _id: req.params.id,
       userId: req.userId
@@ -830,72 +956,225 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Dashboard Stats
+// Get User Dashboard Stats - FIXED ObjectId issue
 app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   try {
     const userId = req.userId;
+    
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database temporarily unavailable',
+        stats: getFallbackStats()
+      });
+    }
     
     // Get today's date at start of day
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [
-      totalOrders,
-      todayOrders,
-      deliveredOrders,
-      totalSpentResult,
-      recentOrders
-    ] = await Promise.all([
-      Order.countDocuments({ userId }),
-      Order.countDocuments({ 
-        userId, 
-        createdAt: { $gte: today } 
-      }),
-      Order.countDocuments({ 
-        userId, 
-        status: 'delivered' 
-      }),
-      Order.aggregate([
-        { $match: { userId: mongoose.Types.ObjectId(userId), paymentStatus: 'success' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean()
-    ]);
-
-    const totalSpent = totalSpentResult.length > 0 ? totalSpentResult[0].total : 0;
-    const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
-
+    // Get start of week (Monday)
+    const startOfWeek = new Date();
+    startOfWeek.setHours(0, 0, 0, 0);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+    startOfWeek.setDate(diff);
+    
+    // Get start of month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    // Fetch all user orders with details
+    const userOrders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .populate('items.planId');
+    
+    // Calculate statistics
+    const totalOrders = userOrders.length;
+    
+    // Calculate today's orders
+    const todayOrders = userOrders.filter(order => 
+      order.createdAt >= today
+    ).length;
+    
+    // Calculate total spent (only from successful payments)
+    const totalSpent = userOrders
+      .filter(order => order.paymentStatus === 'success')
+      .reduce((sum, order) => sum + order.totalAmount, 0);
+    
+    // Calculate week's and month's spent
+    const weekSpent = userOrders
+      .filter(order => 
+        order.paymentStatus === 'success' && 
+        order.createdAt >= startOfWeek
+      )
+      .reduce((sum, order) => sum + order.totalAmount, 0);
+    
+    const monthSpent = userOrders
+      .filter(order => 
+        order.paymentStatus === 'success' && 
+        order.createdAt >= startOfMonth
+      )
+      .reduce((sum, order) => sum + order.totalAmount, 0);
+    
+    // Calculate ACTUAL total data volume from all orders
+    let totalDataGB = 0;
+    let totalDataMB = 0;
+    
+    userOrders.forEach(order => {
+      order.items.forEach(item => {
+        const quantity = item.quantity || 1;
+        const size = item.size || '';
+        
+        if (size.includes('GB')) {
+          const gbValue = parseFloat(size.replace('GB', '').trim());
+          if (!isNaN(gbValue)) {
+            totalDataGB += gbValue * quantity;
+          }
+        } else if (size.includes('MB')) {
+          const mbValue = parseFloat(size.replace('MB', '').trim());
+          if (!isNaN(mbValue)) {
+            totalDataMB += mbValue * quantity;
+          }
+        } else if (size.includes('TB')) {
+          const tbValue = parseFloat(size.replace('TB', '').trim());
+          if (!isNaN(tbValue)) {
+            totalDataGB += tbValue * 1024 * quantity;
+          }
+        }
+      });
+    });
+    
+    // Convert MB to GB (1024MB = 1GB)
+    const totalDataFromMB = totalDataMB / 1024;
+    const totalDataVolume = totalDataGB + totalDataFromMB;
+    
+    // Calculate data volume for today
+    let todayDataGB = 0;
+    let todayDataMB = 0;
+    
+    const todayOrdersList = userOrders.filter(order => order.createdAt >= today);
+    todayOrdersList.forEach(order => {
+      order.items.forEach(item => {
+        const quantity = item.quantity || 1;
+        const size = item.size || '';
+        
+        if (size.includes('GB')) {
+          const gbValue = parseFloat(size.replace('GB', '').trim());
+          if (!isNaN(gbValue)) {
+            todayDataGB += gbValue * quantity;
+          }
+        } else if (size.includes('MB')) {
+          const mbValue = parseFloat(size.replace('MB', '').trim());
+          if (!isNaN(mbValue)) {
+            todayDataMB += mbValue * quantity;
+          }
+        }
+      });
+    });
+    
+    const todayDataVolume = todayDataGB + (todayDataMB / 1024);
+    
+    // Calculate average order value
+    const successfulOrders = userOrders.filter(order => order.paymentStatus === 'success');
+    const averageOrderValue = successfulOrders.length > 0 
+      ? totalSpent / successfulOrders.length 
+      : 0;
+    
+    // Get delivered orders count
+    const deliveredOrders = userOrders.filter(order => 
+      order.status === 'delivered'
+    ).length;
+    
+    // Get recent orders for display
+    const recentOrders = userOrders.slice(0, 5).map(order => ({
+      id: order.trxCode,
+      package: order.items[0]?.network + '-' + order.items[0]?.size,
+      amount: order.totalAmount,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      date: order.createdAt,
+      items: order.items.map(item => ({
+        network: item.network,
+        size: item.size,
+        price: item.price
+      }))
+    }));
+    
     res.json({
       stats: {
         totalOrders,
         todayOrders,
         deliveredOrders,
-        totalSpent,
-        averageOrderValue,
-        totalData: `${totalOrders * 2}GB` // Estimate 2GB per order
+        totalSpent: parseFloat(totalSpent.toFixed(2)),
+        weekSpent: parseFloat(weekSpent.toFixed(2)),
+        monthSpent: parseFloat(monthSpent.toFixed(2)),
+        averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
+        totalDataGB: parseFloat(totalDataVolume.toFixed(2)),
+        totalDataMB: totalDataMB,
+        todayDataGB: parseFloat(todayDataVolume.toFixed(2)),
+        totalDataFormatted: totalDataVolume >= 1 ? 
+          `${totalDataVolume.toFixed(2)} GB` : 
+          `${(totalDataVolume * 1024).toFixed(0)} MB`,
+        todayDataFormatted: todayDataVolume >= 1 ? 
+          `${todayDataVolume.toFixed(2)} GB` : 
+          `${(todayDataVolume * 1024).toFixed(0)} MB`,
+        orderSuccessRate: totalOrders > 0 ? 
+          parseFloat(((deliveredOrders / totalOrders) * 100).toFixed(1)) : 0
       },
-      recentOrders: recentOrders.map(order => ({
-        id: order.trxCode,
-        package: order.items[0]?.network + '-' + order.items[0]?.size,
-        amount: order.totalAmount,
-        status: order.status,
-        date: order.createdAt
-      }))
+      recentOrders,
+      summary: {
+        totalItems: userOrders.reduce((sum, order) => 
+          sum + (order.items?.reduce((itemSum, item) => 
+            itemSum + (item.quantity || 1), 0) || 0), 0),
+        networks: [...new Set(userOrders.flatMap(order => 
+          order.items?.map(item => item.network) || []
+        ))],
+        lastOrderDate: userOrders[0]?.createdAt || null,
+        firstOrderDate: userOrders[userOrders.length - 1]?.createdAt || null
+      }
     });
+    
   } catch (error) {
     console.error('Dashboard stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    res.status(500).json({ 
+      error: 'Failed to fetch dashboard stats',
+      stats: getFallbackStats(),
+      message: error.message 
+    });
   }
 });
+
+// Helper function for fallback stats
+function getFallbackStats() {
+  return {
+    totalOrders: 0,
+    todayOrders: 0,
+    deliveredOrders: 0,
+    totalSpent: 0,
+    weekSpent: 0,
+    monthSpent: 0,
+    averageOrderValue: 0,
+    totalDataGB: 0,
+    totalDataMB: 0,
+    todayDataGB: 0,
+    totalDataFormatted: '0 GB',
+    todayDataFormatted: '0 GB',
+    orderSuccessRate: 0
+  };
+}
 
 // Get Transaction History with Pagination
 app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
+
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    }
 
     const orders = await Order.find({ userId: req.userId })
       .sort({ createdAt: -1 })
@@ -1165,15 +1444,15 @@ app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
       totalSpentResult,
       recentOrders
     ] = await Promise.all([
-      Order.countDocuments({ userId }),
+      Order.countDocuments({ userId: new mongoose.Types.ObjectId(userId) }),
       Order.aggregate([
         { $match: { 
-          userId: mongoose.Types.ObjectId(userId),
+          userId: new mongoose.Types.ObjectId(userId),
           paymentStatus: 'success'
         }},
         { $group: { _id: null, total: { $sum: '$totalAmount' } } }
       ]),
-      Order.find({ userId })
+      Order.find({ userId: new mongoose.Types.ObjectId(userId) })
         .sort({ createdAt: -1 })
         .limit(10)
         .lean()
@@ -1221,5 +1500,5 @@ app.listen(PORT, () => {
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
-  console.log(`📊 Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
+  console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
 });

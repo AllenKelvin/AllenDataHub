@@ -14,14 +14,22 @@ const ClientDashboard = () => {
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalSpent: 0,
-    totalData: '0GB',
-    todayOrders: 0
+    totalDataFormatted: '0 GB',
+    totalDataGB: 0,
+    todayOrders: 0,
+    todayDataFormatted: '0 GB',
+    weekSpent: 0,
+    monthSpent: 0,
+    deliveredOrders: 0,
+    averageOrderValue: 0,
+    orderSuccessRate: 0
   });
   const [expandedNetwork, setExpandedNetwork] = useState(null);
   const [phoneNumbers, setPhoneNumbers] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [error, setError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
   const itemsPerPage = 10;
 
   // Network colors as requested: MTN-Yellow, Telecel-Red, AirtelTigo-Blue
@@ -81,7 +89,7 @@ const ClientDashboard = () => {
     };
 
     fetchData();
-  }, [currentPage]);
+  }, [currentPage, refreshKey]);
 
   // Fetch plans from backend API
   const fetchPlans = async () => {
@@ -97,9 +105,9 @@ const ClientDashboard = () => {
           }
           acc[plan.network].push({
             _id: plan._id,
-            id: plan._id, // For compatibility
+            id: plan._id,
             size: plan.size,
-            price: plan.price.toString(),
+            price: plan.price,
             validity: plan.validity,
             description: plan.description || `${plan.network} ${plan.size}`,
             popular: plan.popular || false
@@ -114,7 +122,12 @@ const ClientDashboard = () => {
             name: network,
             color: networkColors[network] || '#666',
             icon: networkIcons[network] || '📱',
-            plans: groupedPlans[network]
+            plans: groupedPlans[network].sort((a, b) => {
+              // Sort by size (extract numeric value)
+              const sizeA = parseFloat(a.size.replace(/[^\d.]/g, '')) || 0;
+              const sizeB = parseFloat(b.size.replace(/[^\d.]/g, '')) || 0;
+              return sizeA - sizeB;
+            })
           }));
 
         setNetworks(networkObjects);
@@ -153,8 +166,15 @@ const ClientDashboard = () => {
                      'N/A',
           paymentSource: order.paymentMethod || order.paymentSource || 'Paystack',
           paymentStatus: order.paymentStatus || order.status || 'pending',
-          date: order.createdAt ? new Date(order.createdAt).toLocaleString() : new Date().toLocaleString(),
-          status: order.status || 'processing'
+          date: order.createdAt ? new Date(order.createdAt).toLocaleString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }) : new Date().toLocaleString(),
+          status: order.status || 'processing',
+          items: order.items || []
         }));
         
         setTransactions(apiTransactions);
@@ -175,14 +195,22 @@ const ClientDashboard = () => {
       const response = await userAPI.getDashboardStats();
       
       if (response.data && response.data.stats) {
+        console.log('📊 Dashboard stats received:', response.data.stats);
         setStats({
           totalOrders: response.data.stats.totalOrders || 0,
           totalSpent: response.data.stats.totalSpent || 0,
-          totalData: response.data.stats.totalData || '0GB',
-          todayOrders: response.data.stats.todayOrders || 0
+          weekSpent: response.data.stats.weekSpent || 0,
+          monthSpent: response.data.stats.monthSpent || 0,
+          totalDataFormatted: response.data.stats.totalDataFormatted || '0 GB',
+          totalDataGB: response.data.stats.totalDataGB || 0,
+          todayOrders: response.data.stats.todayOrders || 0,
+          todayDataFormatted: response.data.stats.todayDataFormatted || '0 GB',
+          deliveredOrders: response.data.stats.deliveredOrders || 0,
+          averageOrderValue: response.data.stats.averageOrderValue || 0,
+          orderSuccessRate: response.data.stats.orderSuccessRate || 0
         });
       } else {
-        // Calculate from transactions if no stats API
+        console.warn('⚠️ No stats data from API, calculating from transactions');
         calculateStatsFromTransactions();
       }
     } catch (error) {
@@ -191,7 +219,7 @@ const ClientDashboard = () => {
     }
   };
 
-  // Calculate stats from transactions data
+  // Calculate stats from transactions data (fallback)
   const calculateStatsFromTransactions = () => {
     const totalOrders = transactions.length;
     const totalSpent = transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
@@ -200,12 +228,35 @@ const ClientDashboard = () => {
       new Date(t.date).toDateString() === today
     ).length;
     
-    setStats({
+    // Calculate total data from transactions
+    let totalDataGB = 0;
+    transactions.forEach(t => {
+      if (t.items && Array.isArray(t.items)) {
+        t.items.forEach(item => {
+          const size = item.size || '';
+          const quantity = item.quantity || 1;
+          
+          if (size.includes('GB')) {
+            const gbValue = parseFloat(size.replace('GB', '').trim()) || 0;
+            totalDataGB += gbValue * quantity;
+          } else if (size.includes('MB')) {
+            const mbValue = parseFloat(size.replace('MB', '').trim()) || 0;
+            totalDataGB += (mbValue * quantity) / 1024;
+          }
+        });
+      }
+    });
+    
+    setStats(prev => ({
+      ...prev,
       totalOrders,
       totalSpent,
-      totalData: `${totalOrders * 2}GB`,
+      totalDataGB,
+      totalDataFormatted: totalDataGB >= 1 ? 
+        `${totalDataGB.toFixed(2)} GB` : 
+        `${(totalDataGB * 1024).toFixed(0)} MB`,
       todayOrders
-    });
+    }));
   };
 
   // Fallback plans if API fails
@@ -216,11 +267,11 @@ const ClientDashboard = () => {
         color: '#FFD700', 
         icon: '📱', 
         plans: [
-          { _id: 'mtn1', size: '1GB', price: '4.15', validity: '30 days', description: 'MTN Non Expiry' },
-          { _id: 'mtn2', size: '2GB', price: '8.30', validity: '30 days', description: 'MTN Non Expiry' },
-          { _id: 'mtn3', size: '3GB', price: '12.45', validity: '30 days', description: 'MTN Non Expiry' },
-          { _id: 'mtn4', size: '5GB', price: '20.75', validity: '30 days', description: 'MTN Non Expiry' },
-          { _id: 'mtn5', size: '10GB', price: '41.50', validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn1', size: '1GB', price: 4.15, validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn2', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn3', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn4', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn5', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
         ]
       },
       { 
@@ -228,10 +279,10 @@ const ClientDashboard = () => {
         color: '#FF4D4F', 
         icon: '📞', 
         plans: [
-          { _id: 'telecel1', size: '2GB', price: '7.18', validity: '30 days', description: 'Telecel' },
-          { _id: 'telecel2', size: '5GB', price: '17.95', validity: '30 days', description: 'Telecel' },
-          { _id: 'telecel3', size: '10GB', price: '35.90', validity: '30 days', description: 'Telecel' },
-          { _id: 'telecel4', size: '15GB', price: '52.90', validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel1', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel2', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel3', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel4', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
         ]
       },
       { 
@@ -239,10 +290,10 @@ const ClientDashboard = () => {
         color: '#1890FF', 
         icon: '📶', 
         plans: [
-          { _id: 'airteltigo1', size: '1GB', price: '5.00', validity: '7 days', description: 'AirtelTigo' },
-          { _id: 'airteltigo2', size: '3GB', price: '12.00', validity: '30 days', description: 'AirtelTigo' },
-          { _id: 'airteltigo3', size: '6GB', price: '22.00', validity: '30 days', description: 'AirtelTigo' },
-          { _id: 'airteltigo4', size: '10GB', price: '35.00', validity: '30 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo1', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo2', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo3', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo4', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo' },
         ]
       }
     ];
@@ -256,8 +307,15 @@ const ClientDashboard = () => {
     setStats({
       totalOrders: 0,
       totalSpent: 0,
-      totalData: '0GB',
-      todayOrders: 0
+      totalDataFormatted: '0 GB',
+      totalDataGB: 0,
+      todayOrders: 0,
+      todayDataFormatted: '0 GB',
+      weekSpent: 0,
+      monthSpent: 0,
+      deliveredOrders: 0,
+      averageOrderValue: 0,
+      orderSuccessRate: 0
     });
   };
 
@@ -291,13 +349,13 @@ const ClientDashboard = () => {
 
     const planWithPhone = {
       ...plan,
-      id: plan._id || plan.id,
+      id: plan._id,
       network: network.name,
-      recipientPhone: phoneNumber
+      recipientPhone: cleanPhone
     };
 
     addToCart(planWithPhone);
-    alert(`✅ ${network.name} ${plan.size} added to cart!`);
+    alert(`✅ ${network.name} ${plan.size} added to cart for ${cleanPhone}!`);
     
     // Clear the phone number input
     setPhoneNumbers({
@@ -311,6 +369,7 @@ const ClientDashboard = () => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('delivered') || statusLower.includes('success')) return '#52c41a';
     if (statusLower.includes('processing') || statusLower.includes('pending')) return '#faad14';
+    if (statusLower.includes('placed') || statusLower.includes('active')) return '#1890ff';
     return '#ff4d4f';
   };
 
@@ -319,6 +378,7 @@ const ClientDashboard = () => {
     const statusLower = status.toLowerCase();
     if (statusLower.includes('success') || statusLower.includes('paid')) return '#52c41a';
     if (statusLower.includes('pending')) return '#faad14';
+    if (statusLower.includes('processing') || statusLower.includes('initiated')) return '#1890ff';
     return '#ff4d4f';
   };
 
@@ -330,14 +390,18 @@ const ClientDashboard = () => {
 
   const handleRefresh = async () => {
     setLoading(true);
+    setError('');
     try {
       await Promise.all([
         fetchPlans(),
         fetchTransactions(),
         fetchDashboardStats()
       ]);
+      setRefreshKey(prev => prev + 1);
+      console.log('🔄 Dashboard data refreshed');
     } catch (error) {
       console.error('Error refreshing data:', error);
+      setError('Failed to refresh data. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -348,7 +412,7 @@ const ClientDashboard = () => {
       <div className={`loading-container ${darkMode ? 'dark' : ''}`}>
         <div className="loading-spinner"></div>
         <h2>Loading Dashboard...</h2>
-        <p>Fetching your data...</p>
+        <p>Fetching your latest data from server...</p>
       </div>
     );
   }
@@ -368,7 +432,16 @@ const ClientDashboard = () => {
 
       {/* Header with user info */}
       <div className="dashboard-header">
-        <h1>📊 Client Dashboard</h1>
+        <div className="header-top">
+          <h1>📊 Client Dashboard</h1>
+          <button 
+            className="refresh-btn"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            {loading ? '🔄 Loading...' : '🔄 Refresh Data'}
+          </button>
+        </div>
         {user && (
           <div className="user-info-card">
             <div className="user-details">
@@ -382,10 +455,10 @@ const ClientDashboard = () => {
                 <strong>Status:</strong> <span className="status-active">Active</span>
               </div>
               <div className="user-field">
-                <strong>Role:</strong> <span className="role-client">Client</span>
+                <strong>Member Since:</strong> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
               </div>
               <div className="user-field">
-                <strong>Contact:</strong> {user.phone || 'Not set'}
+                <strong>Phone:</strong> {user.phone || 'Not set'}
               </div>
             </div>
           </div>
@@ -394,35 +467,55 @@ const ClientDashboard = () => {
 
       {/* Stats Cards */}
       <div className="stats-section">
+        <div className="stats-header">
+          <h2 className="section-title">📈 Your Statistics</h2>
+          <p className="section-subtitle">Real-time data from your orders</p>
+        </div>
         <div className="stats-grid">
           <div className="stat-card">
+            <div className="stat-icon">💰</div>
             <div className="stat-value">GHS {stats.totalSpent.toFixed(2)}</div>
             <div className="stat-label">Total Spent</div>
+            <div className="stat-details">
+              <span className="stat-detail">Week: GHS {stats.weekSpent.toFixed(2)}</span>
+              <span className="stat-detail">Month: GHS {stats.monthSpent.toFixed(2)}</span>
+            </div>
           </div>
           <div className="stat-card">
+            <div className="stat-icon">📦</div>
             <div className="stat-value">{stats.todayOrders}</div>
             <div className="stat-label">Orders Today</div>
+            <div className="stat-details">
+              <span className="stat-detail">Today's Data: {stats.todayDataFormatted}</span>
+              <span className="stat-detail">Total Orders: {stats.totalOrders}</span>
+            </div>
           </div>
           <div className="stat-card">
-            <div className="stat-value">{stats.totalData}</div>
+            <div className="stat-icon">💾</div>
+            <div className="stat-value">{stats.totalDataFormatted}</div>
             <div className="stat-label">Total Data Volume</div>
+            <div className="stat-details">
+              <span className="stat-detail">Actual: {stats.totalDataGB.toFixed(2)} GB</span>
+              <span className="stat-detail">From {stats.totalOrders} orders</span>
+            </div>
           </div>
-          <div className="stat-card">
-            <button 
-              className="buy-bulk-btn"
-              onClick={() => alert('Bulk upload feature coming soon!')}
-            >
-              📥 Buy Bulk (Excel Upload)
-            </button>
+          <div className="stat-card performance-card">
+            <div className="stat-icon">📊</div>
+            <div className="stat-value">{stats.deliveredOrders}/{stats.totalOrders}</div>
+            <div className="stat-label">Delivered Orders</div>
+            <div className="stat-details">
+              <span className="stat-detail">Success Rate: {stats.orderSuccessRate}%</span>
+              <span className="stat-detail">Avg Order: GHS {stats.averageOrderValue.toFixed(2)}</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Available Packages Section */}
       <div className="packages-section">
-        <h2 className="section-title">Available Packages</h2>
+        <h2 className="section-title">📱 Available Data Packages</h2>
         <p className="section-subtitle">
-          To view packages grouped by network, use the accordion below.
+          Click on network names to view packages. Enter recipient phone number to add to cart.
         </p>
 
         {/* Network Accordions */}
@@ -464,7 +557,8 @@ const ClientDashboard = () => {
                         <thead>
                           <tr>
                             <th>VOLUME</th>
-                            <th>PRICE</th>
+                            <th>PRICE (GHS)</th>
+                            <th>VALIDITY</th>
                             <th>DESCRIPTION</th>
                             <th>BENEFICIARY NUMBER</th>
                             <th>ACTION</th>
@@ -474,7 +568,8 @@ const ClientDashboard = () => {
                           {network.plans.map(plan => (
                             <tr key={plan._id}>
                               <td className="volume">{plan.size}</td>
-                              <td className="price">GHS {plan.price}</td>
+                              <td className="price">{plan.price.toFixed(2)}</td>
+                              <td className="validity">{plan.validity}</td>
                               <td className="description">{plan.description}</td>
                               <td>
                                 <input
@@ -483,6 +578,7 @@ const ClientDashboard = () => {
                                   onChange={(e) => handlePhoneChange(plan._id, e.target.value)}
                                   placeholder="0241234567"
                                   className="phone-input"
+                                  maxLength="10"
                                 />
                               </td>
                               <td>
@@ -495,7 +591,7 @@ const ClientDashboard = () => {
                                     color: network.name === 'MTN' ? '#000' : '#fff'
                                   }}
                                 >
-                                  Add to Cart
+                                  {loading ? 'Adding...' : '🛒 Add to Cart'}
                                 </button>
                               </td>
                             </tr>
@@ -514,14 +610,15 @@ const ClientDashboard = () => {
       {/* Transactions Table */}
       <div className="transactions-section">
         <div className="section-header">
-          <h2 className="section-title">Recent Transactions</h2>
-          <button 
-            className="refresh-btn"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            {loading ? '🔄 Refreshing...' : '🔄 Refresh'}
-          </button>
+          <h2 className="section-title">📋 Transaction History</h2>
+          <div className="table-actions">
+            <button 
+              className="export-btn"
+              onClick={() => alert('Export feature coming soon!')}
+            >
+              📥 Export CSV
+            </button>
+          </div>
         </div>
         
         <div className="transactions-table-container">
@@ -531,7 +628,7 @@ const ClientDashboard = () => {
                 <th>TRX CODE</th>
                 <th>PACKAGE</th>
                 <th>DESCRIPTION</th>
-                <th>AMOUNT(GHS)</th>
+                <th>AMOUNT (GHS)</th>
                 <th>BENEFICIARY</th>
                 <th>PAYMENT SOURCE</th>
                 <th>PAYMENT STATUS</th>
@@ -552,7 +649,7 @@ const ClientDashboard = () => {
                     <td className="trx-code">{transaction.id}</td>
                     <td className="package">{transaction.package}</td>
                     <td className="description">{transaction.description}</td>
-                    <td className="amount">{transaction.amount}</td>
+                    <td className="amount">{transaction.amount.toFixed(2)}</td>
                     <td className="beneficiary">{transaction.beneficiary}</td>
                     <td className="payment-source">{transaction.paymentSource}</td>
                     <td>
