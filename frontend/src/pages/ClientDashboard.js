@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
-import { ordersAPI, userAPI } from '../services/api';
+import { plansAPI, ordersAPI, userAPI } from '../services/api';
 import './ClientDashboard.css';
 
 const ClientDashboard = () => {
@@ -9,6 +9,7 @@ const ClientDashboard = () => {
   const { darkMode } = useTheme();
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [networks, setNetworks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalOrders: 0,
@@ -20,152 +21,245 @@ const ClientDashboard = () => {
   const [phoneNumbers, setPhoneNumbers] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [error, setError] = useState('');
   const itemsPerPage = 10;
 
   // Network colors as requested: MTN-Yellow, Telecel-Red, AirtelTigo-Blue
-  const networks = [
-    { 
-      name: 'MTN', 
-      color: '#FFD700', // Yellow
-      icon: '📱', 
-      plans: [
-        { id: 1, size: '1GB', price: '4.15', validity: '30 days', description: 'MTN Non Expiry' },
-        { id: 2, size: '2GB', price: '8.30', validity: '30 days', description: 'MTN Non Expiry' },
-        { id: 3, size: '3GB', price: '12.45', validity: '30 days', description: 'MTN Non Expiry' },
-        { id: 4, size: '5GB', price: '20.75', validity: '30 days', description: 'MTN Non Expiry' },
-        { id: 5, size: '10GB', price: '41.50', validity: '30 days', description: 'MTN Non Expiry' },
-      ]
-    },
-    { 
-      name: 'Telecel', 
-      color: '#FF4D4F', // Red
-      icon: '📞', 
-      plans: [
-        { id: 6, size: '10GB', price: '35.90', validity: '30 days', description: 'Telecel' },
-        { id: 7, size: '15GB', price: '52.90', validity: '30 days', description: 'Telecel' },
-        { id: 8, size: '5GB', price: '17.95', validity: '30 days', description: 'Telecel' },
-        { id: 9, size: '2GB', price: '7.18', validity: '30 days', description: 'Telecel' },
-      ]
-    },
-    { 
-      name: 'AirtelTigo', 
-      color: '#1890FF', // Blue
-      icon: '📶', 
-      plans: [
-        { id: 10, size: '1GB', price: '5.00', validity: '7 days', description: 'AirtelTigo' },
-        { id: 11, size: '3GB', price: '12.00', validity: '30 days', description: 'AirtelTigo' },
-        { id: 12, size: '6GB', price: '22.00', validity: '30 days', description: 'AirtelTigo' },
-        { id: 13, size: '10GB', price: '35.00', validity: '30 days', description: 'AirtelTigo' },
-      ]
-    },
-  ];
+  const networkColors = {
+    'MTN': '#FFD700', // Yellow
+    'Telecel': '#FF4D4F', // Red
+    'AirtelTigo': '#1890FF' // Blue
+  };
 
+  const networkIcons = {
+    'MTN': '📱',
+    'Telecel': '📞',
+    'AirtelTigo': '📶'
+  };
+
+  // Fetch data from backend
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      setError('');
       try {
-        // Fetch user data from localStorage
+        // Fetch user data from localStorage and API
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
           const userData = JSON.parse(storedUser);
           setUser(userData);
+          
+          // Also fetch from API to get latest data
+          try {
+            const profileResponse = await userAPI.getProfile();
+            if (profileResponse.data && profileResponse.data.user) {
+              const updatedUser = profileResponse.data.user;
+              setUser(updatedUser);
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+            }
+          } catch (profileError) {
+            console.log('Using cached user data:', profileError.message);
+          }
         }
 
-        // Fetch real transactions from backend
-        try {
-          const ordersResponse = await ordersAPI.getMyOrders();
-          console.log('📋 Orders API Response:', ordersResponse.data);
-          
-          if (ordersResponse.data && (ordersResponse.data.orders || ordersResponse.data)) {
-            const ordersArray = ordersResponse.data.orders || ordersResponse.data;
-            
-            // Transform API data to match our table format
-            const apiTransactions = ordersArray.map(order => ({
-              id: order.trxCode || order.orderId || order._id,
-              package: order.items?.[0]?.network 
-                ? `${order.items[0].network}-${order.items[0].size}` 
-                : 'Unknown',
-              description: order.items?.[0]?.description || 
-                         order.items?.[0]?.network || 
-                         'Data Bundle',
-              amount: order.totalAmount || order.total || 0,
-              beneficiary: order.items?.[0]?.recipientPhone || 
-                         order.customerPhone || 
-                         'N/A',
-              paymentSource: order.paymentMethod || order.paymentSource || 'Paystack',
-              paymentStatus: order.paymentStatus || order.status || 'pending',
-              date: order.createdAt ? new Date(order.createdAt).toLocaleString() : new Date().toLocaleString(),
-              status: order.status || 'processing'
-            }));
-            
-            // Sort by date (newest first)
-            apiTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            // Calculate total pages
-            const totalItems = apiTransactions.length;
-            const totalPages = Math.ceil(totalItems / itemsPerPage);
-            setTotalPages(totalPages || 1);
-            
-            // Get current page items
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = startIndex + itemsPerPage;
-            const currentTransactions = apiTransactions.slice(startIndex, endIndex);
-            setTransactions(currentTransactions);
-            
-            // Calculate stats - ALWAYS set values, even if zero
-            const totalOrders = totalItems;
-            const totalSpent = apiTransactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
-            const today = new Date().toDateString();
-            const todayOrders = apiTransactions.filter(t => 
-              new Date(t.date).toDateString() === today
-            ).length;
-            
-            setStats({
-              totalOrders,
-              totalSpent,
-              totalData: totalOrders > 0 ? `${Math.round(totalOrders * 2)}GB` : '0GB',
-              todayOrders
-            });
-          } else {
-            // No orders found - set everything to zero/empty
-            setTransactions([]);
-            setStats({
-              totalOrders: 0,
-              totalSpent: 0,
-              totalData: '0GB',
-              todayOrders: 0
-            });
-          }
-        } catch (ordersError) {
-          console.error('Error fetching orders:', ordersError);
-          // On error, still set defaults to zero
-          setTransactions([]);
-          setStats({
-            totalOrders: 0,
-            totalSpent: 0,
-            totalData: '0GB',
-            todayOrders: 0
-          });
-        }
+        // Fetch plans from backend API
+        await fetchPlans();
+
+        // Fetch transactions from backend API
+        await fetchTransactions();
+
+        // Fetch dashboard stats
+        await fetchDashboardStats();
         
       } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        // Set defaults on any error
-        setTransactions([]);
-        setStats({
-          totalOrders: 0,
-          totalSpent: 0,
-          totalData: '0GB',
-          todayOrders: 0
-        });
+        console.error('❌ Error fetching dashboard data:', error);
+        setError('Failed to load dashboard data. Please try again.');
+        setFallbackData();
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-    // REMOVED auto-refresh interval to prevent blinking
   }, [currentPage]);
+
+  // Fetch plans from backend API
+  const fetchPlans = async () => {
+    try {
+      console.log('📋 Fetching plans from backend API...');
+      const response = await plansAPI.getAll();
+      
+      if (response.data && Array.isArray(response.data)) {
+        // Group plans by network
+        const groupedPlans = response.data.reduce((acc, plan) => {
+          if (!acc[plan.network]) {
+            acc[plan.network] = [];
+          }
+          acc[plan.network].push({
+            _id: plan._id,
+            id: plan._id, // For compatibility
+            size: plan.size,
+            price: plan.price.toString(),
+            validity: plan.validity,
+            description: plan.description || `${plan.network} ${plan.size}`,
+            popular: plan.popular || false
+          });
+          return acc;
+        }, {});
+
+        // Create network objects with plans
+        const networkObjects = Object.keys(groupedPlans)
+          .filter(network => ['MTN', 'Telecel', 'AirtelTigo'].includes(network))
+          .map(network => ({
+            name: network,
+            color: networkColors[network] || '#666',
+            icon: networkIcons[network] || '📱',
+            plans: groupedPlans[network]
+          }));
+
+        setNetworks(networkObjects);
+        console.log(`✅ Loaded ${response.data.length} plans from backend`);
+      } else {
+        console.warn('⚠️ No plans data from API, using fallback');
+        setFallbackPlans();
+      }
+    } catch (error) {
+      console.error('❌ Error fetching plans:', error);
+      setFallbackPlans();
+    }
+  };
+
+  // Fetch transactions from backend API
+  const fetchTransactions = async () => {
+    try {
+      const response = await ordersAPI.getMyOrders({
+        page: currentPage,
+        limit: itemsPerPage
+      });
+      
+      if (response.data && response.data.orders) {
+        // Transform API data to match our table format
+        const apiTransactions = response.data.orders.map(order => ({
+          id: order.trxCode || order.orderId || order._id,
+          package: order.items?.[0]?.network 
+            ? `${order.items[0].network}-${order.items[0].size}` 
+            : 'Unknown',
+          description: order.items?.[0]?.description || 
+                     order.items?.[0]?.network || 
+                     'Data Bundle',
+          amount: order.totalAmount || order.total || 0,
+          beneficiary: order.items?.[0]?.recipientPhone || 
+                     order.customerPhone || 
+                     'N/A',
+          paymentSource: order.paymentMethod || order.paymentSource || 'Paystack',
+          paymentStatus: order.paymentStatus || order.status || 'pending',
+          date: order.createdAt ? new Date(order.createdAt).toLocaleString() : new Date().toLocaleString(),
+          status: order.status || 'processing'
+        }));
+        
+        setTransactions(apiTransactions);
+        setTotalPages(response.data.pagination?.pages || 1);
+      } else {
+        console.warn('⚠️ No transactions data from API');
+        setTransactions([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching transactions:', error);
+      setTransactions([]);
+    }
+  };
+
+  // Fetch dashboard stats
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await userAPI.getDashboardStats();
+      
+      if (response.data && response.data.stats) {
+        setStats({
+          totalOrders: response.data.stats.totalOrders || 0,
+          totalSpent: response.data.stats.totalSpent || 0,
+          totalData: response.data.stats.totalData || '0GB',
+          todayOrders: response.data.stats.todayOrders || 0
+        });
+      } else {
+        // Calculate from transactions if no stats API
+        calculateStatsFromTransactions();
+      }
+    } catch (error) {
+      console.error('❌ Error fetching dashboard stats:', error);
+      calculateStatsFromTransactions();
+    }
+  };
+
+  // Calculate stats from transactions data
+  const calculateStatsFromTransactions = () => {
+    const totalOrders = transactions.length;
+    const totalSpent = transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    const today = new Date().toDateString();
+    const todayOrders = transactions.filter(t => 
+      new Date(t.date).toDateString() === today
+    ).length;
+    
+    setStats({
+      totalOrders,
+      totalSpent,
+      totalData: `${totalOrders * 2}GB`,
+      todayOrders
+    });
+  };
+
+  // Fallback plans if API fails
+  const setFallbackPlans = () => {
+    const fallbackNetworks = [
+      { 
+        name: 'MTN', 
+        color: '#FFD700', 
+        icon: '📱', 
+        plans: [
+          { _id: 'mtn1', size: '1GB', price: '4.15', validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn2', size: '2GB', price: '8.30', validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn3', size: '3GB', price: '12.45', validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn4', size: '5GB', price: '20.75', validity: '30 days', description: 'MTN Non Expiry' },
+          { _id: 'mtn5', size: '10GB', price: '41.50', validity: '30 days', description: 'MTN Non Expiry' },
+        ]
+      },
+      { 
+        name: 'Telecel', 
+        color: '#FF4D4F', 
+        icon: '📞', 
+        plans: [
+          { _id: 'telecel1', size: '2GB', price: '7.18', validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel2', size: '5GB', price: '17.95', validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel3', size: '10GB', price: '35.90', validity: '30 days', description: 'Telecel' },
+          { _id: 'telecel4', size: '15GB', price: '52.90', validity: '30 days', description: 'Telecel' },
+        ]
+      },
+      { 
+        name: 'AirtelTigo', 
+        color: '#1890FF', 
+        icon: '📶', 
+        plans: [
+          { _id: 'airteltigo1', size: '1GB', price: '5.00', validity: '7 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo2', size: '3GB', price: '12.00', validity: '30 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo3', size: '6GB', price: '22.00', validity: '30 days', description: 'AirtelTigo' },
+          { _id: 'airteltigo4', size: '10GB', price: '35.00', validity: '30 days', description: 'AirtelTigo' },
+        ]
+      }
+    ];
+    setNetworks(fallbackNetworks);
+  };
+
+  // Fallback data for all
+  const setFallbackData = () => {
+    setFallbackPlans();
+    setTransactions([]);
+    setStats({
+      totalOrders: 0,
+      totalSpent: 0,
+      totalData: '0GB',
+      todayOrders: 0
+    });
+  };
 
   const toggleNetwork = (networkName) => {
     setExpandedNetwork(expandedNetwork === networkName ? null : networkName);
@@ -179,7 +273,7 @@ const ClientDashboard = () => {
   };
 
   const handleAddToCart = (plan, network) => {
-    const phoneNumber = phoneNumbers[plan.id] || '';
+    const phoneNumber = phoneNumbers[plan._id] || '';
     
     if (!phoneNumber) {
       alert('Please enter a phone number for this data plan');
@@ -197,6 +291,7 @@ const ClientDashboard = () => {
 
     const planWithPhone = {
       ...plan,
+      id: plan._id || plan.id,
       network: network.name,
       recipientPhone: phoneNumber
     };
@@ -207,11 +302,12 @@ const ClientDashboard = () => {
     // Clear the phone number input
     setPhoneNumbers({
       ...phoneNumbers,
-      [plan.id]: ''
+      [plan._id]: ''
     });
   };
 
   const getStatusColor = (status) => {
+    if (!status) return '#666';
     const statusLower = status.toLowerCase();
     if (statusLower.includes('delivered') || statusLower.includes('success')) return '#52c41a';
     if (statusLower.includes('processing') || statusLower.includes('pending')) return '#faad14';
@@ -219,6 +315,7 @@ const ClientDashboard = () => {
   };
 
   const getPaymentColor = (status) => {
+    if (!status) return '#666';
     const statusLower = status.toLowerCase();
     if (statusLower.includes('success') || statusLower.includes('paid')) return '#52c41a';
     if (statusLower.includes('pending')) return '#faad14';
@@ -231,9 +328,25 @@ const ClientDashboard = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        fetchPlans(),
+        fetchTransactions(),
+        fetchDashboardStats()
+      ]);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className={`loading-container ${darkMode ? 'dark' : ''}`}>
+        <div className="loading-spinner"></div>
         <h2>Loading Dashboard...</h2>
         <p>Fetching your data...</p>
       </div>
@@ -242,6 +355,17 @@ const ClientDashboard = () => {
 
   return (
     <div className={`client-dashboard ${darkMode ? 'dark' : ''}`}>
+      {/* Error Message */}
+      {error && (
+        <div className="error-message">
+          <span className="error-icon">❌</span>
+          <span className="error-text">{error}</span>
+          <button className="retry-btn" onClick={handleRefresh}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Header with user info */}
       <div className="dashboard-header">
         <h1>📊 Client Dashboard</h1>
@@ -249,10 +373,10 @@ const ClientDashboard = () => {
           <div className="user-info-card">
             <div className="user-details">
               <div className="user-field">
-                <strong>Username:</strong> {user.username || user.name || 'devon_allen'}
+                <strong>Username:</strong> {user.username || user.name || 'User'}
               </div>
               <div className="user-field">
-                <strong>Email:</strong> {user.email || 'azianyomarcell@gmail.com'}
+                <strong>Email:</strong> {user.email || 'Not set'}
               </div>
               <div className="user-field">
                 <strong>Status:</strong> <span className="status-active">Active</span>
@@ -261,7 +385,7 @@ const ClientDashboard = () => {
                 <strong>Role:</strong> <span className="role-client">Client</span>
               </div>
               <div className="user-field">
-                <strong>Contact:</strong> {user.phone || '0546051806'}
+                <strong>Contact:</strong> {user.phone || 'Not set'}
               </div>
             </div>
           </div>
@@ -303,76 +427,87 @@ const ClientDashboard = () => {
 
         {/* Network Accordions */}
         <div className="network-accordions">
-          {networks.map(network => (
-            <div key={network.name} className="network-accordion">
-              <div 
-                className="accordion-header"
-                onClick={() => toggleNetwork(network.name)}
-                style={{ 
-                  borderLeftColor: network.color,
-                  background: `linear-gradient(135deg, ${network.color}20 0%, ${network.color}10 100%)`
-                }}
-              >
-                <div className="network-title">
-                  <span className="network-icon">{network.icon}</span>
-                  <span className="network-name">{network.name}</span>
-                  <span className="plan-count">({network.plans.length} plans)</span>
-                </div>
-                <span className="accordion-arrow">
-                  {expandedNetwork === network.name ? '▲' : '▼'}
-                </span>
-              </div>
-              
-              {expandedNetwork === network.name && (
-                <div className="accordion-content">
-                  <div className="plans-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>VOLUME</th>
-                          <th>PRICE</th>
-                          <th>DESCRIPTION</th>
-                          <th>BENEFICIARY NUMBER</th>
-                          <th>ACTION</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {network.plans.map(plan => (
-                          <tr key={plan.id}>
-                            <td className="volume">{plan.size}</td>
-                            <td className="price">GHS {plan.price}</td>
-                            <td className="description">{plan.description}</td>
-                            <td>
-                              <input
-                                type="tel"
-                                value={phoneNumbers[plan.id] || ''}
-                                onChange={(e) => handlePhoneChange(plan.id, e.target.value)}
-                                placeholder="0241234567"
-                                className="phone-input"
-                              />
-                            </td>
-                            <td>
-                              <button
-                                onClick={() => handleAddToCart(plan, network)}
-                                disabled={loading}
-                                className="add-to-cart-btn"
-                                style={{ 
-                                  backgroundColor: network.color,
-                                  color: network.name === 'MTN' ? '#000' : '#fff' // Black text for yellow background
-                                }}
-                              >
-                                Add to Cart
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+          {networks.length === 0 ? (
+            <div className="no-plans-message">
+              <p>No data plans available. Please check your connection or contact support.</p>
             </div>
-          ))}
+          ) : (
+            networks.map(network => (
+              <div key={network.name} className="network-accordion">
+                <div 
+                  className="accordion-header"
+                  onClick={() => toggleNetwork(network.name)}
+                  style={{ 
+                    borderLeftColor: network.color,
+                    background: `linear-gradient(135deg, ${network.color}20 0%, ${network.color}10 100%)`
+                  }}
+                >
+                  <div className="network-title">
+                    <span 
+                      className="network-icon"
+                      style={{ backgroundColor: network.color }}
+                    >
+                      {network.icon}
+                    </span>
+                    <span className="network-name">{network.name}</span>
+                    <span className="plan-count">({network.plans.length} plans)</span>
+                  </div>
+                  <span className="accordion-arrow">
+                    {expandedNetwork === network.name ? '▲' : '▼'}
+                  </span>
+                </div>
+                
+                {expandedNetwork === network.name && (
+                  <div className="accordion-content">
+                    <div className="plans-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>VOLUME</th>
+                            <th>PRICE</th>
+                            <th>DESCRIPTION</th>
+                            <th>BENEFICIARY NUMBER</th>
+                            <th>ACTION</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {network.plans.map(plan => (
+                            <tr key={plan._id}>
+                              <td className="volume">{plan.size}</td>
+                              <td className="price">GHS {plan.price}</td>
+                              <td className="description">{plan.description}</td>
+                              <td>
+                                <input
+                                  type="tel"
+                                  value={phoneNumbers[plan._id] || ''}
+                                  onChange={(e) => handlePhoneChange(plan._id, e.target.value)}
+                                  placeholder="0241234567"
+                                  className="phone-input"
+                                />
+                              </td>
+                              <td>
+                                <button
+                                  onClick={() => handleAddToCart(plan, network)}
+                                  disabled={loading}
+                                  className="add-to-cart-btn"
+                                  style={{ 
+                                    backgroundColor: network.color,
+                                    color: network.name === 'MTN' ? '#000' : '#fff'
+                                  }}
+                                >
+                                  Add to Cart
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -382,9 +517,10 @@ const ClientDashboard = () => {
           <h2 className="section-title">Recent Transactions</h2>
           <button 
             className="refresh-btn"
-            onClick={() => window.location.reload()}
+            onClick={handleRefresh}
+            disabled={loading}
           >
-            🔄 Refresh
+            {loading ? '🔄 Refreshing...' : '🔄 Refresh'}
           </button>
         </div>
         
