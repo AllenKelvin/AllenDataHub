@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
-import { ordersAPI, generateTRXCode } from '../services/api';
+import { ordersAPI } from '../services/api';
 import './Checkout.css';
 
 const Checkout = () => {
@@ -35,7 +35,7 @@ const Checkout = () => {
   }, [cartItems, navigate]);
 
   // Calculate totals
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+  const subtotal = cartItems.reduce((sum, item) => sum + (parseFloat(item.price) * (item.quantity || 1)), 0);
   const serviceFee = 0.50;
   const total = subtotal + serviceFee;
 
@@ -47,10 +47,10 @@ const Checkout = () => {
       // Prepare order data for verification
       const orderData = {
         items: cartItems.map(item => ({
-          planId: item._id || item.id,
+          planId: item._id || item.id, // Make sure this matches the plan ID
           network: item.network,
           size: item.size,
-          price: item.price,
+          price: parseFloat(item.price), // Convert to number
           recipientPhone: item.recipientPhone,
           quantity: item.quantity || 1
         })),
@@ -86,8 +86,9 @@ const Checkout = () => {
     } catch (error) {
       console.error('❌ Order verification error:', error);
       const errorMessage = error.response?.data?.message || 
-                          error.message || 
-                          'Failed to verify order. Please try again.';
+                        error.response?.data?.error || 
+                        error.message || 
+                        'Failed to verify order. Please try again.';
       
       setOrderVerification({
         isValid: false,
@@ -131,7 +132,7 @@ const Checkout = () => {
           planId: item._id || item.id,
           network: item.network,
           size: item.size,
-          price: item.price,
+          price: parseFloat(item.price),
           recipientPhone: item.recipientPhone,
           quantity: item.quantity || 1
         })),
@@ -150,7 +151,7 @@ const Checkout = () => {
         clearCart();
         
         // Generate unique TRX code
-        const trxCode = generateTRXCode(response.data.orderId);
+        const trxCode = response.data.trxCode || `TRX${Date.now().toString(36).toUpperCase()}`;
         
         // Store order details for success page
         const orderDetails = {

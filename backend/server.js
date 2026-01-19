@@ -418,7 +418,7 @@ app.get('/api/plans', async (req, res) => {
 
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
-    // If no plans in database, create default plans
+    // If no plans in database, create default plans INCLUDING AIRTELTIGO
     if (plans.length === 0) {
       const defaultPlans = [
         // MTN Plans (Yellow)
@@ -434,11 +434,14 @@ app.get('/api/plans', async (req, res) => {
         { network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
         { network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
         
-        // AirtelTigo Plans (Blue)
-        { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo', popular: true },
-        { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo' },
-        { network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo' },
-        { network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo' }
+        // AirtelTigo Plans (Blue) - ADDED
+        { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
+        { network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
+        { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
       ];
       
       await DataPlan.insertMany(defaultPlans);
@@ -465,10 +468,17 @@ app.get('/api/plans/network/:network', async (req, res) => {
   }
 });
 
-// ORDER VERIFICATION - New Endpoint
+// ORDER VERIFICATION - Updated to handle frontend data structure
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone } = req.body;
+
+    console.log('🔍 Order verification request received:', {
+      itemsCount: items?.length,
+      totalAmount,
+      customerEmail,
+      customerPhone
+    });
 
     // Validation
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -494,10 +504,17 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
 
     // Validate Ghana phone numbers
     for (const item of items) {
+      if (!item.recipientPhone) {
+        return res.status(400).json({
+          valid: false,
+          message: 'Recipient phone number is required for all items'
+        });
+      }
+
       if (!isValidGhanaNumber(item.recipientPhone)) {
         return res.status(400).json({
           valid: false,
-          message: `Invalid Ghana phone number: ${item.recipientPhone}`
+          message: `Invalid Ghana phone number: ${item.recipientPhone}. Format: 0241234567`
         });
       }
     }
@@ -507,38 +524,49 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
     let calculatedTotal = 0;
 
     for (const item of items) {
-      const plan = await DataPlan.findById(item.planId);
+      // Try to find plan by ID first, then by network and size
+      let plan;
       
+      if (item.planId) {
+        plan = await DataPlan.findById(item.planId);
+      }
+      
+      // If not found by ID, try to find by network and size
+      if (!plan && item.network && item.size) {
+        plan = await DataPlan.findOne({
+          network: item.network,
+          size: item.size
+        });
+      }
+
       if (!plan) {
         return res.status(400).json({
           valid: false,
-          message: `Plan not found: ${item.planId}`
+          message: `Plan not found: ${item.network} ${item.size}`
         });
       }
 
       // Verify network and size match
       if (plan.network !== item.network || plan.size !== item.size) {
-        return res.status(400).json({
-          valid: false,
-          message: `Plan details mismatch for ${item.network} ${item.size}`
-        });
+        console.warn(`Plan details mismatch: DB(${plan.network} ${plan.size}) vs Request(${item.network} ${item.size})`);
       }
 
-      // Verify price
-      if (plan.price !== item.price) {
-        return res.status(400).json({
-          valid: false,
-          message: `Price mismatch for ${item.network} ${item.size}`
-        });
-      }
-
-      const itemTotal = item.price * (item.quantity || 1);
+      // Use plan price from database (not client price)
+      const itemPrice = plan.price;
+      const itemQuantity = item.quantity || 1;
+      const itemTotal = itemPrice * itemQuantity;
       calculatedTotal += itemTotal;
       
       verifiedItems.push({
         ...item,
+        planId: plan._id,
+        price: itemPrice,
         validity: plan.validity,
-        description: plan.description
+        description: plan.description,
+        originalPrice: item.price, // Keep original for reference
+        verifiedPrice: itemPrice,
+        quantity: itemQuantity,
+        itemTotal: itemTotal
       });
     }
 
@@ -546,29 +574,50 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
     const serviceFee = 0.50;
     const finalTotal = calculatedTotal + serviceFee;
 
-    // Verify total amount matches
-    if (Math.abs(finalTotal - totalAmount) > 0.01) {
+    // Verify total amount matches (allow small differences due to rounding)
+    const difference = Math.abs(finalTotal - totalAmount);
+    if (difference > 0.01) {
+      console.log(`Total mismatch: Calculated=${finalTotal}, Received=${totalAmount}, Difference=${difference}`);
+      
       return res.status(400).json({
         valid: false,
-        message: `Total amount mismatch. Expected: ${finalTotal.toFixed(2)}, Received: ${totalAmount}`
+        message: `Total amount mismatch. Expected: GH₵${finalTotal.toFixed(2)}, Received: GH₵${totalAmount}`,
+        calculatedTotal: finalTotal,
+        receivedTotal: totalAmount,
+        difference: difference.toFixed(2),
+        serviceFee: serviceFee
       });
     }
+
+    console.log('✅ Order verification successful:', {
+      itemsCount: verifiedItems.length,
+      calculatedTotal: finalTotal,
+      verifiedItems: verifiedItems.map(item => ({
+        network: item.network,
+        size: item.size,
+        price: item.price,
+        quantity: item.quantity
+      }))
+    });
 
     res.json({
       valid: true,
       message: 'Order verified successfully',
       totalAmount: finalTotal,
+      calculatedAmount: calculatedTotal,
+      serviceFee: serviceFee,
       items: verifiedItems,
-      verificationId: `VERIFY_${Date.now()}`,
+      verificationId: `VERIFY_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('Order verification error:', error);
+    console.error('❌ Order verification error:', error);
     res.status(500).json({ 
       valid: false,
       message: 'Failed to verify order',
-      error: error.message 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

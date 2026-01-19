@@ -177,7 +177,7 @@ const Login = () => {
                 placeholder="Enter your email address"
                 autoComplete="email"
               />
-              <span className="input-icon">📧</span>
+              <span className="input-icon"></span>
             </div>
           </div>
 
