@@ -470,7 +470,7 @@ app.get('/api/plans', async (req, res) => {
     if (plans.length === 0) {
       const defaultPlans = [
         // MTN Plans (Yellow)
-        { network: 'MTN', size: '1GB', price: 4.15, validity: '30 days', description: 'MTN Non Expiry', popular: true },
+        { network: 'MTN', size: '1GB', price: 4.60, validity: '30 days', description: 'MTN Non Expiry', popular: true },
         { network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
         { network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
         { network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },

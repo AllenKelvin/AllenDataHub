@@ -34,7 +34,7 @@ async function addAirtelTigoPlans() {
     
     // AirtelTigo Plans
     const airteltigoPlans = [
-      { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
+      { network: 'AirtelTigo', size: '1GB', price: 5.25, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
       { network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
       { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
       { network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
