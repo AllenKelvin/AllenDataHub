@@ -4,7 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -74,7 +74,7 @@ const userSchema = new mongoose.Schema({
 });
 
 const orderSchema = new mongoose.Schema({
-  trxCode: { type: String, required: true, unique: true },
+  trxCode: { type: String, required: true }, // Removed unique constraint
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
     planId: { type: String, required: true },
@@ -140,13 +140,12 @@ const paystack = axios.create({
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
 
-// IMPROVED Helper function to generate TRX code with better uniqueness
+// Generate unique TRX code using UUID
 const generateTRXCode = () => {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  // Use crypto for better randomness
-  const randomBytes = crypto.randomBytes(4).toString('hex').toUpperCase();
-  const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
-  return `TRX${timestamp}${randomBytes}${randomStr}`.slice(0, 20);
+  const date = new Date();
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const uniqueId = uuidv4().split('-')[0].toUpperCase();
+  return `TRX-${dateStr}-${uniqueId}`;
 };
 
 // Helper function to validate Ghana phone number
@@ -383,6 +382,69 @@ app.put('/api/users/profile', authMiddleware, async (req, res) => {
   }
 });
 
+// Change Password
+app.post('/api/users/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+
+    const user = await User.findById(req.userId);
+    
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.updatedAt = new Date();
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Contact Support
+app.post('/api/users/contact', authMiddleware, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const contact = new Contact({
+      userId: req.userId,
+      name: req.user.username,
+      email: req.user.email,
+      phone: req.user.phone,
+      message: message
+    });
+
+    await contact.save();
+
+    console.log(`📧 New contact message from ${req.user.email}: ${message}`);
+
+    res.json({
+      success: true,
+      message: 'Your message has been sent successfully',
+      contactId: contact._id
+    });
+  } catch (error) {
+    console.error('Contact error:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
 // Get Data Plans
 app.get('/api/plans', async (req, res) => {
   try {
@@ -460,6 +522,25 @@ function getFallbackPlans(network, res) {
 
   res.json(filteredPlans);
 }
+
+// Get Plans by Network
+app.get('/api/plans/network/:network', async (req, res) => {
+  try {
+    const { network } = req.params;
+    
+    if (mongoose.connection.readyState !== 1) {
+      console.log('⚠️ MongoDB not connected, returning fallback network plans');
+      getFallbackPlans(network, res);
+      return;
+    }
+    
+    const plans = await DataPlan.find({ network }).sort({ price: 1 });
+    res.json(plans);
+  } catch (error) {
+    console.error('Network plans fetch error:', error);
+    getFallbackPlans(req.params.network, res);
+  }
+});
 
 // ORDER VERIFICATION
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
@@ -546,7 +627,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       calculatedAmount: calculatedTotal,
       serviceFee: serviceFee,
       items: items,
-      verificationId: `VERIFY_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      verificationId: `VERIFY-${uuidv4()}`,
       timestamp: new Date().toISOString()
     });
 
@@ -560,245 +641,119 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// FIXED: Create Order with retry logic for duplicate TRX codes
+// FIXED: Create Order - No duplicate TRX code issues
 app.post('/api/orders', authMiddleware, async (req, res) => {
-  let retryCount = 0;
-  const maxRetries = 3;
-  
-  while (retryCount < maxRetries) {
-    try {
-      console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
-      console.log('👤 User ID:', req.userId);
-      
-      const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
+  try {
+    console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('👤 User ID:', req.userId);
+    
+    const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
 
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        console.log('❌ Validation failed: No items in order');
-        return res.status(400).json({ 
-          success: false,
-          error: 'Order must contain at least one item' 
-        });
-      }
-
-      for (const item of items) {
-        if (!item.network || !item.size || !item.price || !item.recipientPhone) {
-          console.log('❌ Invalid item:', item);
-          return res.status(400).json({
-            success: false,
-            error: 'Each item must have network, size, price, and recipientPhone'
-          });
-        }
-      }
-
-      if (!totalAmount || isNaN(totalAmount) || totalAmount <= 0) {
-        console.log('❌ Validation failed: Invalid total amount', totalAmount);
-        return res.status(400).json({ 
-          success: false,
-          error: 'Invalid order total' 
-        });
-      }
-
-      if (!customerEmail || !customerPhone) {
-        console.log('❌ Validation failed: Missing customer info', { customerEmail, customerPhone });
-        return res.status(400).json({ 
-          success: false,
-          error: 'Customer email and phone are required' 
-        });
-      }
-
-      if (mongoose.connection.readyState !== 1) {
-        console.log('❌ Database not connected');
-        return res.status(503).json({ 
-          success: false,
-          error: 'Database temporarily unavailable. Please try again.' 
-        });
-      }
-
-      // Generate unique TRX code
-      const trxCode = generateTRXCode();
-      console.log(`🆕 Attempt ${retryCount + 1}: Generated TRX Code:`, trxCode);
-
-      const preparedItems = items.map(item => ({
-        planId: item.planId || 'default-plan-id',
-        network: item.network,
-        size: item.size,
-        price: parseFloat(item.price) || 0,
-        recipientPhone: item.recipientPhone,
-        quantity: parseInt(item.quantity) || 1
-      }));
-
-      console.log('💾 Prepared items:', preparedItems);
-
-      const order = new Order({
-        trxCode,
-        userId: req.userId,
-        items: preparedItems,
-        totalAmount: parseFloat(totalAmount) || 0,
-        customerEmail: customerEmail,
-        customerPhone: customerPhone,
-        paymentMethod: paymentMethod || 'paystack',
-        paymentStatus: 'pending',
-        status: 'placed'
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      console.log('❌ Validation failed: No items in order');
+      return res.status(400).json({ 
+        success: false,
+        error: 'Order must contain at least one item' 
       });
+    }
 
-      await order.save();
-      console.log('✅ Order saved successfully. ID:', order._id, 'TRX:', order.trxCode);
-
-      return res.status(201).json({
-        success: true,
-        message: 'Order created successfully',
-        orderId: order._id,
-        trxCode: order.trxCode,
-        order: {
-          _id: order._id,
-          trxCode: order.trxCode,
-          items: order.items,
-          totalAmount: order.totalAmount,
-          status: order.status,
-          customerEmail: order.customerEmail,
-          customerPhone: order.customerPhone,
-          createdAt: order.createdAt
-        }
-      });
-
-    } catch (error) {
-      console.error(`❌ Order creation attempt ${retryCount + 1} failed:`, error.message);
-      
-      // If it's a duplicate key error, retry with new TRX code
-      if (error.name === 'MongoServerError' && error.code === 11000) {
-        retryCount++;
-        if (retryCount < maxRetries) {
-          console.log(`🔄 Retrying order creation (attempt ${retryCount + 1}/${maxRetries})...`);
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 100));
-          continue;
-        } else {
-          console.error('❌ Max retries reached for duplicate TRX code');
-          return res.status(400).json({ 
-            success: false,
-            error: 'Failed to create order due to duplicate transaction ID. Please try again.' 
-          });
-        }
-      }
-      
-      // Other validation errors
-      if (error.name === 'ValidationError') {
-        const errors = Object.values(error.errors).map(err => err.message);
+    for (const item of items) {
+      if (!item.network || !item.size || item.price === undefined || !item.recipientPhone) {
+        console.log('❌ Invalid item:', item);
         return res.status(400).json({
           success: false,
-          error: 'Validation failed',
-          details: errors
+          error: 'Each item must have network, size, price, and recipientPhone'
         });
       }
-      
-      // Other errors
-      return res.status(500).json({ 
+    }
+
+    if (!totalAmount || isNaN(totalAmount) || totalAmount <= 0) {
+      console.log('❌ Validation failed: Invalid total amount', totalAmount);
+      return res.status(400).json({ 
         success: false,
-        error: 'Failed to create order',
-        details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+        error: 'Invalid order total' 
       });
     }
-  }
-});
 
-// Initialize Payment (Paystack)
-app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
-  try {
-    const { orderId, email, amount } = req.body;
-    console.log('💰 Payment initialization request:', { orderId, email, amount });
-
-    if (!orderId || !email || !amount) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!customerEmail || !customerPhone) {
+      console.log('❌ Validation failed: Missing customer info', { customerEmail, customerPhone });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Customer email and phone are required' 
+      });
     }
 
-    if (!PAYSTACK_SECRET_KEY) {
-      return res.status(503).json({ error: 'Payment service not configured' });
+    if (mongoose.connection.readyState !== 1) {
+      console.log('❌ Database not connected');
+      return res.status(503).json({ 
+        success: false,
+        error: 'Database temporarily unavailable. Please try again.' 
+      });
     }
 
-    const validatedAmount = parseFloat(amount);
-    const amountInKobo = Math.round(validatedAmount * 100);
+    const trxCode = generateTRXCode();
+    console.log('🆕 Generated TRX Code:', trxCode);
 
-    const reference = `ALLEN_${orderId}_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
+    const preparedItems = items.map(item => ({
+      planId: item.planId || 'default-plan-id',
+      network: item.network,
+      size: item.size,
+      price: parseFloat(item.price) || 0,
+      recipientPhone: item.recipientPhone,
+      quantity: parseInt(item.quantity) || 1
+    }));
 
-    const response = await paystack.post('/transaction/initialize', {
-      email,
-      amount: amountInKobo,
-      reference: reference,
-      callback_url: `${FRONTEND_URL}/payment-success`,
-      metadata: {
-        orderId,
-        userId: req.userId,
-        trxAmount: validatedAmount
+    console.log('💾 Prepared items:', preparedItems);
+
+    const order = new Order({
+      trxCode,
+      userId: req.userId,
+      items: preparedItems,
+      totalAmount: parseFloat(totalAmount) || 0,
+      customerEmail: customerEmail,
+      customerPhone: customerPhone,
+      paymentMethod: paymentMethod || 'paystack',
+      paymentStatus: 'pending',
+      status: 'placed'
+    });
+
+    await order.save();
+    console.log('✅ Order saved successfully. ID:', order._id, 'TRX:', order.trxCode);
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      orderId: order._id,
+      trxCode: order.trxCode,
+      order: {
+        _id: order._id,
+        trxCode: order.trxCode,
+        items: order.items,
+        totalAmount: order.totalAmount,
+        status: order.status,
+        customerEmail: order.customerEmail,
+        customerPhone: order.customerPhone,
+        createdAt: order.createdAt
       }
     });
 
-    const { data } = response.data;
-
-    await Order.findByIdAndUpdate(orderId, {
-      paymentReference: data.reference,
-      updatedAt: new Date()
-    });
-
-    res.json({
-      success: true,
-      paymentUrl: data.authorization_url,
-      accessCode: data.access_code,
-      reference: data.reference,
-      amount: validatedAmount
-    });
   } catch (error) {
-    console.error('Payment initialization error:', error);
-    res.status(500).json({ 
-      error: 'Failed to initialize payment',
-      details: error.response?.data?.message || error.message 
-    });
-  }
-});
-
-// Verify Payment
-app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
-  try {
-    const { reference } = req.params;
-
-    const response = await paystack.get(`/transaction/verify/${reference}`);
-    const { data } = response.data;
-
-    const order = await Order.findOne({ paymentReference: reference });
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    if (data.status === 'success') {
-      order.paymentStatus = 'success';
-      order.status = 'processing';
-      order.updatedAt = new Date();
-      await order.save();
-
-      console.log(`✅ Payment successful for order ${order.trxCode}`);
-
-      res.json({
-        success: true,
-        message: 'Payment verified successfully',
-        order: order,
-        trxCode: order.trxCode,
-        amount: data.amount / 100
-      });
-    } else {
-      order.paymentStatus = 'failed';
-      order.updatedAt = new Date();
-      await order.save();
-
-      res.json({
+    console.error('❌ Order creation error:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
         success: false,
-        message: 'Payment verification failed',
-        order: order
+        error: 'Validation failed',
+        details: errors
       });
     }
-  } catch (error) {
-    console.error('Payment verification error:', error);
+    
     res.status(500).json({ 
-      error: 'Failed to verify payment',
-      details: error.response?.data?.message || error.message 
+      success: false,
+      error: 'Failed to create order',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
@@ -858,6 +813,75 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Recent transactions error:', error);
     res.status(500).json({ error: 'Failed to fetch recent transactions' });
+  }
+});
+
+// Get Order by TRX Code
+app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findOne({ 
+      trxCode: req.params.trxCode,
+      userId: req.userId 
+    }).lean();
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Order fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// Get Single Order
+app.get('/api/orders/:id', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      userId: req.userId
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json(order);
+  } catch (error) {
+    console.error('Order fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// Cancel Order
+app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      userId: req.userId
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'delivered') {
+      return res.status(400).json({ error: 'Cannot cancel delivered order' });
+    }
+
+    order.status = 'cancelled';
+    order.updatedAt = new Date();
+    await order.save();
+
+    res.json({
+      success: true,
+      message: 'Order cancelled successfully',
+      order: order
+    });
+  } catch (error) {
+    console.error('Order cancellation error:', error);
+    res.status(500).json({ error: 'Failed to cancel order' });
   }
 });
 
@@ -964,6 +988,149 @@ function getFallbackStats() {
   };
 }
 
+// Get Transaction History
+app.get('/api/users/transactions', authMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const orders = await Order.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalOrders = await Order.countDocuments({ userId: req.userId });
+
+    const transactions = orders.map(order => ({
+      trxCode: order.trxCode,
+      package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
+      description: order.items[0]?.description || 'Data Bundle',
+      amount: order.totalAmount,
+      beneficiary: order.items.map(item => item.recipientPhone).join(', '),
+      paymentSource: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      date: order.createdAt,
+      status: order.status
+    }));
+
+    res.json({
+      transactions,
+      pagination: {
+        total: totalOrders,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalOrders / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Transactions history error:', error);
+    res.status(500).json({ error: 'Failed to fetch transaction history' });
+  }
+});
+
+// Initialize Payment (Paystack)
+app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
+  try {
+    const { orderId, email, amount } = req.body;
+    console.log('💰 Payment initialization request:', { orderId, email, amount });
+
+    if (!orderId || !email || !amount) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!PAYSTACK_SECRET_KEY) {
+      return res.status(503).json({ error: 'Payment service not configured' });
+    }
+
+    const validatedAmount = parseFloat(amount);
+    const amountInKobo = Math.round(validatedAmount * 100);
+
+    const reference = `ALLEN-${orderId}-${uuidv4().split('-')[0]}`;
+
+    const response = await paystack.post('/transaction/initialize', {
+      email,
+      amount: amountInKobo,
+      reference: reference,
+      callback_url: `${FRONTEND_URL}/payment-success`,
+      metadata: {
+        orderId,
+        userId: req.userId,
+        trxAmount: validatedAmount
+      }
+    });
+
+    const { data } = response.data;
+
+    await Order.findByIdAndUpdate(orderId, {
+      paymentReference: data.reference,
+      updatedAt: new Date()
+    });
+
+    res.json({
+      success: true,
+      paymentUrl: data.authorization_url,
+      accessCode: data.access_code,
+      reference: data.reference,
+      amount: validatedAmount
+    });
+  } catch (error) {
+    console.error('Payment initialization error:', error);
+    res.status(500).json({ 
+      error: 'Failed to initialize payment',
+      details: error.response?.data?.message || error.message 
+    });
+  }
+});
+
+// Verify Payment
+app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    const response = await paystack.get(`/transaction/verify/${reference}`);
+    const { data } = response.data;
+
+    const order = await Order.findOne({ paymentReference: reference });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (data.status === 'success') {
+      order.paymentStatus = 'success';
+      order.status = 'processing';
+      order.updatedAt = new Date();
+      await order.save();
+
+      console.log(`✅ Payment successful for order ${order.trxCode}`);
+
+      res.json({
+        success: true,
+        message: 'Payment verified successfully',
+        order: order,
+        trxCode: order.trxCode,
+        amount: data.amount / 100
+      });
+    } else {
+      order.paymentStatus = 'failed';
+      order.updatedAt = new Date();
+      await order.save();
+
+      res.json({
+        success: false,
+        message: 'Payment verification failed',
+        order: order
+      });
+    }
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ 
+      error: 'Failed to verify payment',
+      details: error.response?.data?.message || error.message 
+    });
+  }
+});
+
 // ==================== ADMIN ROUTES ====================
 
 app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
@@ -1000,6 +1167,146 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      totalOrders,
+      todayOrders,
+      totalRevenueResult,
+      todayRevenueResult,
+      userCount,
+      networkStats
+    ] = await Promise.all([
+      Order.countDocuments(),
+      Order.countDocuments({ createdAt: { $gte: today } }),
+      Order.aggregate([
+        { $match: { paymentStatus: 'success' } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]),
+      Order.aggregate([
+        { 
+          $match: { 
+            paymentStatus: 'success',
+            createdAt: { $gte: today }
+          } 
+        },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]),
+      User.countDocuments(),
+      Order.aggregate([
+        { $unwind: '$items' },
+        { $group: { 
+          _id: '$items.network', 
+          count: { $sum: 1 },
+          revenue: { $sum: '$items.price' }
+        } }
+      ])
+    ]);
+
+    const totalRevenue = totalRevenueResult.length > 0 ? 
+      totalRevenueResult[0].total : 0;
+    const todayRevenue = todayRevenueResult.length > 0 ? 
+      todayRevenueResult[0].total : 0;
+
+    const formattedNetworkStats = networkStats.reduce((acc, stat) => {
+      acc[stat._id] = {
+        orders: stat.count,
+        revenue: stat.revenue
+      };
+      return acc;
+    }, {});
+
+    res.json({
+      today: {
+        totalOrders: todayOrders,
+        totalRevenue: todayRevenue
+      },
+      allTime: {
+        totalOrders,
+        totalRevenue,
+        totalUsers: userCount
+      },
+      networkStats: formattedNetworkStats
+    });
+  } catch (error) {
+    console.error('Admin stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch admin stats' });
+  }
+});
+
+app.patch('/api/admin/orders/:id/status', adminMiddleware, async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { 
+        status,
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Order status updated successfully',
+      order: order
+    });
+  } catch (error) {
+    console.error('Order status update error:', error);
+    res.status(500).json({ error: 'Failed to update order status' });
+  }
+});
+
+app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    const [
+      totalOrders,
+      totalSpentResult,
+      recentOrders
+    ] = await Promise.all([
+      Order.countDocuments({ userId: new mongoose.Types.ObjectId(userId) }),
+      Order.aggregate([
+        { $match: { 
+          userId: new mongoose.Types.ObjectId(userId),
+          paymentStatus: 'success'
+        }},
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]),
+      Order.find({ userId: new mongoose.Types.ObjectId(userId) })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean()
+    ]);
+
+    const totalSpent = totalSpentResult.length > 0 ? totalSpentResult[0].total : 0;
+
+    res.json({
+      userId,
+      totalOrders,
+      totalSpent,
+      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
+      recentOrders: recentOrders
+    });
+  } catch (error) {
+    console.error('User stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch user stats' });
+  }
+});
+
 // ==================== ERROR HANDLERS ====================
 
 app.use((req, res) => {
@@ -1024,6 +1331,7 @@ app.listen(PORT, () => {
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
+  console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`🔄 TRX Generation: Using crypto for unique transaction codes`);
+  console.log(`🔑 TRX Generation: Using UUID for guaranteed unique transaction codes`);
 });
