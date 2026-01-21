@@ -4,6 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -21,6 +22,15 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`🌐 ${new Date().toISOString()} ${req.method} ${req.url}`);
+  if (req.method === 'POST' && req.url.includes('/api/orders')) {
+    console.log('📥 Request Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
 
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -46,18 +56,11 @@ connectDB();
 // Helper function to normalize numbers to Double precision
 const toDouble = (num) => {
   if (num === null || num === undefined) return 0;
-  // Handle both int32 and double from database
   const value = typeof num === 'string' ? parseFloat(num) : Number(num);
   return Math.round(value * 100) / 100;
 };
 
-// Helper to convert to Decimal128 for Double storage
-const toDecimal128 = (num) => {
-  const value = toDouble(num);
-  return mongoose.Types.Decimal128.fromString(value.toFixed(2));
-};
-
-// MongoDB Schemas (Updated to ensure Double type)
+// MongoDB Schemas
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
@@ -74,14 +77,14 @@ const orderSchema = new mongoose.Schema({
   trxCode: { type: String, required: true, unique: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
-    planId: { type: mongoose.Schema.Types.ObjectId, ref: 'DataPlan' },
+    planId: { type: String, required: true },
     network: { type: String, required: true },
     size: { type: String, required: true },
-    price: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128 for precise Double
+    price: { type: Number, required: true },
     recipientPhone: { type: String, required: true },
     quantity: { type: Number, default: 1 }
   }],
-  totalAmount: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128
+  totalAmount: { type: Number, required: true },
   customerEmail: { type: String, required: true },
   customerPhone: { type: String, required: true },
   paymentMethod: { type: String, enum: ['paystack', 'cash', 'mobile_money'], default: 'paystack' },
@@ -92,51 +95,14 @@ const orderSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Convert Decimal128 to regular number for responses
-orderSchema.set('toJSON', {
-  transform: function(doc, ret) {
-    // Convert Decimal128 to regular number
-    if (ret.totalAmount && ret.totalAmount.$numberDecimal) {
-      ret.totalAmount = parseFloat(ret.totalAmount.$numberDecimal);
-    } else if (ret.totalAmount && typeof ret.totalAmount === 'object') {
-      ret.totalAmount = parseFloat(ret.totalAmount.toString());
-    }
-    
-    // Convert item prices
-    if (ret.items && Array.isArray(ret.items)) {
-      ret.items = ret.items.map(item => {
-        if (item.price && item.price.$numberDecimal) {
-          item.price = parseFloat(item.price.$numberDecimal);
-        } else if (item.price && typeof item.price === 'object') {
-          item.price = parseFloat(item.price.toString());
-        }
-        return item;
-      });
-    }
-    return ret;
-  }
-});
-
 const dataPlanSchema = new mongoose.Schema({
   network: { type: String, required: true },
   size: { type: String, required: true },
-  price: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128
+  price: { type: Number, required: true },
   validity: { type: String, required: true },
   description: { type: String },
   popular: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
-});
-
-// Convert Decimal128 to regular number for responses
-dataPlanSchema.set('toJSON', {
-  transform: function(doc, ret) {
-    if (ret.price && ret.price.$numberDecimal) {
-      ret.price = parseFloat(ret.price.$numberDecimal);
-    } else if (ret.price && typeof ret.price === 'object') {
-      ret.price = parseFloat(ret.price.toString());
-    }
-    return ret;
-  }
 });
 
 const contactSchema = new mongoose.Schema({
@@ -174,11 +140,13 @@ const paystack = axios.create({
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
 
-// Helper function to generate TRX code
+// IMPROVED Helper function to generate TRX code with better uniqueness
 const generateTRXCode = () => {
   const timestamp = Date.now().toString(36).toUpperCase();
+  // Use crypto for better randomness
+  const randomBytes = crypto.randomBytes(4).toString('hex').toUpperCase();
   const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
-  return `TRX${timestamp}${randomStr}`.slice(0, 12);
+  return `TRX${timestamp}${randomBytes}${randomStr}`.slice(0, 20);
 };
 
 // Helper function to validate Ghana phone number
@@ -201,9 +169,7 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
     
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
-      console.log('⚠️ MongoDB not connected, using cached data');
       return res.status(503).json({ error: 'Database temporarily unavailable' });
     }
     
@@ -237,9 +203,7 @@ const adminMiddleware = async (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
-      console.log('⚠️ MongoDB not connected in admin middleware');
       return res.status(503).json({ error: 'Database temporarily unavailable' });
     }
     
@@ -258,7 +222,7 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ROUTES ====================
 
-// Health Check with DB status
+// Health Check
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK',
@@ -274,17 +238,14 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, email, password, phone } = req.body;
 
-    // Validation
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' });
     }
 
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ 
       $or: [{ email }, { username }] 
     });
@@ -293,10 +254,8 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = new User({
       username,
       email,
@@ -307,7 +266,6 @@ app.post('/api/auth/register', async (req, res) => {
 
     await user.save();
 
-    // Generate JWT token
     const token = jwt.sign({ 
       userId: user._id,
       role: user.role 
@@ -339,34 +297,28 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
     }
 
-    // Find user
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // Check password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // Check if user is active
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Account is suspended' });
     }
 
-    // Generate JWT token
     const token = jwt.sign({ 
       userId: user._id,
       role: user.role 
@@ -431,74 +383,7 @@ app.put('/api/users/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// Change Password
-app.post('/api/users/change-password', authMiddleware, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current and new password are required' });
-    }
-
-    // Get user with password
-    const user = await User.findById(req.userId);
-    
-    // Verify current password
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Current password is incorrect' });
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.updatedAt = new Date();
-    await user.save();
-
-    res.json({
-      success: true,
-      message: 'Password changed successfully'
-    });
-  } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({ error: 'Failed to change password' });
-  }
-});
-
-// Contact Support
-app.post('/api/users/contact', authMiddleware, async (req, res) => {
-  try {
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    const contact = new Contact({
-      userId: req.userId,
-      name: req.user.username,
-      email: req.user.email,
-      phone: req.user.phone,
-      message: message
-    });
-
-    await contact.save();
-
-    // In production, you would send an email here
-    console.log(`📧 New contact message from ${req.user.email}: ${message}`);
-
-    res.json({
-      success: true,
-      message: 'Your message has been sent successfully',
-      contactId: contact._id
-    });
-  } catch (error) {
-    console.error('Contact error:', error);
-    res.status(500).json({ error: 'Failed to send message' });
-  }
-});
-
-// Get Data Plans with Double handling
+// Get Data Plans
 app.get('/api/plans', async (req, res) => {
   try {
     const { network } = req.query;
@@ -508,7 +393,6 @@ app.get('/api/plans', async (req, res) => {
       query.network = network;
     }
 
-    // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       console.log('⚠️ MongoDB not connected, returning fallback plans');
       return getFallbackPlans(network, res);
@@ -516,57 +400,32 @@ app.get('/api/plans', async (req, res) => {
 
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
-    // Convert Decimal128 to regular numbers for response
-    const formattedPlans = plans.map(plan => {
-      const planObj = plan.toObject();
-      // Handle both Decimal128 and regular numbers
-      if (planObj.price && planObj.price.$numberDecimal) {
-        planObj.price = parseFloat(planObj.price.$numberDecimal);
-      } else if (planObj.price && typeof planObj.price === 'object') {
-        planObj.price = parseFloat(planObj.price.toString());
-      }
-      return planObj;
-    });
-    
-    // If no plans in database, create default plans
-    if (formattedPlans.length === 0) {
+    if (plans.length === 0) {
       const defaultPlans = [
-        // MTN Plans (Yellow)
-        { network: 'MTN', size: '1GB', price: toDecimal128(4.60), validity: '30 days', description: 'MTN Non Expiry', popular: true },
-        { network: 'MTN', size: '2GB', price: toDecimal128(8.30), validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '3GB', price: toDecimal128(12.45), validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '5GB', price: toDecimal128(20.75), validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '10GB', price: toDecimal128(41.50), validity: '30 days', description: 'MTN Non Expiry' },
-        
-        // Telecel Plans (Red)
-        { network: 'Telecel', size: '2GB', price: toDecimal128(7.18), validity: '30 days', description: 'Telecel', popular: true },
-        { network: 'Telecel', size: '5GB', price: toDecimal128(17.95), validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '10GB', price: toDecimal128(35.90), validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '15GB', price: toDecimal128(52.90), validity: '30 days', description: 'Telecel' },
-        
-        // AirtelTigo Plans (Blue)
-        { network: 'AirtelTigo', size: '1GB', price: toDecimal128(5.00), validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
-        { network: 'AirtelTigo', size: '2GB', price: toDecimal128(9.50), validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
-        { network: 'AirtelTigo', size: '3GB', price: toDecimal128(12.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '5GB', price: toDecimal128(18.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '6GB', price: toDecimal128(22.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '10GB', price: toDecimal128(35.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '15GB', price: toDecimal128(50.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
+        { network: 'MTN', size: '1GB', price: 4.60, validity: '30 days', description: 'MTN Non Expiry', popular: true },
+        { network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
+        { network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
+        { network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
+        { network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
+        { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
+        { network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
+        { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
       ];
       
       await DataPlan.insertMany(defaultPlans);
       const updatedPlans = await DataPlan.find(query).sort({ price: 1 });
-      const formattedUpdatedPlans = updatedPlans.map(plan => {
-        const planObj = plan.toObject();
-        if (planObj.price && planObj.price.$numberDecimal) {
-          planObj.price = parseFloat(planObj.price.$numberDecimal);
-        }
-        return planObj;
-      });
-      return res.json(formattedUpdatedPlans);
+      return res.json(updatedPlans);
     }
 
-    res.json(formattedPlans);
+    res.json(plans);
   } catch (error) {
     console.error('Plans fetch error:', error);
     getFallbackPlans(req.query.network, res);
@@ -576,20 +435,15 @@ app.get('/api/plans', async (req, res) => {
 // Helper function for fallback plans
 function getFallbackPlans(network, res) {
   const fallbackPlans = [
-    // MTN Plans
     { _id: 'mtn1', network: 'MTN', size: '1GB', price: 4.15, validity: '30 days', description: 'MTN Non Expiry', popular: true },
     { _id: 'mtn2', network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
     { _id: 'mtn3', network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
     { _id: 'mtn4', network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
     { _id: 'mtn5', network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
-    
-    // Telecel Plans
     { _id: 'telecel1', network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
     { _id: 'telecel2', network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
     { _id: 'telecel3', network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
     { _id: 'telecel4', network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
-    
-    // AirtelTigo Plans
     { _id: 'airteltigo1', network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
     { _id: 'airteltigo2', network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
     { _id: 'airteltigo3', network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
@@ -607,37 +461,7 @@ function getFallbackPlans(network, res) {
   res.json(filteredPlans);
 }
 
-// Get Plans by Network
-app.get('/api/plans/network/:network', async (req, res) => {
-  try {
-    const { network } = req.params;
-    
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      console.log('⚠️ MongoDB not connected, returning fallback network plans');
-      getFallbackPlans(network, res);
-      return;
-    }
-    
-    const plans = await DataPlan.find({ network }).sort({ price: 1 });
-    
-    // Convert Decimal128 to regular numbers
-    const formattedPlans = plans.map(plan => {
-      const planObj = plan.toObject();
-      if (planObj.price && planObj.price.$numberDecimal) {
-        planObj.price = parseFloat(planObj.price.$numberDecimal);
-      }
-      return planObj;
-    });
-    
-    res.json(formattedPlans);
-  } catch (error) {
-    console.error('Network plans fetch error:', error);
-    getFallbackPlans(req.params.network, res);
-  }
-});
-
-// ORDER VERIFICATION with Double handling
+// ORDER VERIFICATION
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone } = req.body;
@@ -649,7 +473,6 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       customerPhone
     });
 
-    // Validation
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ 
         valid: false,
@@ -671,7 +494,6 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       });
     }
 
-    // Validate Ghana phone numbers
     for (const item of items) {
       if (!item.recipientPhone) {
         return res.status(400).json({
@@ -688,97 +510,33 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       }
     }
 
-    // Verify each plan exists and has correct pricing with Double handling
-    const verifiedItems = [];
     let calculatedTotal = 0;
-
     for (const item of items) {
-      // Try to find plan by ID first, then by network and size
-      let plan;
-      
-      if (item.planId) {
-        plan = await DataPlan.findById(item.planId);
-      }
-      
-      // If not found by ID, try to find by network and size
-      if (!plan && item.network && item.size) {
-        plan = await DataPlan.findOne({
-          network: item.network,
-          size: item.size
-        });
-      }
-
-      if (!plan) {
-        return res.status(400).json({
-          valid: false,
-          message: `Plan not found: ${item.network} ${item.size}`
-        });
-      }
-
-      // Get plan price as Double (handle both Decimal128 and regular numbers)
-      let planPrice;
-      const planObj = plan.toObject();
-      if (planObj.price && planObj.price.$numberDecimal) {
-        planPrice = parseFloat(planObj.price.$numberDecimal);
-      } else if (planObj.price && typeof planObj.price === 'object') {
-        planPrice = parseFloat(planObj.price.toString());
-      } else {
-        planPrice = toDouble(planObj.price);
-      }
-
-      // Verify network and size match
-      if (plan.network !== item.network || plan.size !== item.size) {
-        console.warn(`Plan details mismatch: DB(${plan.network} ${plan.size}) vs Request(${item.network} ${item.size})`);
-      }
-
-      // Use plan price from database (not client price)
-      const itemPrice = toDouble(planPrice);
-      const itemQuantity = item.quantity || 1;
-      const itemTotal = toDouble(itemPrice * itemQuantity);
-      calculatedTotal = toDouble(calculatedTotal + itemTotal);
-      
-      verifiedItems.push({
-        ...item,
-        planId: plan._id,
-        price: itemPrice,
-        validity: plan.validity,
-        description: plan.description,
-        originalPrice: toDouble(item.price), // Keep original for reference
-        verifiedPrice: itemPrice,
-        quantity: itemQuantity,
-        itemTotal: itemTotal
-      });
+      const itemPrice = parseFloat(item.price) || 0;
+      const itemQuantity = parseInt(item.quantity) || 1;
+      calculatedTotal += itemPrice * itemQuantity;
     }
 
-    // Add service fee
     const serviceFee = 0.50;
     const finalTotal = toDouble(calculatedTotal + serviceFee);
 
-    // Verify total amount matches (allow small differences due to rounding)
-    const receivedTotal = toDouble(totalAmount);
-    const difference = Math.abs(finalTotal - receivedTotal);
+    const difference = Math.abs(finalTotal - totalAmount);
     if (difference > 0.01) {
-      console.log(`Total mismatch: Calculated=${finalTotal}, Received=${receivedTotal}, Difference=${difference}`);
+      console.log(`Total mismatch: Calculated=${finalTotal}, Received=${totalAmount}, Difference=${difference}`);
       
       return res.status(400).json({
         valid: false,
-        message: `Total amount mismatch. Expected: GH₵${finalTotal.toFixed(2)}, Received: GH₵${receivedTotal.toFixed(2)}`,
+        message: `Total amount mismatch. Expected: GH₵${finalTotal.toFixed(2)}, Received: GH₵${totalAmount}`,
         calculatedTotal: finalTotal,
-        receivedTotal: receivedTotal,
+        receivedTotal: totalAmount,
         difference: difference.toFixed(2),
         serviceFee: serviceFee
       });
     }
 
     console.log('✅ Order verification successful:', {
-      itemsCount: verifiedItems.length,
-      calculatedTotal: finalTotal,
-      verifiedItems: verifiedItems.map(item => ({
-        network: item.network,
-        size: item.size,
-        price: item.price,
-        quantity: item.quantity
-      }))
+      itemsCount: items.length,
+      calculatedTotal: finalTotal
     });
 
     res.json({
@@ -787,8 +545,8 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       totalAmount: finalTotal,
       calculatedAmount: calculatedTotal,
       serviceFee: serviceFee,
-      items: verifiedItems,
-      verificationId: `VERIFY_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      items: items,
+      verificationId: `VERIFY_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
       timestamp: new Date().toISOString()
     });
 
@@ -797,625 +555,157 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
     res.status(500).json({ 
       valid: false,
       message: 'Failed to verify order',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 });
 
-// Create Order with Double precision
+// FIXED: Create Order with retry logic for duplicate TRX codes
 app.post('/api/orders', authMiddleware, async (req, res) => {
-  try {
-    const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
+  let retryCount = 0;
+  const maxRetries = 3;
+  
+  while (retryCount < maxRetries) {
+    try {
+      console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
+      console.log('👤 User ID:', req.userId);
+      
+      const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
 
-    // Validation
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Order must contain at least one item' });
-    }
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        console.log('❌ Validation failed: No items in order');
+        return res.status(400).json({ 
+          success: false,
+          error: 'Order must contain at least one item' 
+        });
+      }
 
-    const validatedTotal = toDouble(totalAmount);
-    if (!validatedTotal || validatedTotal <= 0) {
-      return res.status(400).json({ error: 'Invalid order total' });
-    }
+      for (const item of items) {
+        if (!item.network || !item.size || !item.price || !item.recipientPhone) {
+          console.log('❌ Invalid item:', item);
+          return res.status(400).json({
+            success: false,
+            error: 'Each item must have network, size, price, and recipientPhone'
+          });
+        }
+      }
 
-    if (!customerEmail || !customerPhone) {
-      return res.status(400).json({ error: 'Customer email and phone are required' });
-    }
+      if (!totalAmount || isNaN(totalAmount) || totalAmount <= 0) {
+        console.log('❌ Validation failed: Invalid total amount', totalAmount);
+        return res.status(400).json({ 
+          success: false,
+          error: 'Invalid order total' 
+        });
+      }
 
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
+      if (!customerEmail || !customerPhone) {
+        console.log('❌ Validation failed: Missing customer info', { customerEmail, customerPhone });
+        return res.status(400).json({ 
+          success: false,
+          error: 'Customer email and phone are required' 
+        });
+      }
 
-    // Generate unique TRX code
-    const trxCode = generateTRXCode();
+      if (mongoose.connection.readyState !== 1) {
+        console.log('❌ Database not connected');
+        return res.status(503).json({ 
+          success: false,
+          error: 'Database temporarily unavailable. Please try again.' 
+        });
+      }
 
-    // Convert all prices to Double precision and Decimal128 for storage
-    const doubleItems = items.map(item => ({
-      ...item,
-      price: toDecimal128(item.price), // Store as Decimal128
-      quantity: item.quantity || 1
-    }));
+      // Generate unique TRX code
+      const trxCode = generateTRXCode();
+      console.log(`🆕 Attempt ${retryCount + 1}: Generated TRX Code:`, trxCode);
 
-    // Create order with Decimal128 for totalAmount
-    const order = new Order({
-      trxCode,
-      userId: req.userId,
-      items: doubleItems,
-      totalAmount: toDecimal128(validatedTotal),
-      customerEmail: customerEmail,
-      customerPhone: customerPhone,
-      paymentMethod: paymentMethod || 'paystack',
-      paymentStatus: 'pending',
-      status: 'placed'
-    });
+      const preparedItems = items.map(item => ({
+        planId: item.planId || 'default-plan-id',
+        network: item.network,
+        size: item.size,
+        price: parseFloat(item.price) || 0,
+        recipientPhone: item.recipientPhone,
+        quantity: parseInt(item.quantity) || 1
+      }));
 
-    await order.save();
+      console.log('💾 Prepared items:', preparedItems);
 
-    // Get the created order with converted prices for response
-    const orderResponse = order.toObject();
-    orderResponse.totalAmount = validatedTotal;
-    orderResponse.items = orderResponse.items.map(item => {
-      item.price = toDouble(item.price);
-      return item;
-    });
+      const order = new Order({
+        trxCode,
+        userId: req.userId,
+        items: preparedItems,
+        totalAmount: parseFloat(totalAmount) || 0,
+        customerEmail: customerEmail,
+        customerPhone: customerPhone,
+        paymentMethod: paymentMethod || 'paystack',
+        paymentStatus: 'pending',
+        status: 'placed'
+      });
 
-    res.status(201).json({
-      success: true,
-      message: 'Order created successfully',
-      orderId: order._id,
-      trxCode: order.trxCode,
-      order: orderResponse
-    });
+      await order.save();
+      console.log('✅ Order saved successfully. ID:', order._id, 'TRX:', order.trxCode);
 
-  } catch (error) {
-    console.error('Order creation error:', error);
-    if (error.name === 'MongoServerError' && error.code === 11000) {
-      return res.status(400).json({ 
+      return res.status(201).json({
+        success: true,
+        message: 'Order created successfully',
+        orderId: order._id,
+        trxCode: order.trxCode,
+        order: {
+          _id: order._id,
+          trxCode: order.trxCode,
+          items: order.items,
+          totalAmount: order.totalAmount,
+          status: order.status,
+          customerEmail: order.customerEmail,
+          customerPhone: order.customerPhone,
+          createdAt: order.createdAt
+        }
+      });
+
+    } catch (error) {
+      console.error(`❌ Order creation attempt ${retryCount + 1} failed:`, error.message);
+      
+      // If it's a duplicate key error, retry with new TRX code
+      if (error.name === 'MongoServerError' && error.code === 11000) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`🔄 Retrying order creation (attempt ${retryCount + 1}/${maxRetries})...`);
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        } else {
+          console.error('❌ Max retries reached for duplicate TRX code');
+          return res.status(400).json({ 
+            success: false,
+            error: 'Failed to create order due to duplicate transaction ID. Please try again.' 
+          });
+        }
+      }
+      
+      // Other validation errors
+      if (error.name === 'ValidationError') {
+        const errors = Object.values(error.errors).map(err => err.message);
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors
+        });
+      }
+      
+      // Other errors
+      return res.status(500).json({ 
         success: false,
-        error: 'Order ID already exists. Please try again.' 
+        error: 'Failed to create order',
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to create order',
-      details: error.message 
-    });
   }
 });
 
-// Get User Orders
-app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-
-    const orders = await Order.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    // Convert Decimal128 to regular numbers
-    const formattedOrders = orders.map(order => {
-      // Handle totalAmount
-      let totalAmount = 0;
-      if (order.totalAmount && order.totalAmount.$numberDecimal) {
-        totalAmount = parseFloat(order.totalAmount.$numberDecimal);
-      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-        totalAmount = parseFloat(order.totalAmount.toString());
-      } else {
-        totalAmount = toDouble(order.totalAmount);
-      }
-      
-      // Handle item prices
-      const items = order.items.map(item => {
-        let price = 0;
-        if (item.price && item.price.$numberDecimal) {
-          price = parseFloat(item.price.$numberDecimal);
-        } else if (item.price && typeof item.price === 'object') {
-          price = parseFloat(item.price.toString());
-        } else {
-          price = toDouble(item.price);
-        }
-        return { ...item, price };
-      });
-
-      return {
-        _id: order._id,
-        trxCode: order.trxCode,
-        orderId: order.trxCode,
-        items: items,
-        total: totalAmount,
-        totalAmount: totalAmount,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        paymentMethod: order.paymentMethod,
-        customerEmail: order.customerEmail,
-        customerPhone: order.customerPhone,
-        createdAt: order.createdAt,
-        updatedAt: order.updatedAt
-      };
-    });
-
-    const totalOrders = await Order.countDocuments({ userId: req.userId });
-
-    res.json({
-      orders: formattedOrders,
-      pagination: {
-        total: totalOrders,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalOrders / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Orders fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
-// Get Recent Transactions (for dashboard)
-app.get('/api/orders/recent', authMiddleware, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-    
-    const orders = await Order.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean();
-
-    const recentTransactions = orders.map(order => {
-      // Convert Decimal128 to regular number for amount
-      let amount = 0;
-      if (order.totalAmount && order.totalAmount.$numberDecimal) {
-        amount = parseFloat(order.totalAmount.$numberDecimal);
-      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-        amount = parseFloat(order.totalAmount.toString());
-      } else {
-        amount = toDouble(order.totalAmount);
-      }
-
-      return {
-        id: order.trxCode,
-        package: order.items[0]?.network + '-' + order.items[0]?.size,
-        description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
-        amount: amount,
-        beneficiary: order.items[0]?.recipientPhone || order.customerPhone,
-        paymentSource: order.paymentMethod || 'Paystack',
-        paymentStatus: order.paymentStatus || 'pending',
-        date: order.createdAt,
-        status: order.status || 'placed'
-      };
-    });
-
-    res.json(recentTransactions);
-  } catch (error) {
-    console.error('Recent transactions error:', error);
-    res.status(500).json({ error: 'Failed to fetch recent transactions' });
-  }
-});
-
-// Get Order by TRX Code
-app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
-  try {
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-    
-    const order = await Order.findOne({ 
-      trxCode: req.params.trxCode,
-      userId: req.userId 
-    }).lean();
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Convert Decimal128 to regular numbers
-    if (order.totalAmount && order.totalAmount.$numberDecimal) {
-      order.totalAmount = parseFloat(order.totalAmount.$numberDecimal);
-    }
-    
-    if (order.items && Array.isArray(order.items)) {
-      order.items = order.items.map(item => {
-        if (item.price && item.price.$numberDecimal) {
-          item.price = parseFloat(item.price.$numberDecimal);
-        }
-        return item;
-      });
-    }
-
-    res.json(order);
-  } catch (error) {
-    console.error('Order fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch order' });
-  }
-});
-
-// Get Single Order
-app.get('/api/orders/:id', authMiddleware, async (req, res) => {
-  try {
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-    
-    const order = await Order.findOne({
-      _id: req.params.id,
-      userId: req.userId
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.json(order);
-  } catch (error) {
-    console.error('Order fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch order' });
-  }
-});
-
-// Cancel Order
-app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
-  try {
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-    
-    const order = await Order.findOne({
-      _id: req.params.id,
-      userId: req.userId
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Can only cancel if not already delivered or processing
-    if (order.status === 'delivered') {
-      return res.status(400).json({ error: 'Cannot cancel delivered order' });
-    }
-
-    order.status = 'cancelled';
-    order.updatedAt = new Date();
-    await order.save();
-
-    res.json({
-      success: true,
-      message: 'Order cancelled successfully',
-      order: order
-    });
-  } catch (error) {
-    console.error('Order cancellation error:', error);
-    res.status(500).json({ error: 'Failed to cancel order' });
-  }
-});
-
-// Get User Dashboard Stats - FIXED ObjectId issue
-app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
-  try {
-    const userId = req.userId;
-    
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ 
-        error: 'Database temporarily unavailable',
-        stats: getFallbackStats()
-      });
-    }
-    
-    // Get today's date at start of day
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Get start of week (Monday)
-    const startOfWeek = new Date();
-    startOfWeek.setHours(0, 0, 0, 0);
-    const day = startOfWeek.getDay();
-    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-    startOfWeek.setDate(diff);
-    
-    // Get start of month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    
-    // Fetch all user orders with details
-    const userOrders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
-      .sort({ createdAt: -1 })
-      .lean();
-    
-    // Calculate statistics
-    const totalOrders = userOrders.length;
-    
-    // Calculate today's orders
-    const todayOrders = userOrders.filter(order => 
-      order.createdAt >= today
-    ).length;
-    
-    // Calculate total spent (only from successful payments)
-    const totalSpent = userOrders
-      .filter(order => order.paymentStatus === 'success')
-      .reduce((sum, order) => {
-        let amount = 0;
-        if (order.totalAmount && order.totalAmount.$numberDecimal) {
-          amount = parseFloat(order.totalAmount.$numberDecimal);
-        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-          amount = parseFloat(order.totalAmount.toString());
-        } else {
-          amount = toDouble(order.totalAmount);
-        }
-        return sum + amount;
-      }, 0);
-    
-    // Calculate week's and month's spent
-    const weekSpent = userOrders
-      .filter(order => 
-        order.paymentStatus === 'success' && 
-        order.createdAt >= startOfWeek
-      )
-      .reduce((sum, order) => {
-        let amount = 0;
-        if (order.totalAmount && order.totalAmount.$numberDecimal) {
-          amount = parseFloat(order.totalAmount.$numberDecimal);
-        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-          amount = parseFloat(order.totalAmount.toString());
-        } else {
-          amount = toDouble(order.totalAmount);
-        }
-        return sum + amount;
-      }, 0);
-    
-    const monthSpent = userOrders
-      .filter(order => 
-        order.paymentStatus === 'success' && 
-        order.createdAt >= startOfMonth
-      )
-      .reduce((sum, order) => {
-        let amount = 0;
-        if (order.totalAmount && order.totalAmount.$numberDecimal) {
-          amount = parseFloat(order.totalAmount.$numberDecimal);
-        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-          amount = parseFloat(order.totalAmount.toString());
-        } else {
-          amount = toDouble(order.totalAmount);
-        }
-        return sum + amount;
-      }, 0);
-    
-    // Calculate ACTUAL total data volume from all orders
-    let totalDataGB = 0;
-    let totalDataMB = 0;
-    
-    userOrders.forEach(order => {
-      order.items.forEach(item => {
-        const quantity = item.quantity || 1;
-        const size = item.size || '';
-        
-        if (size.includes('GB')) {
-          const gbValue = parseFloat(size.replace('GB', '').trim());
-          if (!isNaN(gbValue)) {
-            totalDataGB += gbValue * quantity;
-          }
-        } else if (size.includes('MB')) {
-          const mbValue = parseFloat(size.replace('MB', '').trim());
-          if (!isNaN(mbValue)) {
-            totalDataMB += mbValue * quantity;
-          }
-        } else if (size.includes('TB')) {
-          const tbValue = parseFloat(size.replace('TB', '').trim());
-          if (!isNaN(tbValue)) {
-            totalDataGB += tbValue * 1024 * quantity;
-          }
-        }
-      });
-    });
-    
-    // Convert MB to GB (1024MB = 1GB)
-    const totalDataFromMB = totalDataMB / 1024;
-    const totalDataVolume = totalDataGB + totalDataFromMB;
-    
-    // Calculate data volume for today
-    let todayDataGB = 0;
-    let todayDataMB = 0;
-    
-    const todayOrdersList = userOrders.filter(order => order.createdAt >= today);
-    todayOrdersList.forEach(order => {
-      order.items.forEach(item => {
-        const quantity = item.quantity || 1;
-        const size = item.size || '';
-        
-        if (size.includes('GB')) {
-          const gbValue = parseFloat(size.replace('GB', '').trim());
-          if (!isNaN(gbValue)) {
-            todayDataGB += gbValue * quantity;
-          }
-        } else if (size.includes('MB')) {
-          const mbValue = parseFloat(size.replace('MB', '').trim());
-          if (!isNaN(mbValue)) {
-            todayDataMB += mbValue * quantity;
-          }
-        }
-      });
-    });
-    
-    const todayDataVolume = todayDataGB + (todayDataMB / 1024);
-    
-    // Calculate average order value
-    const successfulOrders = userOrders.filter(order => order.paymentStatus === 'success');
-    const averageOrderValue = successfulOrders.length > 0 
-      ? totalSpent / successfulOrders.length 
-      : 0;
-    
-    // Get delivered orders count
-    const deliveredOrders = userOrders.filter(order => 
-      order.status === 'delivered'
-    ).length;
-    
-    // Get recent orders for display
-    const recentOrders = userOrders.slice(0, 5).map(order => {
-      let amount = 0;
-      if (order.totalAmount && order.totalAmount.$numberDecimal) {
-        amount = parseFloat(order.totalAmount.$numberDecimal);
-      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-        amount = parseFloat(order.totalAmount.toString());
-      } else {
-        amount = toDouble(order.totalAmount);
-      }
-      
-      return {
-        id: order.trxCode,
-        package: order.items[0]?.network + '-' + order.items[0]?.size,
-        amount: amount,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        date: order.createdAt,
-        items: order.items.map(item => ({
-          network: item.network,
-          size: item.size,
-          price: toDouble(item.price)
-        }))
-      };
-    });
-    
-    res.json({
-      stats: {
-        totalOrders,
-        todayOrders,
-        deliveredOrders,
-        totalSpent: parseFloat(totalSpent.toFixed(2)),
-        weekSpent: parseFloat(weekSpent.toFixed(2)),
-        monthSpent: parseFloat(monthSpent.toFixed(2)),
-        averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
-        totalDataGB: parseFloat(totalDataVolume.toFixed(2)),
-        totalDataMB: totalDataMB,
-        todayDataGB: parseFloat(todayDataVolume.toFixed(2)),
-        totalDataFormatted: totalDataVolume >= 1 ? 
-          `${totalDataVolume.toFixed(2)} GB` : 
-          `${(totalDataVolume * 1024).toFixed(0)} MB`,
-        todayDataFormatted: todayDataVolume >= 1 ? 
-          `${todayDataVolume.toFixed(2)} GB` : 
-          `${(todayDataVolume * 1024).toFixed(0)} MB`,
-        orderSuccessRate: totalOrders > 0 ? 
-          parseFloat(((deliveredOrders / totalOrders) * 100).toFixed(1)) : 0
-      },
-      recentOrders,
-      summary: {
-        totalItems: userOrders.reduce((sum, order) => 
-          sum + (order.items?.reduce((itemSum, item) => 
-            itemSum + (item.quantity || 1), 0) || 0), 0),
-        networks: [...new Set(userOrders.flatMap(order => 
-          order.items?.map(item => item.network) || []
-        ))],
-        lastOrderDate: userOrders[0]?.createdAt || null,
-        firstOrderDate: userOrders[userOrders.length - 1]?.createdAt || null
-      }
-    });
-    
-  } catch (error) {
-    console.error('Dashboard stats error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch dashboard stats',
-      stats: getFallbackStats(),
-      message: error.message 
-    });
-  }
-});
-
-// Helper function for fallback stats
-function getFallbackStats() {
-  return {
-    totalOrders: 0,
-    todayOrders: 0,
-    deliveredOrders: 0,
-    totalSpent: 0,
-    weekSpent: 0,
-    monthSpent: 0,
-    averageOrderValue: 0,
-    totalDataGB: 0,
-    totalDataMB: 0,
-    todayDataGB: 0,
-    totalDataFormatted: '0 GB',
-    todayDataFormatted: '0 GB',
-    orderSuccessRate: 0
-  };
-}
-
-// Get Transaction History with Pagination
-app.get('/api/users/transactions', authMiddleware, async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (page - 1) * limit;
-
-    // Check if MongoDB is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
-    }
-
-    const orders = await Order.find({ userId: req.userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    const totalOrders = await Order.countDocuments({ userId: req.userId });
-
-    const transactions = orders.map(order => {
-      let amount = 0;
-      if (order.totalAmount && order.totalAmount.$numberDecimal) {
-        amount = parseFloat(order.totalAmount.$numberDecimal);
-      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
-        amount = parseFloat(order.totalAmount.toString());
-      } else {
-        amount = toDouble(order.totalAmount);
-      }
-      
-      return {
-        trxCode: order.trxCode,
-        package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
-        description: order.items[0]?.description || 'Data Bundle',
-        amount: amount,
-        beneficiary: order.items.map(item => item.recipientPhone).join(', '),
-        paymentSource: order.paymentMethod,
-        paymentStatus: order.paymentStatus,
-        date: order.createdAt,
-        status: order.status
-      };
-    });
-
-    res.json({
-      transactions,
-      pagination: {
-        total: totalOrders,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalOrders / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Transactions history error:', error);
-    res.status(500).json({ error: 'Failed to fetch transaction history' });
-  }
-});
-
-// Initialize Payment (Paystack) with Double handling
+// Initialize Payment (Paystack)
 app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email, amount } = req.body;
+    console.log('💰 Payment initialization request:', { orderId, email, amount });
 
     if (!orderId || !email || !amount) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -1425,12 +715,10 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
       return res.status(503).json({ error: 'Payment service not configured' });
     }
 
-    // Convert amount to kobo with Double precision
-    const validatedAmount = toDouble(amount);
+    const validatedAmount = parseFloat(amount);
     const amountInKobo = Math.round(validatedAmount * 100);
 
-    // Generate unique reference
-    const reference = `ALLEN_${orderId}_${Date.now()}`;
+    const reference = `ALLEN_${orderId}_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`;
 
     const response = await paystack.post('/transaction/initialize', {
       email,
@@ -1446,7 +734,6 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
 
     const { data } = response.data;
 
-    // Update order with payment reference
     await Order.findByIdAndUpdate(orderId, {
       paymentReference: data.reference,
       updatedAt: new Date()
@@ -1476,7 +763,6 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
     const response = await paystack.get(`/transaction/verify/${reference}`);
     const { data } = response.data;
 
-    // Find and update order
     const order = await Order.findOne({ paymentReference: reference });
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -1488,7 +774,6 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
       order.updatedAt = new Date();
       await order.save();
 
-      // Clear cart for this user
       console.log(`✅ Payment successful for order ${order.trxCode}`);
 
       res.json({
@@ -1496,7 +781,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
         message: 'Payment verified successfully',
         order: order,
         trxCode: order.trxCode,
-        amount: data.amount / 100 // Convert back from kobo
+        amount: data.amount / 100
       });
     } else {
       order.paymentStatus = 'failed';
@@ -1518,9 +803,169 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   }
 });
 
+// Get User Orders
+app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const orders = await Order.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalOrders = await Order.countDocuments({ userId: req.userId });
+
+    res.json({
+      orders,
+      pagination: {
+        total: totalOrders,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalOrders / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Orders fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Get Recent Transactions
+app.get('/api/orders/recent', authMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const orders = await Order.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const recentTransactions = orders.map(order => ({
+      id: order.trxCode,
+      package: order.items[0]?.network + '-' + order.items[0]?.size,
+      description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
+      amount: order.totalAmount,
+      beneficiary: order.items[0]?.recipientPhone || order.customerPhone,
+      paymentSource: order.paymentMethod || 'Paystack',
+      paymentStatus: order.paymentStatus || 'pending',
+      date: order.createdAt,
+      status: order.status || 'placed'
+    }));
+
+    res.json(recentTransactions);
+  } catch (error) {
+    console.error('Recent transactions error:', error);
+    res.status(500).json({ error: 'Failed to fetch recent transactions' });
+  }
+});
+
+// Get User Dashboard Stats
+app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const userOrders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    const totalOrders = userOrders.length;
+    const todayOrders = userOrders.filter(order => order.createdAt >= today).length;
+    
+    const totalSpent = userOrders
+      .filter(order => order.paymentStatus === 'success')
+      .reduce((sum, order) => sum + order.totalAmount, 0);
+    
+    let totalDataGB = 0;
+    let totalDataMB = 0;
+    
+    userOrders.forEach(order => {
+      order.items.forEach(item => {
+        const quantity = item.quantity || 1;
+        const size = item.size || '';
+        
+        if (size.includes('GB')) {
+          const gbValue = parseFloat(size.replace('GB', '').trim());
+          if (!isNaN(gbValue)) {
+            totalDataGB += gbValue * quantity;
+          }
+        } else if (size.includes('MB')) {
+          const mbValue = parseFloat(size.replace('MB', '').trim());
+          if (!isNaN(mbValue)) {
+            totalDataMB += mbValue * quantity;
+          }
+        }
+      });
+    });
+    
+    const totalDataFromMB = totalDataMB / 1024;
+    const totalDataVolume = totalDataGB + totalDataFromMB;
+    
+    const deliveredOrders = userOrders.filter(order => order.status === 'delivered').length;
+    const successfulOrders = userOrders.filter(order => order.paymentStatus === 'success');
+    const averageOrderValue = successfulOrders.length > 0 ? totalSpent / successfulOrders.length : 0;
+    
+    const recentOrders = userOrders.slice(0, 5).map(order => ({
+      id: order.trxCode,
+      package: order.items[0]?.network + '-' + order.items[0]?.size,
+      amount: order.totalAmount,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      date: order.createdAt,
+      items: order.items.map(item => ({
+        network: item.network,
+        size: item.size,
+        price: item.price
+      }))
+    }));
+    
+    res.json({
+      stats: {
+        totalOrders,
+        todayOrders,
+        deliveredOrders,
+        totalSpent: parseFloat(totalSpent.toFixed(2)),
+        averageOrderValue: parseFloat(averageOrderValue.toFixed(2)),
+        totalDataGB: parseFloat(totalDataVolume.toFixed(2)),
+        totalDataMB: totalDataMB,
+        totalDataFormatted: totalDataVolume >= 1 ? 
+          `${totalDataVolume.toFixed(2)} GB` : 
+          `${(totalDataVolume * 1024).toFixed(0)} MB`,
+        orderSuccessRate: totalOrders > 0 ? 
+          parseFloat(((deliveredOrders / totalOrders) * 100).toFixed(1)) : 0
+      },
+      recentOrders
+    });
+    
+  } catch (error) {
+    console.error('Dashboard stats error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch dashboard stats',
+      stats: getFallbackStats()
+    });
+  }
+});
+
+function getFallbackStats() {
+  return {
+    totalOrders: 0,
+    todayOrders: 0,
+    deliveredOrders: 0,
+    totalSpent: 0,
+    averageOrderValue: 0,
+    totalDataGB: 0,
+    totalDataMB: 0,
+    totalDataFormatted: '0 GB',
+    orderSuccessRate: 0
+  };
+}
+
 // ==================== ADMIN ROUTES ====================
 
-// Get All Orders (Admin)
 app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
@@ -1555,155 +1000,8 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   }
 });
 
-// Get Admin Stats with Double handling
-app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [
-      totalOrders,
-      todayOrders,
-      totalRevenueResult,
-      todayRevenueResult,
-      userCount,
-      networkStats
-    ] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ createdAt: { $gte: today } }),
-      Order.aggregate([
-        { $match: { paymentStatus: 'success' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { 
-          $match: { 
-            paymentStatus: 'success',
-            createdAt: { $gte: today }
-          } 
-        },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      User.countDocuments(),
-      Order.aggregate([
-        { $unwind: '$items' },
-        { $group: { 
-          _id: '$items.network', 
-          count: { $sum: 1 },
-          revenue: { $sum: '$items.price' }
-        } }
-      ])
-    ]);
-
-    // Convert Decimal128 to regular numbers
-    const totalRevenue = totalRevenueResult.length > 0 ? 
-      toDouble(totalRevenueResult[0].total) : 0;
-    const todayRevenue = todayRevenueResult.length > 0 ? 
-      toDouble(todayRevenueResult[0].total) : 0;
-
-    // Convert network stats
-    const formattedNetworkStats = networkStats.reduce((acc, stat) => {
-      const revenue = toDouble(stat.revenue);
-      acc[stat._id] = {
-        orders: stat.count,
-        revenue: revenue
-      };
-      return acc;
-    }, {});
-
-    res.json({
-      today: {
-        totalOrders: todayOrders,
-        totalRevenue: todayRevenue
-      },
-      allTime: {
-        totalOrders,
-        totalRevenue,
-        totalUsers: userCount
-      },
-      networkStats: formattedNetworkStats
-    });
-  } catch (error) {
-    console.error('Admin stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch admin stats' });
-  }
-});
-
-// Update Order Status (Admin)
-app.patch('/api/admin/orders/:id/status', adminMiddleware, async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { 
-        status,
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Order status updated successfully',
-      order: order
-    });
-  } catch (error) {
-    console.error('Order status update error:', error);
-    res.status(500).json({ error: 'Failed to update order status' });
-  }
-});
-
-// Get User Stats (Admin)
-app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-
-    const [
-      totalOrders,
-      totalSpentResult,
-      recentOrders
-    ] = await Promise.all([
-      Order.countDocuments({ userId: new mongoose.Types.ObjectId(userId) }),
-      Order.aggregate([
-        { $match: { 
-          userId: new mongoose.Types.ObjectId(userId),
-          paymentStatus: 'success'
-        }},
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.find({ userId: new mongoose.Types.ObjectId(userId) })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean()
-    ]);
-
-    const totalSpent = totalSpentResult.length > 0 ? toDouble(totalSpentResult[0].total) : 0;
-
-    res.json({
-      userId,
-      totalOrders,
-      totalSpent,
-      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
-      recentOrders: recentOrders
-    });
-  } catch (error) {
-    console.error('User stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch user stats' });
-  }
-});
-
 // ==================== ERROR HANDLERS ====================
 
-// 404 Handler
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Endpoint not found',
@@ -1712,7 +1010,6 @@ app.use((req, res) => {
   });
 });
 
-// Error Handler
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ 
@@ -1727,7 +1024,6 @@ app.listen(PORT, () => {
   console.log(`📍 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
-  console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`💰 Currency Precision: Using Decimal128 for Double precision`);
+  console.log(`🔄 TRX Generation: Using crypto for unique transaction codes`);
 });
