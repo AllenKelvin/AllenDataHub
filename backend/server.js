@@ -4,7 +4,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -73,8 +72,9 @@ const userSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Order schema WITHOUT unique constraint on trxCode
 const orderSchema = new mongoose.Schema({
-  trxCode: { type: String, required: true }, // Removed unique constraint
+  trxCode: { type: String, required: true }, // REMOVED unique: true
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
     planId: { type: String, required: true },
@@ -140,12 +140,14 @@ const paystack = axios.create({
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
 
-// Generate unique TRX code using UUID
+// Generate unique TRX code without UUID dependency
 const generateTRXCode = () => {
-  const date = new Date();
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-  const uniqueId = uuidv4().split('-')[0].toUpperCase();
-  return `TRX-${dateStr}-${uniqueId}`;
+  const timestamp = Date.now().toString(36).toUpperCase();
+  // Use crypto module for better randomness (comes with Node.js)
+  const crypto = require('crypto');
+  const randomBytes = crypto.randomBytes(6).toString('hex').toUpperCase();
+  const randomStr = Math.random().toString(36).substr(2, 8).toUpperCase();
+  return `TRX${timestamp}${randomBytes}${randomStr}`.slice(0, 32);
 };
 
 // Helper function to validate Ghana phone number
@@ -627,7 +629,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       calculatedAmount: calculatedTotal,
       serviceFee: serviceFee,
       items: items,
-      verificationId: `VERIFY-${uuidv4()}`,
+      verificationId: `VERIFY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString()
     });
 
@@ -1046,7 +1048,8 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
     const validatedAmount = parseFloat(amount);
     const amountInKobo = Math.round(validatedAmount * 100);
 
-    const reference = `ALLEN-${orderId}-${uuidv4().split('-')[0]}`;
+    const crypto = require('crypto');
+    const reference = `ALLEN-${orderId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     const response = await paystack.post('/transaction/initialize', {
       email,
@@ -1333,5 +1336,5 @@ app.listen(PORT, () => {
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`🔑 TRX Generation: Using UUID for guaranteed unique transaction codes`);
+  console.log(`🔑 TRX Generation: Using crypto.randomBytes for unique transaction codes`);
 });
