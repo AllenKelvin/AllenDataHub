@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -72,9 +73,8 @@ const userSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Order schema WITHOUT unique constraint on trxCode
+// Order schema - SIMPLIFIED, no trxCode field
 const orderSchema = new mongoose.Schema({
-  trxCode: { type: String, required: true }, // REMOVED unique: true
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
     planId: { type: String, required: true },
@@ -139,16 +139,6 @@ const paystack = axios.create({
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
-
-// Generate unique TRX code without UUID dependency
-const generateTRXCode = () => {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  // Use crypto module for better randomness (comes with Node.js)
-  const crypto = require('crypto');
-  const randomBytes = crypto.randomBytes(6).toString('hex').toUpperCase();
-  const randomStr = Math.random().toString(36).substr(2, 8).toUpperCase();
-  return `TRX${timestamp}${randomBytes}${randomStr}`.slice(0, 32);
-};
 
 // Helper function to validate Ghana phone number
 const isValidGhanaNumber = (phone) => {
@@ -629,7 +619,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       calculatedAmount: calculatedTotal,
       serviceFee: serviceFee,
       items: items,
-      verificationId: `VERIFY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      verificationId: `VERIFY-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
       timestamp: new Date().toISOString()
     });
 
@@ -643,7 +633,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// FIXED: Create Order - No duplicate TRX code issues
+// FIXED: Create Order - No TRX code, simplified
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
@@ -693,11 +683,8 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
 
-    const trxCode = generateTRXCode();
-    console.log('🆕 Generated TRX Code:', trxCode);
-
     const preparedItems = items.map(item => ({
-      planId: item.planId || 'default-plan-id',
+      planId: item.planId || `PLAN-${crypto.randomBytes(4).toString('hex')}`,
       network: item.network,
       size: item.size,
       price: parseFloat(item.price) || 0,
@@ -708,7 +695,6 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     console.log('💾 Prepared items:', preparedItems);
 
     const order = new Order({
-      trxCode,
       userId: req.userId,
       items: preparedItems,
       totalAmount: parseFloat(totalAmount) || 0,
@@ -720,16 +706,14 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     });
 
     await order.save();
-    console.log('✅ Order saved successfully. ID:', order._id, 'TRX:', order.trxCode);
+    console.log('✅ Order saved successfully. ID:', order._id);
 
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
       orderId: order._id,
-      trxCode: order.trxCode,
       order: {
         _id: order._id,
-        trxCode: order.trxCode,
         items: order.items,
         totalAmount: order.totalAmount,
         status: order.status,
@@ -800,7 +784,7 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
       .lean();
 
     const recentTransactions = orders.map(order => ({
-      id: order.trxCode,
+      id: order._id,
       package: order.items[0]?.network + '-' + order.items[0]?.size,
       description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
       amount: order.totalAmount,
@@ -815,25 +799,6 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Recent transactions error:', error);
     res.status(500).json({ error: 'Failed to fetch recent transactions' });
-  }
-});
-
-// Get Order by TRX Code
-app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
-  try {
-    const order = await Order.findOne({ 
-      trxCode: req.params.trxCode,
-      userId: req.userId 
-    }).lean();
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.json(order);
-  } catch (error) {
-    console.error('Order fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch order' });
   }
 });
 
@@ -936,7 +901,7 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     const averageOrderValue = successfulOrders.length > 0 ? totalSpent / successfulOrders.length : 0;
     
     const recentOrders = userOrders.slice(0, 5).map(order => ({
-      id: order.trxCode,
+      id: order._id,
       package: order.items[0]?.network + '-' + order.items[0]?.size,
       amount: order.totalAmount,
       status: order.status,
@@ -1005,7 +970,7 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
     const totalOrders = await Order.countDocuments({ userId: req.userId });
 
     const transactions = orders.map(order => ({
-      trxCode: order.trxCode,
+      id: order._id,
       package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
       description: order.items[0]?.description || 'Data Bundle',
       amount: order.totalAmount,
@@ -1048,7 +1013,6 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
     const validatedAmount = parseFloat(amount);
     const amountInKobo = Math.round(validatedAmount * 100);
 
-    const crypto = require('crypto');
     const reference = `ALLEN-${orderId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
     const response = await paystack.post('/transaction/initialize', {
@@ -1105,13 +1069,13 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
       order.updatedAt = new Date();
       await order.save();
 
-      console.log(`✅ Payment successful for order ${order.trxCode}`);
+      console.log(`✅ Payment successful for order ${order._id}`);
 
       res.json({
         success: true,
         message: 'Payment verified successfully',
         order: order,
-        trxCode: order.trxCode,
+        id: order._id,
         amount: data.amount / 100
       });
     } else {
@@ -1336,5 +1300,5 @@ app.listen(PORT, () => {
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`🔑 TRX Generation: Using crypto.randomBytes for unique transaction codes`);
+  console.log(`🔄 Order System: Using MongoDB ObjectId as order identifier`);
 });
