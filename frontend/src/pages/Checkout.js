@@ -9,18 +9,28 @@ const Checkout = () => {
   const { cartItems, clearCart } = useCart();
   const { darkMode } = useTheme();
   const navigate = useNavigate();
+  
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     phone: '',
-    paymentMethod: 'paystack'
   });
+  
   const [orderVerification, setOrderVerification] = useState({
     isValid: false,
     message: '',
     totalAmount: 0,
-    verifiedItems: []
+    verificationId: ''
   });
+
+  // Helper function for consistent Double precision handling
+  const toDouble = (num) => {
+    if (num === null || num === undefined) return 0;
+    // Convert to number and ensure 2 decimal places
+    const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
+    return Math.round(parsed * 100) / 100; // Keep 2 decimal places
+  };
 
   useEffect(() => {
     if (cartItems.length === 0) {
@@ -34,159 +44,163 @@ const Checkout = () => {
     }
   }, [cartItems, navigate]);
 
-  // Calculate totals
-  const subtotal = cartItems.reduce((sum, item) => sum + (parseFloat(item.price) * (item.quantity || 1)), 0);
+  // Calculate totals with Double precision
+  const subtotal = toDouble(cartItems.reduce((sum, item) => {
+    const itemPrice = toDouble(item.price);
+    const quantity = item.quantity || 1;
+    return sum + (itemPrice * quantity);
+  }, 0));
+  
   const serviceFee = 0.50;
-  const total = subtotal + serviceFee;
+  const estimatedTotal = toDouble(subtotal + serviceFee);
 
-  // Verify order with backend
+  // Step 1: Verify order with backend
   const verifyOrderWithBackend = async () => {
     try {
-      setLoading(true);
+      setVerifying(true);
+      setOrderVerification(prev => ({ ...prev, isValid: false, message: '' }));
       
-      // Prepare order data for verification
+      // Validation
+      if (!formData.email || !formData.phone) {
+        alert('Please fill in email and phone number');
+        setVerifying(false);
+        return;
+      }
+
+      if (!formData.email.includes('@')) {
+        alert('Please enter a valid email address');
+        setVerifying(false);
+        return;
+      }
+
+      // Prepare order data with Double precision
       const orderData = {
-        items: cartItems.map(item => ({
-          planId: item._id || item.id, // Make sure this matches the plan ID
-          network: item.network,
-          size: item.size,
-          price: parseFloat(item.price), // Convert to number
-          recipientPhone: item.recipientPhone,
-          quantity: item.quantity || 1
-        })),
-        totalAmount: total,
+        items: cartItems.map(item => {
+          const price = toDouble(item.price);
+          
+          return {
+            planId: item._id || item.id,
+            network: item.network,
+            size: item.size,
+            price: price,
+            recipientPhone: item.recipientPhone,
+            quantity: item.quantity || 1
+          };
+        }),
+        totalAmount: estimatedTotal,
         customerEmail: formData.email,
         customerPhone: formData.phone
       };
 
-      console.log('🔄 Verifying order with backend:', orderData);
+      console.log('🔄 Verifying order:', orderData);
       
-      // Call backend to verify order
       const response = await ordersAPI.verify(orderData);
       console.log('✅ Verification response:', response.data);
       
       if (response.data.valid) {
+        const verifiedAmount = toDouble(response.data.totalAmount);
+        
         setOrderVerification({
           isValid: true,
-          message: response.data.message || 'Order verified successfully',
-          totalAmount: response.data.totalAmount || total,
-          verifiedItems: response.data.items || cartItems
+          message: 'Order verified successfully! Click "Proceed to Payment" to continue.',
+          totalAmount: verifiedAmount,
+          verificationId: response.data.verificationId
         });
-        alert('✅ Order verified! You can now proceed to payment.');
       } else {
         setOrderVerification({
           isValid: false,
           message: response.data.message || 'Order verification failed',
           totalAmount: 0,
-          verifiedItems: []
+          verificationId: ''
         });
-        alert('❌ Order verification failed: ' + (response.data.message || 'Please check your order details'));
       }
       
     } catch (error) {
       console.error('❌ Order verification error:', error);
-      const errorMessage = error.response?.data?.message || 
-                        error.response?.data?.error || 
-                        error.message || 
-                        'Failed to verify order. Please try again.';
-      
       setOrderVerification({
         isValid: false,
-        message: errorMessage,
+        message: error.response?.data?.message || 'Failed to verify order',
         totalAmount: 0,
-        verifiedItems: []
+        verificationId: ''
       });
-      
-      alert('❌ Verification Error: ' + errorMessage);
     } finally {
-      setLoading(false);
+      setVerifying(false);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    // Validation
-    if (!formData.email || !formData.phone) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    if (!formData.email.includes('@')) {
-      alert('Please enter a valid email address');
-      return;
-    }
-
-    // Verify order first (if not already verified)
+  // Step 2: Create Order and Navigate to Payment Page
+  const proceedToPayment = async () => {
     if (!orderVerification.isValid) {
       alert('Please verify your order first');
       return;
     }
 
-    setLoading(true);
-    
     try {
-      // Create order with backend
+      setLoading(true);
+      
+      // Create order in backend first with Double precision
       const orderData = {
-        items: cartItems.map(item => ({
-          planId: item._id || item.id,
-          network: item.network,
-          size: item.size,
-          price: parseFloat(item.price),
-          recipientPhone: item.recipientPhone,
-          quantity: item.quantity || 1
-        })),
-        totalAmount: total,
+        items: cartItems.map(item => {
+          const price = toDouble(item.price);
+          
+          return {
+            planId: item._id || item.id,
+            network: item.network,
+            size: item.size,
+            price: price, // Already in Double
+            recipientPhone: item.recipientPhone,
+            quantity: item.quantity || 1
+          };
+        }),
+        totalAmount: orderVerification.totalAmount,
         customerEmail: formData.email,
         customerPhone: formData.phone,
-        paymentMethod: formData.paymentMethod
+        paymentMethod: 'paystack'
       };
 
       console.log('🛒 Creating order:', orderData);
+      
       const response = await ordersAPI.create(orderData);
       console.log('✅ Order created:', response.data);
       
       if (response.data.success) {
-        // Clear cart
-        clearCart();
-        
-        // Generate unique TRX code
-        const trxCode = response.data.trxCode || `TRX${Date.now().toString(36).toUpperCase()}`;
-        
-        // Store order details for success page
-        const orderDetails = {
-          trxCode,
+        // Store order details for payment page
+        const paymentData = {
           orderId: response.data.orderId,
-          amount: total,
+          trxCode: response.data.trxCode,
+          amount: orderVerification.totalAmount,
+          email: formData.email,
+          phone: formData.phone,
           items: cartItems,
-          customerEmail: formData.email,
-          customerPhone: formData.phone,
-          date: new Date().toISOString(),
-          status: 'processing'
+          verificationId: orderVerification.verificationId
         };
         
-        localStorage.setItem('lastOrder', JSON.stringify(orderDetails));
+        // Store in localStorage for payment page
+        localStorage.setItem('paymentData', JSON.stringify(paymentData));
+        localStorage.setItem('pendingCart', JSON.stringify(cartItems));
         
-        // Redirect based on payment method
-        if (formData.paymentMethod === 'paystack' && response.data.paymentUrl) {
-          // For PayStack, redirect to payment gateway
-          console.log('Redirecting to payment gateway...');
-          window.location.href = response.data.paymentUrl;
-        } else {
-          // For cash/other methods, go to success page
-          console.log('Redirecting to success page...');
-          navigate('/payment-success');
-        }
+        // Navigate to NEW payment page (opens Paystack in new window)
+        navigate('/payment', { state: paymentData });
       } else {
         throw new Error(response.data.message || 'Failed to create order');
       }
       
     } catch (error) {
-      console.error('❌ Checkout error:', error);
-      alert('Checkout failed: ' + (error.response?.data?.message || error.message || 'Please try again'));
+      console.error('❌ Error:', error);
+      alert('Failed to proceed to payment: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoading(false);
     }
+  };
+
+  // Reset verification
+  const handleResetVerification = () => {
+    setOrderVerification({
+      isValid: false,
+      message: '',
+      totalAmount: 0,
+      verificationId: ''
+    });
   };
 
   if (cartItems.length === 0) {
@@ -213,7 +227,7 @@ const Checkout = () => {
               <div key={index} className="summary-item">
                 <div className="item-info">
                   <span className="item-name">{item.network} {item.size}</span>
-                  <span className="item-price">GH₵{item.price}</span>
+                  <span className="item-price">GH₵{toDouble(item.price).toFixed(2)}</span>
                 </div>
                 <div className="item-details">
                   <span className="item-recipient">To: {item.recipientPhone}</span>
@@ -232,10 +246,17 @@ const Checkout = () => {
               <span>Service Fee:</span>
               <span>GH₵{serviceFee.toFixed(2)}</span>
             </div>
-            <div className="total-row grand-total">
-              <span>Total:</span>
-              <span>GH₵{total.toFixed(2)}</span>
+            <div className="total-row estimated-total">
+              <span>Estimated Total:</span>
+              <span>GH₵{estimatedTotal.toFixed(2)}</span>
             </div>
+            
+            {orderVerification.isValid && (
+              <div className="total-row verified-total">
+                <span>Verified Total:</span>
+                <span className="verified-amount">GH₵{orderVerification.totalAmount.toFixed(2)}</span>
+              </div>
+            )}
           </div>
 
           {/* Order Verification Status */}
@@ -248,7 +269,7 @@ const Checkout = () => {
 
         {/* Checkout Form */}
         <div className="checkout-form-section">
-          <form onSubmit={handleSubmit}>
+          <div className="checkout-form">
             <h2>Customer Information</h2>
             
             <div className="form-group">
@@ -256,9 +277,12 @@ const Checkout = () => {
               <input
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => {
+                  setFormData({...formData, email: e.target.value});
+                  handleResetVerification();
+                }}
                 required
-                disabled={loading}
+                disabled={verifying || loading}
                 placeholder="Enter your email"
               />
             </div>
@@ -268,33 +292,94 @@ const Checkout = () => {
               <input
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                onChange={(e) => {
+                  setFormData({...formData, phone: e.target.value});
+                  handleResetVerification();
+                }}
                 required
-                disabled={loading}
-                placeholder="Enter your phone number"
+                disabled={verifying || loading}
+                placeholder="0241234567"
               />
             </div>
             
-            <div className="form-group">
-              <label>Payment Method *</label>
-              <select
-                value={formData.paymentMethod}
-                onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})}
-                disabled={loading}
-              >
-                <option value="paystack">PayStack</option>
-              </select>
+            {/* Payment Process */}
+            <div className="notice-box">
+              <strong>New Payment Process:</strong>
+              <ol>
+                <li><strong>Verify</strong> your order details with our server</li>
+                <li><strong>Proceed to Payment</strong> - Opens payment page</li>
+                <li><strong>Complete payment</strong> on Paystack secure page (opens in new window)</li>
+                <li><strong>Auto-redirect</strong> to dashboard after successful payment</li>
+              </ol>
             </div>
             
-            {/* Important Notice */}
-            <div className="notice-box">
-              <strong>Important:</strong>
-              <ul>
-                <li>Order will be verified with our server before payment</li>
-                <li>Ensure phone numbers are valid Ghanaian numbers</li>
-                <li>Data bundles are delivered instantly after successful payment</li>
-                <li>Contact support if you don't receive your data within 4-5 hours</li>
-              </ul>
+            {/* Checkout Steps */}
+            <div className="checkout-steps">
+              {/* Step 1: Verify Order */}
+              <div className="checkout-step">
+                <div className="step-header">
+                  <span className="step-number">1</span>
+                  <h3>Verify Order</h3>
+                </div>
+                <p>Verify your order details with our server to get the correct total amount.</p>
+                <button
+                  type="button"
+                  onClick={verifyOrderWithBackend}
+                  className="verify-btn"
+                  disabled={verifying || loading || !formData.email || !formData.phone}
+                >
+                  {verifying ? (
+                    <>
+                      <span className="spinner"></span>
+                      Verifying...
+                    </>
+                  ) : (
+                    'Verify Order with Server'
+                  )}
+                </button>
+              </div>
+              
+              {/* Step 2: Make Payment */}
+              <div className={`checkout-step ${orderVerification.isValid ? 'active' : 'disabled'}`}>
+                <div className="step-header">
+                  <span className="step-number">2</span>
+                  <h3>Proceed to Payment</h3>
+                  {!orderVerification.isValid && (
+                    <span className="step-required">(Complete step 1 first)</span>
+                  )}
+                </div>
+                <p>Go to secure payment page to complete your purchase.</p>
+                <button
+                  type="button"
+                  onClick={proceedToPayment}
+                  className="pay-btn"
+                  disabled={loading || !orderVerification.isValid}
+                  title={!orderVerification.isValid ? "Please verify order first" : ""}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner"></span>
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <span className="pay-icon">💳</span>
+                      Proceed to Payment - GH₵{orderVerification.totalAmount.toFixed(2)}
+                    </>
+                  )}
+                </button>
+                
+                {orderVerification.isValid && (
+                  <button
+                    type="button"
+                    onClick={handleResetVerification}
+                    className="reset-btn"
+                    disabled={loading}
+                  >
+                    Edit Order Details
+                  </button>
+                )}
+              </div>
             </div>
             
             <div className="checkout-actions">
@@ -302,30 +387,18 @@ const Checkout = () => {
                 type="button"
                 onClick={() => navigate('/cart')}
                 className="back-btn"
-                disabled={loading}
+                disabled={loading || verifying}
               >
                 Back to Cart
               </button>
-              
-              <button
-                type="button"
-                onClick={verifyOrderWithBackend}
-                className="verify-btn"
-                disabled={loading}
-              >
-                {loading ? 'Verifying...' : 'Verify Order with Server'}
-              </button>
-              
-              <button
-                type="submit"
-                className="pay-btn"
-                disabled={loading || !orderVerification.isValid}
-                title={!orderVerification.isValid ? "Please verify order first" : ""}
-              >
-                {loading ? 'Processing...' : `Pay GH₵${total.toFixed(2)}`}
-              </button>
             </div>
-          </form>
+            
+            <div className="payment-info">
+              <p><strong>Payment Methods:</strong> Card, MTN MoMo, Vodafone Cash, AirtelTigo Money, Bank Transfer</p>
+              <p><strong>Security:</strong> Powered by Paystack. Your payment details are secure.</p>
+              <p><strong>Note:</strong> After clicking "Proceed to Payment", you'll be redirected to a payment page where Paystack will open in a new window.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import Cart from './pages/Cart';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Checkout from './pages/Checkout';
+import Payment from './pages/Payment'; // NEW COMPONENT
 import PaymentSuccess from './pages/PaymentSuccess';
 import AdminDashboard from './pages/AdminDashboard';
 import UserProfile from './pages/UserProfile';
@@ -30,6 +31,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/checkout" element={<Checkout />} />
+                <Route path="/payment" element={<Payment />} /> {/* NEW ROUTE */}
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                 <Route path="/client-dashboard" element={<ClientDashboard />} />

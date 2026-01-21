@@ -22,29 +22,42 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// MongoDB Connection with improved settings
+// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// MongoDB connection with retry logic
 const connectDB = async () => {
   try {
     await mongoose.connect(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     });
     console.log('✅ MongoDB Connected Successfully');
   } catch (err) {
     console.log('❌ MongoDB Connection Error:', err.message);
     console.log('⚠️ Retrying connection in 5 seconds...');
-    setTimeout(connectDB, 5000); // Retry connection after 5 seconds
+    setTimeout(connectDB, 5000);
   }
 };
 
 connectDB();
 
-// MongoDB Schemas
+// Helper function to normalize numbers to Double precision
+const toDouble = (num) => {
+  if (num === null || num === undefined) return 0;
+  // Handle both int32 and double from database
+  const value = typeof num === 'string' ? parseFloat(num) : Number(num);
+  return Math.round(value * 100) / 100;
+};
+
+// Helper to convert to Decimal128 for Double storage
+const toDecimal128 = (num) => {
+  const value = toDouble(num);
+  return mongoose.Types.Decimal128.fromString(value.toFixed(2));
+};
+
+// MongoDB Schemas (Updated to ensure Double type)
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
@@ -64,11 +77,11 @@ const orderSchema = new mongoose.Schema({
     planId: { type: mongoose.Schema.Types.ObjectId, ref: 'DataPlan' },
     network: { type: String, required: true },
     size: { type: String, required: true },
-    price: { type: Number, required: true },
+    price: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128 for precise Double
     recipientPhone: { type: String, required: true },
     quantity: { type: Number, default: 1 }
   }],
-  totalAmount: { type: Number, required: true },
+  totalAmount: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128
   customerEmail: { type: String, required: true },
   customerPhone: { type: String, required: true },
   paymentMethod: { type: String, enum: ['paystack', 'cash', 'mobile_money'], default: 'paystack' },
@@ -79,14 +92,51 @@ const orderSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// Convert Decimal128 to regular number for responses
+orderSchema.set('toJSON', {
+  transform: function(doc, ret) {
+    // Convert Decimal128 to regular number
+    if (ret.totalAmount && ret.totalAmount.$numberDecimal) {
+      ret.totalAmount = parseFloat(ret.totalAmount.$numberDecimal);
+    } else if (ret.totalAmount && typeof ret.totalAmount === 'object') {
+      ret.totalAmount = parseFloat(ret.totalAmount.toString());
+    }
+    
+    // Convert item prices
+    if (ret.items && Array.isArray(ret.items)) {
+      ret.items = ret.items.map(item => {
+        if (item.price && item.price.$numberDecimal) {
+          item.price = parseFloat(item.price.$numberDecimal);
+        } else if (item.price && typeof item.price === 'object') {
+          item.price = parseFloat(item.price.toString());
+        }
+        return item;
+      });
+    }
+    return ret;
+  }
+});
+
 const dataPlanSchema = new mongoose.Schema({
   network: { type: String, required: true },
   size: { type: String, required: true },
-  price: { type: Number, required: true },
+  price: { type: mongoose.Schema.Types.Decimal128, required: true }, // Use Decimal128
   validity: { type: String, required: true },
   description: { type: String },
   popular: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
+});
+
+// Convert Decimal128 to regular number for responses
+dataPlanSchema.set('toJSON', {
+  transform: function(doc, ret) {
+    if (ret.price && ret.price.$numberDecimal) {
+      ret.price = parseFloat(ret.price.$numberDecimal);
+    } else if (ret.price && typeof ret.price === 'object') {
+      ret.price = parseFloat(ret.price.toString());
+    }
+    return ret;
+  }
 });
 
 const contactSchema = new mongoose.Schema({
@@ -139,7 +189,7 @@ const isValidGhanaNumber = (phone) => {
   return ghanaRegex.test(cleanPhone);
 };
 
-// Auth Middleware with better error handling
+// Auth Middleware
 const authMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -448,7 +498,7 @@ app.post('/api/users/contact', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Data Plans with fallback
+// Get Data Plans with Double handling
 app.get('/api/plans', async (req, res) => {
   try {
     const { network } = req.query;
@@ -466,38 +516,57 @@ app.get('/api/plans', async (req, res) => {
 
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
-    // If no plans in database, create default plans INCLUDING AIRTELTIGO
-    if (plans.length === 0) {
+    // Convert Decimal128 to regular numbers for response
+    const formattedPlans = plans.map(plan => {
+      const planObj = plan.toObject();
+      // Handle both Decimal128 and regular numbers
+      if (planObj.price && planObj.price.$numberDecimal) {
+        planObj.price = parseFloat(planObj.price.$numberDecimal);
+      } else if (planObj.price && typeof planObj.price === 'object') {
+        planObj.price = parseFloat(planObj.price.toString());
+      }
+      return planObj;
+    });
+    
+    // If no plans in database, create default plans
+    if (formattedPlans.length === 0) {
       const defaultPlans = [
         // MTN Plans (Yellow)
-        { network: 'MTN', size: '1GB', price: 4.60, validity: '30 days', description: 'MTN Non Expiry', popular: true },
-        { network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '1GB', price: toDecimal128(4.60), validity: '30 days', description: 'MTN Non Expiry', popular: true },
+        { network: 'MTN', size: '2GB', price: toDecimal128(8.30), validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '3GB', price: toDecimal128(12.45), validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '5GB', price: toDecimal128(20.75), validity: '30 days', description: 'MTN Non Expiry' },
+        { network: 'MTN', size: '10GB', price: toDecimal128(41.50), validity: '30 days', description: 'MTN Non Expiry' },
         
         // Telecel Plans (Red)
-        { network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
-        { network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
+        { network: 'Telecel', size: '2GB', price: toDecimal128(7.18), validity: '30 days', description: 'Telecel', popular: true },
+        { network: 'Telecel', size: '5GB', price: toDecimal128(17.95), validity: '30 days', description: 'Telecel' },
+        { network: 'Telecel', size: '10GB', price: toDecimal128(35.90), validity: '30 days', description: 'Telecel' },
+        { network: 'Telecel', size: '15GB', price: toDecimal128(52.90), validity: '30 days', description: 'Telecel' },
         
-        // AirtelTigo Plans (Blue) - ADDED
-        { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
-        { network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
-        { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
+        // AirtelTigo Plans (Blue)
+        { network: 'AirtelTigo', size: '1GB', price: toDecimal128(5.00), validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
+        { network: 'AirtelTigo', size: '2GB', price: toDecimal128(9.50), validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
+        { network: 'AirtelTigo', size: '3GB', price: toDecimal128(12.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '5GB', price: toDecimal128(18.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '6GB', price: toDecimal128(22.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '10GB', price: toDecimal128(35.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
+        { network: 'AirtelTigo', size: '15GB', price: toDecimal128(50.00), validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
       ];
       
       await DataPlan.insertMany(defaultPlans);
       const updatedPlans = await DataPlan.find(query).sort({ price: 1 });
-      return res.json(updatedPlans);
+      const formattedUpdatedPlans = updatedPlans.map(plan => {
+        const planObj = plan.toObject();
+        if (planObj.price && planObj.price.$numberDecimal) {
+          planObj.price = parseFloat(planObj.price.$numberDecimal);
+        }
+        return planObj;
+      });
+      return res.json(formattedUpdatedPlans);
     }
 
-    res.json(plans);
+    res.json(formattedPlans);
   } catch (error) {
     console.error('Plans fetch error:', error);
     getFallbackPlans(req.query.network, res);
@@ -546,19 +615,29 @@ app.get('/api/plans/network/:network', async (req, res) => {
     // Check if MongoDB is connected
     if (mongoose.connection.readyState !== 1) {
       console.log('⚠️ MongoDB not connected, returning fallback network plans');
-      const fallbackPlans = getFallbackPlans(network, res);
+      getFallbackPlans(network, res);
       return;
     }
     
     const plans = await DataPlan.find({ network }).sort({ price: 1 });
-    res.json(plans);
+    
+    // Convert Decimal128 to regular numbers
+    const formattedPlans = plans.map(plan => {
+      const planObj = plan.toObject();
+      if (planObj.price && planObj.price.$numberDecimal) {
+        planObj.price = parseFloat(planObj.price.$numberDecimal);
+      }
+      return planObj;
+    });
+    
+    res.json(formattedPlans);
   } catch (error) {
     console.error('Network plans fetch error:', error);
     getFallbackPlans(req.params.network, res);
   }
 });
 
-// ORDER VERIFICATION
+// ORDER VERIFICATION with Double handling
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone } = req.body;
@@ -609,7 +688,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       }
     }
 
-    // Verify each plan exists and has correct pricing
+    // Verify each plan exists and has correct pricing with Double handling
     const verifiedItems = [];
     let calculatedTotal = 0;
 
@@ -636,16 +715,27 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
         });
       }
 
+      // Get plan price as Double (handle both Decimal128 and regular numbers)
+      let planPrice;
+      const planObj = plan.toObject();
+      if (planObj.price && planObj.price.$numberDecimal) {
+        planPrice = parseFloat(planObj.price.$numberDecimal);
+      } else if (planObj.price && typeof planObj.price === 'object') {
+        planPrice = parseFloat(planObj.price.toString());
+      } else {
+        planPrice = toDouble(planObj.price);
+      }
+
       // Verify network and size match
       if (plan.network !== item.network || plan.size !== item.size) {
         console.warn(`Plan details mismatch: DB(${plan.network} ${plan.size}) vs Request(${item.network} ${item.size})`);
       }
 
       // Use plan price from database (not client price)
-      const itemPrice = plan.price;
+      const itemPrice = toDouble(planPrice);
       const itemQuantity = item.quantity || 1;
-      const itemTotal = itemPrice * itemQuantity;
-      calculatedTotal += itemTotal;
+      const itemTotal = toDouble(itemPrice * itemQuantity);
+      calculatedTotal = toDouble(calculatedTotal + itemTotal);
       
       verifiedItems.push({
         ...item,
@@ -653,7 +743,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
         price: itemPrice,
         validity: plan.validity,
         description: plan.description,
-        originalPrice: item.price, // Keep original for reference
+        originalPrice: toDouble(item.price), // Keep original for reference
         verifiedPrice: itemPrice,
         quantity: itemQuantity,
         itemTotal: itemTotal
@@ -662,18 +752,19 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
 
     // Add service fee
     const serviceFee = 0.50;
-    const finalTotal = calculatedTotal + serviceFee;
+    const finalTotal = toDouble(calculatedTotal + serviceFee);
 
     // Verify total amount matches (allow small differences due to rounding)
-    const difference = Math.abs(finalTotal - totalAmount);
+    const receivedTotal = toDouble(totalAmount);
+    const difference = Math.abs(finalTotal - receivedTotal);
     if (difference > 0.01) {
-      console.log(`Total mismatch: Calculated=${finalTotal}, Received=${totalAmount}, Difference=${difference}`);
+      console.log(`Total mismatch: Calculated=${finalTotal}, Received=${receivedTotal}, Difference=${difference}`);
       
       return res.status(400).json({
         valid: false,
-        message: `Total amount mismatch. Expected: GH₵${finalTotal.toFixed(2)}, Received: GH₵${totalAmount}`,
+        message: `Total amount mismatch. Expected: GH₵${finalTotal.toFixed(2)}, Received: GH₵${receivedTotal.toFixed(2)}`,
         calculatedTotal: finalTotal,
-        receivedTotal: totalAmount,
+        receivedTotal: receivedTotal,
         difference: difference.toFixed(2),
         serviceFee: serviceFee
       });
@@ -712,7 +803,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// Create Order
+// Create Order with Double precision
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
@@ -722,7 +813,8 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Order must contain at least one item' });
     }
 
-    if (!totalAmount || totalAmount <= 0) {
+    const validatedTotal = toDouble(totalAmount);
+    if (!validatedTotal || validatedTotal <= 0) {
       return res.status(400).json({ error: 'Invalid order total' });
     }
 
@@ -738,12 +830,19 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     // Generate unique TRX code
     const trxCode = generateTRXCode();
 
-    // Create order
+    // Convert all prices to Double precision and Decimal128 for storage
+    const doubleItems = items.map(item => ({
+      ...item,
+      price: toDecimal128(item.price), // Store as Decimal128
+      quantity: item.quantity || 1
+    }));
+
+    // Create order with Decimal128 for totalAmount
     const order = new Order({
       trxCode,
       userId: req.userId,
-      items: items,
-      totalAmount: totalAmount,
+      items: doubleItems,
+      totalAmount: toDecimal128(validatedTotal),
       customerEmail: customerEmail,
       customerPhone: customerPhone,
       paymentMethod: paymentMethod || 'paystack',
@@ -753,21 +852,20 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
 
     await order.save();
 
+    // Get the created order with converted prices for response
+    const orderResponse = order.toObject();
+    orderResponse.totalAmount = validatedTotal;
+    orderResponse.items = orderResponse.items.map(item => {
+      item.price = toDouble(item.price);
+      return item;
+    });
+
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
       orderId: order._id,
       trxCode: order.trxCode,
-      order: {
-        _id: order._id,
-        trxCode: order.trxCode,
-        items: order.items,
-        totalAmount: order.totalAmount,
-        status: order.status,
-        customerEmail: order.customerEmail,
-        customerPhone: order.customerPhone,
-        createdAt: order.createdAt
-      }
+      order: orderResponse
     });
 
   } catch (error) {
@@ -803,24 +901,49 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    const totalOrders = await Order.countDocuments({ userId: req.userId });
+    // Convert Decimal128 to regular numbers
+    const formattedOrders = orders.map(order => {
+      // Handle totalAmount
+      let totalAmount = 0;
+      if (order.totalAmount && order.totalAmount.$numberDecimal) {
+        totalAmount = parseFloat(order.totalAmount.$numberDecimal);
+      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+        totalAmount = parseFloat(order.totalAmount.toString());
+      } else {
+        totalAmount = toDouble(order.totalAmount);
+      }
+      
+      // Handle item prices
+      const items = order.items.map(item => {
+        let price = 0;
+        if (item.price && item.price.$numberDecimal) {
+          price = parseFloat(item.price.$numberDecimal);
+        } else if (item.price && typeof item.price === 'object') {
+          price = parseFloat(item.price.toString());
+        } else {
+          price = toDouble(item.price);
+        }
+        return { ...item, price };
+      });
 
-    // Format orders for frontend
-    const formattedOrders = orders.map(order => ({
-      _id: order._id,
-      trxCode: order.trxCode,
-      orderId: order.trxCode, // For compatibility
-      items: order.items,
-      total: order.totalAmount,
-      totalAmount: order.totalAmount,
-      status: order.status,
-      paymentStatus: order.paymentStatus,
-      paymentMethod: order.paymentMethod,
-      customerEmail: order.customerEmail,
-      customerPhone: order.customerPhone,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt
-    }));
+      return {
+        _id: order._id,
+        trxCode: order.trxCode,
+        orderId: order.trxCode,
+        items: items,
+        total: totalAmount,
+        totalAmount: totalAmount,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        paymentMethod: order.paymentMethod,
+        customerEmail: order.customerEmail,
+        customerPhone: order.customerPhone,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      };
+    });
+
+    const totalOrders = await Order.countDocuments({ userId: req.userId });
 
     res.json({
       orders: formattedOrders,
@@ -852,17 +975,29 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
       .limit(limit)
       .lean();
 
-    const recentTransactions = orders.map(order => ({
-      id: order.trxCode,
-      package: order.items[0]?.network + '-' + order.items[0]?.size,
-      description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
-      amount: order.totalAmount,
-      beneficiary: order.items[0]?.recipientPhone || order.customerPhone,
-      paymentSource: order.paymentMethod || 'Paystack',
-      paymentStatus: order.paymentStatus || 'pending',
-      date: order.createdAt,
-      status: order.status || 'placed'
-    }));
+    const recentTransactions = orders.map(order => {
+      // Convert Decimal128 to regular number for amount
+      let amount = 0;
+      if (order.totalAmount && order.totalAmount.$numberDecimal) {
+        amount = parseFloat(order.totalAmount.$numberDecimal);
+      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+        amount = parseFloat(order.totalAmount.toString());
+      } else {
+        amount = toDouble(order.totalAmount);
+      }
+
+      return {
+        id: order.trxCode,
+        package: order.items[0]?.network + '-' + order.items[0]?.size,
+        description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
+        amount: amount,
+        beneficiary: order.items[0]?.recipientPhone || order.customerPhone,
+        paymentSource: order.paymentMethod || 'Paystack',
+        paymentStatus: order.paymentStatus || 'pending',
+        date: order.createdAt,
+        status: order.status || 'placed'
+      };
+    });
 
     res.json(recentTransactions);
   } catch (error) {
@@ -886,6 +1021,20 @@ app.get('/api/orders/trx/:trxCode', authMiddleware, async (req, res) => {
 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Convert Decimal128 to regular numbers
+    if (order.totalAmount && order.totalAmount.$numberDecimal) {
+      order.totalAmount = parseFloat(order.totalAmount.$numberDecimal);
+    }
+    
+    if (order.items && Array.isArray(order.items)) {
+      order.items = order.items.map(item => {
+        if (item.price && item.price.$numberDecimal) {
+          item.price = parseFloat(item.price.$numberDecimal);
+        }
+        return item;
+      });
     }
 
     res.json(order);
@@ -988,7 +1137,7 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     // Fetch all user orders with details
     const userOrders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
       .sort({ createdAt: -1 })
-      .populate('items.planId');
+      .lean();
     
     // Calculate statistics
     const totalOrders = userOrders.length;
@@ -1001,7 +1150,17 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     // Calculate total spent (only from successful payments)
     const totalSpent = userOrders
       .filter(order => order.paymentStatus === 'success')
-      .reduce((sum, order) => sum + order.totalAmount, 0);
+      .reduce((sum, order) => {
+        let amount = 0;
+        if (order.totalAmount && order.totalAmount.$numberDecimal) {
+          amount = parseFloat(order.totalAmount.$numberDecimal);
+        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+          amount = parseFloat(order.totalAmount.toString());
+        } else {
+          amount = toDouble(order.totalAmount);
+        }
+        return sum + amount;
+      }, 0);
     
     // Calculate week's and month's spent
     const weekSpent = userOrders
@@ -1009,14 +1168,34 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
         order.paymentStatus === 'success' && 
         order.createdAt >= startOfWeek
       )
-      .reduce((sum, order) => sum + order.totalAmount, 0);
+      .reduce((sum, order) => {
+        let amount = 0;
+        if (order.totalAmount && order.totalAmount.$numberDecimal) {
+          amount = parseFloat(order.totalAmount.$numberDecimal);
+        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+          amount = parseFloat(order.totalAmount.toString());
+        } else {
+          amount = toDouble(order.totalAmount);
+        }
+        return sum + amount;
+      }, 0);
     
     const monthSpent = userOrders
       .filter(order => 
         order.paymentStatus === 'success' && 
         order.createdAt >= startOfMonth
       )
-      .reduce((sum, order) => sum + order.totalAmount, 0);
+      .reduce((sum, order) => {
+        let amount = 0;
+        if (order.totalAmount && order.totalAmount.$numberDecimal) {
+          amount = parseFloat(order.totalAmount.$numberDecimal);
+        } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+          amount = parseFloat(order.totalAmount.toString());
+        } else {
+          amount = toDouble(order.totalAmount);
+        }
+        return sum + amount;
+      }, 0);
     
     // Calculate ACTUAL total data volume from all orders
     let totalDataGB = 0;
@@ -1088,19 +1267,30 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     ).length;
     
     // Get recent orders for display
-    const recentOrders = userOrders.slice(0, 5).map(order => ({
-      id: order.trxCode,
-      package: order.items[0]?.network + '-' + order.items[0]?.size,
-      amount: order.totalAmount,
-      status: order.status,
-      paymentStatus: order.paymentStatus,
-      date: order.createdAt,
-      items: order.items.map(item => ({
-        network: item.network,
-        size: item.size,
-        price: item.price
-      }))
-    }));
+    const recentOrders = userOrders.slice(0, 5).map(order => {
+      let amount = 0;
+      if (order.totalAmount && order.totalAmount.$numberDecimal) {
+        amount = parseFloat(order.totalAmount.$numberDecimal);
+      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+        amount = parseFloat(order.totalAmount.toString());
+      } else {
+        amount = toDouble(order.totalAmount);
+      }
+      
+      return {
+        id: order.trxCode,
+        package: order.items[0]?.network + '-' + order.items[0]?.size,
+        amount: amount,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        date: order.createdAt,
+        items: order.items.map(item => ({
+          network: item.network,
+          size: item.size,
+          price: toDouble(item.price)
+        }))
+      };
+    });
     
     res.json({
       stats: {
@@ -1184,17 +1374,28 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
 
     const totalOrders = await Order.countDocuments({ userId: req.userId });
 
-    const transactions = orders.map(order => ({
-      trxCode: order.trxCode,
-      package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
-      description: order.items[0]?.description || 'Data Bundle',
-      amount: order.totalAmount,
-      beneficiary: order.items.map(item => item.recipientPhone).join(', '),
-      paymentSource: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      date: order.createdAt,
-      status: order.status
-    }));
+    const transactions = orders.map(order => {
+      let amount = 0;
+      if (order.totalAmount && order.totalAmount.$numberDecimal) {
+        amount = parseFloat(order.totalAmount.$numberDecimal);
+      } else if (order.totalAmount && typeof order.totalAmount === 'object') {
+        amount = parseFloat(order.totalAmount.toString());
+      } else {
+        amount = toDouble(order.totalAmount);
+      }
+      
+      return {
+        trxCode: order.trxCode,
+        package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
+        description: order.items[0]?.description || 'Data Bundle',
+        amount: amount,
+        beneficiary: order.items.map(item => item.recipientPhone).join(', '),
+        paymentSource: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        date: order.createdAt,
+        status: order.status
+      };
+    });
 
     res.json({
       transactions,
@@ -1211,7 +1412,7 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   }
 });
 
-// Initialize Payment (Paystack)
+// Initialize Payment (Paystack) with Double handling
 app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email, amount } = req.body;
@@ -1224,14 +1425,22 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
       return res.status(503).json({ error: 'Payment service not configured' });
     }
 
+    // Convert amount to kobo with Double precision
+    const validatedAmount = toDouble(amount);
+    const amountInKobo = Math.round(validatedAmount * 100);
+
+    // Generate unique reference
+    const reference = `ALLEN_${orderId}_${Date.now()}`;
+
     const response = await paystack.post('/transaction/initialize', {
       email,
-      amount: amount * 100, // Convert to kobo
-      reference: `ALLEN_${orderId}_${Date.now()}`,
+      amount: amountInKobo,
+      reference: reference,
       callback_url: `${FRONTEND_URL}/payment-success`,
       metadata: {
         orderId,
-        userId: req.userId
+        userId: req.userId,
+        trxAmount: validatedAmount
       }
     });
 
@@ -1247,11 +1456,15 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
       success: true,
       paymentUrl: data.authorization_url,
       accessCode: data.access_code,
-      reference: data.reference
+      reference: data.reference,
+      amount: validatedAmount
     });
   } catch (error) {
     console.error('Payment initialization error:', error);
-    res.status(500).json({ error: 'Failed to initialize payment' });
+    res.status(500).json({ 
+      error: 'Failed to initialize payment',
+      details: error.response?.data?.message || error.message 
+    });
   }
 });
 
@@ -1275,10 +1488,15 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
       order.updatedAt = new Date();
       await order.save();
 
+      // Clear cart for this user
+      console.log(`✅ Payment successful for order ${order.trxCode}`);
+
       res.json({
         success: true,
         message: 'Payment verified successfully',
-        order: order
+        order: order,
+        trxCode: order.trxCode,
+        amount: data.amount / 100 // Convert back from kobo
       });
     } else {
       order.paymentStatus = 'failed';
@@ -1293,7 +1511,10 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
     }
   } catch (error) {
     console.error('Payment verification error:', error);
-    res.status(500).json({ error: 'Failed to verify payment' });
+    res.status(500).json({ 
+      error: 'Failed to verify payment',
+      details: error.response?.data?.message || error.message 
+    });
   }
 });
 
@@ -1334,7 +1555,7 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   }
 });
 
-// Get Admin Stats
+// Get Admin Stats with Double handling
 app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
   try {
     const today = new Date();
@@ -1374,8 +1595,21 @@ app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
       ])
     ]);
 
-    const totalRevenue = totalRevenueResult.length > 0 ? totalRevenueResult[0].total : 0;
-    const todayRevenue = todayRevenueResult.length > 0 ? todayRevenueResult[0].total : 0;
+    // Convert Decimal128 to regular numbers
+    const totalRevenue = totalRevenueResult.length > 0 ? 
+      toDouble(totalRevenueResult[0].total) : 0;
+    const todayRevenue = todayRevenueResult.length > 0 ? 
+      toDouble(todayRevenueResult[0].total) : 0;
+
+    // Convert network stats
+    const formattedNetworkStats = networkStats.reduce((acc, stat) => {
+      const revenue = toDouble(stat.revenue);
+      acc[stat._id] = {
+        orders: stat.count,
+        revenue: revenue
+      };
+      return acc;
+    }, {});
 
     res.json({
       today: {
@@ -1387,13 +1621,7 @@ app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
         totalRevenue,
         totalUsers: userCount
       },
-      networkStats: networkStats.reduce((acc, stat) => {
-        acc[stat._id] = {
-          orders: stat.count,
-          revenue: stat.revenue
-        };
-        return acc;
-      }, {})
+      networkStats: formattedNetworkStats
     });
   } catch (error) {
     console.error('Admin stats error:', error);
@@ -1458,7 +1686,7 @@ app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
         .lean()
     ]);
 
-    const totalSpent = totalSpentResult.length > 0 ? totalSpentResult[0].total : 0;
+    const totalSpent = totalSpentResult.length > 0 ? toDouble(totalSpentResult[0].total) : 0;
 
     res.json({
       userId,
@@ -1501,4 +1729,5 @@ app.listen(PORT, () => {
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+  console.log(`💰 Currency Precision: Using Decimal128 for Double precision`);
 });

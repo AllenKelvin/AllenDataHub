@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BUILD_TIMESTAMP = "20260116-192449-FIX";
+const BUILD_TIMESTAMP = "20260122-PAYMENT-FLOW-UPDATE";
 // CRITICAL FIX: Use environment variable for production
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? `${process.env.REACT_APP_API_URL}/api`
@@ -9,7 +9,8 @@ const API_BASE_URL = process.env.REACT_APP_API_URL
 console.log('🔧 API Configuration:', {
   baseURL: API_BASE_URL,
   envVariable: process.env.REACT_APP_API_URL,
-  isProduction: process.env.NODE_ENV === 'production'
+  isProduction: process.env.NODE_ENV === 'production',
+  timestamp: BUILD_TIMESTAMP
 });
 
 // Create axios instance
@@ -93,13 +94,13 @@ export const plansAPI = {
 };
 
 export const ordersAPI = {
-  // Order Verification (new)
+  // Order Verification (Step 1 in checkout)
   verify: (orderData) => {
     console.log('✅ Verifying order with backend:', orderData);
     return api.post('/orders/verify', orderData);
   },
   
-  // Create Order
+  // Create Order (Step 2 in checkout)
   create: (orderData) => {
     console.log('🛒 Creating order:', orderData);
     return api.post('/orders', orderData);
@@ -125,18 +126,32 @@ export const ordersAPI = {
     api.get(`/orders/recent?limit=${limit}`),
 };
 
+export const paymentAPI = {
+  // Initialize payment with Paystack (opens in new window)
+  initialize: (paymentData) => {
+    console.log('💰 Initializing payment:', paymentData);
+    return api.post('/payment/initialize', paymentData);
+  },
+  
+  // Verify payment status (polling from frontend)
+  verify: (reference) => {
+    console.log('🔍 Verifying payment status for reference:', reference);
+    return api.get(`/payment/verify/${reference}`);
+  },
+  
+  // Check payment status without auth (for webhook/callback)
+  checkStatus: (reference) => {
+    console.log('📊 Checking payment status:', reference);
+    return api.get(`/payment/status/${reference}`);
+  }
+};
+
 export const adminAPI = {
   getAllOrders: () => api.get('/admin/orders'),
   getStats: () => api.get('/admin/stats'),
   getUserStats: (userId) => api.get(`/admin/users/${userId}/stats`),
   updateOrderStatus: (orderId, status) => 
     api.patch(`/admin/orders/${orderId}/status`, { status }),
-};
-
-export const paymentAPI = {
-  initialize: (paymentData) => api.post('/payment/initialize', paymentData),
-  verify: (reference) => api.get(`/payment/verify/${reference}`),
-  webhook: (data) => api.post('/payment/webhook', data),
 };
 
 export const userAPI = {
@@ -191,6 +206,14 @@ export const networksAPI = {
     testConnection: () => api.get('/airteltigo/test'),
     transferData: (data) => api.post('/airteltigo/transfer', data),
   },
+};
+
+// Helper function for Double precision handling
+export const toDouble = (num) => {
+  if (num === null || num === undefined) return 0;
+  // Convert to number and ensure 2 decimal places
+  const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
+  return Math.round(parsed * 100) / 100; // Keep 2 decimal places
 };
 
 // Test functions
