@@ -32,11 +32,10 @@ const ClientDashboard = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const itemsPerPage = 10;
 
-  // Network colors as requested: MTN-Yellow, Telecel-Red, AirtelTigo-Blue
   const networkColors = {
-    'MTN': '#FFD700', // Yellow
-    'Telecel': '#FF4D4F', // Red
-    'AirtelTigo': '#1890FF' // Blue
+    'MTN': '#FFD700',
+    'Telecel': '#FF4D4F',
+    'AirtelTigo': '#1890FF'
   };
 
   const networkIcons = {
@@ -45,19 +44,16 @@ const ClientDashboard = () => {
     'AirtelTigo': '📶'
   };
 
-  // Fetch data from backend
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError('');
       try {
-        // Fetch user data from localStorage and API
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
           const userData = JSON.parse(storedUser);
           setUser(userData);
           
-          // Also fetch from API to get latest data
           try {
             const profileResponse = await userAPI.getProfile();
             if (profileResponse.data && profileResponse.data.user) {
@@ -70,13 +66,8 @@ const ClientDashboard = () => {
           }
         }
 
-        // Fetch plans from backend API
         await fetchPlans();
-
-        // Fetch transactions from backend API
         await fetchTransactions();
-
-        // Fetch dashboard stats
         await fetchDashboardStats();
         
       } catch (error) {
@@ -91,14 +82,12 @@ const ClientDashboard = () => {
     fetchData();
   }, [currentPage, refreshKey]);
 
-  // Fetch plans from backend API
   const fetchPlans = async () => {
     try {
       console.log('📋 Fetching plans from backend API...');
       const response = await plansAPI.getAll();
       
       if (response.data && Array.isArray(response.data)) {
-        // Group plans by network
         const groupedPlans = response.data.reduce((acc, plan) => {
           if (!acc[plan.network]) {
             acc[plan.network] = [];
@@ -115,7 +104,6 @@ const ClientDashboard = () => {
           return acc;
         }, {});
 
-        // Create network objects with plans
         const networkObjects = Object.keys(groupedPlans)
           .filter(network => ['MTN', 'Telecel', 'AirtelTigo'].includes(network))
           .map(network => ({
@@ -123,7 +111,6 @@ const ClientDashboard = () => {
             color: networkColors[network] || '#666',
             icon: networkIcons[network] || '📱',
             plans: groupedPlans[network].sort((a, b) => {
-              // Sort by size (extract numeric value)
               const sizeA = parseFloat(a.size.replace(/[^\d.]/g, '')) || 0;
               const sizeB = parseFloat(b.size.replace(/[^\d.]/g, '')) || 0;
               return sizeA - sizeB;
@@ -142,7 +129,6 @@ const ClientDashboard = () => {
     }
   };
 
-  // Fetch transactions from backend API
   const fetchTransactions = async () => {
     try {
       const response = await ordersAPI.getMyOrders({
@@ -151,9 +137,8 @@ const ClientDashboard = () => {
       });
       
       if (response.data && response.data.orders) {
-        // Transform API data to match our table format
         const apiTransactions = response.data.orders.map(order => ({
-          id: order.trxCode || order.orderId || order._id,
+          id: order._id,
           package: order.items?.[0]?.network 
             ? `${order.items[0].network}-${order.items[0].size}` 
             : 'Unknown',
@@ -164,8 +149,8 @@ const ClientDashboard = () => {
           beneficiary: order.items?.[0]?.recipientPhone || 
                      order.customerPhone || 
                      'N/A',
-          paymentSource: order.paymentMethod || order.paymentSource || 'Paystack',
-          paymentStatus: order.paymentStatus || order.status || 'pending',
+          paymentSource: order.paymentMethod || 'Paystack',
+          paymentStatus: order.paymentStatus || 'pending',
           date: order.createdAt ? new Date(order.createdAt).toLocaleString('en-GB', {
             day: '2-digit',
             month: 'short',
@@ -189,7 +174,6 @@ const ClientDashboard = () => {
     }
   };
 
-  // Fetch dashboard stats
   const fetchDashboardStats = async () => {
     try {
       const response = await userAPI.getDashboardStats();
@@ -219,7 +203,6 @@ const ClientDashboard = () => {
     }
   };
 
-  // Calculate stats from transactions data (fallback)
   const calculateStatsFromTransactions = () => {
     const totalOrders = transactions.length;
     const totalSpent = transactions.reduce((sum, t) => sum + parseFloat(t.amount), 0);
@@ -228,7 +211,6 @@ const ClientDashboard = () => {
       new Date(t.date).toDateString() === today
     ).length;
     
-    // Calculate total data from transactions
     let totalDataGB = 0;
     transactions.forEach(t => {
       if (t.items && Array.isArray(t.items)) {
@@ -259,7 +241,6 @@ const ClientDashboard = () => {
     }));
   };
 
-  // Fallback plans if API fails
   const setFallbackPlans = () => {
     const fallbackNetworks = [
       { 
@@ -300,7 +281,6 @@ const ClientDashboard = () => {
     setNetworks(fallbackNetworks);
   };
 
-  // Fallback data for all
   const setFallbackData = () => {
     setFallbackPlans();
     setTransactions([]);
@@ -338,7 +318,6 @@ const ClientDashboard = () => {
       return;
     }
 
-    // Basic Ghana number validation
     const cleanPhone = phoneNumber.replace(/[\s\-\(\)]/g, '');
     const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
     
@@ -357,7 +336,6 @@ const ClientDashboard = () => {
     addToCart(planWithPhone);
     alert(`✅ ${network.name} ${plan.size} added to cart for ${cleanPhone}!`);
     
-    // Clear the phone number input
     setPhoneNumbers({
       ...phoneNumbers,
       [plan._id]: ''
@@ -419,7 +397,6 @@ const ClientDashboard = () => {
 
   return (
     <div className={`client-dashboard ${darkMode ? 'dark' : ''}`}>
-      {/* Error Message */}
       {error && (
         <div className="error-message">
           <span className="error-icon">❌</span>
@@ -430,7 +407,6 @@ const ClientDashboard = () => {
         </div>
       )}
 
-      {/* Header with user info */}
       <div className="dashboard-header">
         <div className="header-top">
           <h1>📊 Client Dashboard</h1>
@@ -452,7 +428,7 @@ const ClientDashboard = () => {
                 <strong>Email:</strong> {user.email || 'Not set'}
               </div>
               <div className="user-field">
-                <strong></strong> <span className="status-active">Active</span>
+                <strong>Status:</strong> <span className="status-active">Active</span>
               </div>
               <div className="user-field">
                 <strong>Member Since:</strong> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
@@ -465,50 +441,45 @@ const ClientDashboard = () => {
         )}
       </div>
 
-      // In the stats section, replace with this simplified version:
+      <div className="stats-section">
+        <div className="stats-header">
+          <h2 className="section-title">📈 Your Statistics</h2>
+          <p className="section-subtitle">Real-time data from your orders</p>
+        </div>
+        <div className="stats-grid">
+          <div className="stat-card total-spent-card">
+            <div className="stat-icon">💰</div>
+            <div className="stat-value">GHS {stats.totalSpent?.toFixed(2) || '0.00'}</div>
+            <div className="stat-label">Total Spent</div>
+            <div className="stat-note">All successful orders</div>
+          </div>
+          <div className="stat-card today-orders-card">
+            <div className="stat-icon">📦</div>
+            <div className="stat-value">{stats.todayOrders || 0}</div>
+            <div className="stat-label">Orders Today</div>
+            <div className="stat-note">Orders placed today</div>
+          </div>
+          <div className="stat-card data-volume-card">
+            <div className="stat-icon">💾</div>
+            <div className="stat-value">{stats.totalDataFormatted || '0 GB'}</div>
+            <div className="stat-label">Total Data Volume</div>
+            <div className="stat-note">Total data purchased</div>
+          </div>
+          <div className="stat-card delivered-orders-card">
+            <div className="stat-icon">✅</div>
+            <div className="stat-value">{stats.deliveredOrders || 0}</div>
+            <div className="stat-label">Delivered Orders</div>
+            <div className="stat-note">Successfully delivered</div>
+          </div>
+        </div>
+      </div>
 
-{/* Stats Cards */}
-<div className="stats-section">
-  <div className="stats-header">
-    <h2 className="section-title">📈 Your Statistics</h2>
-    <p className="section-subtitle">Real-time data from your orders</p>
-  </div>
-  <div className="stats-grid">
-    <div className="stat-card total-spent-card">
-      <div className="stat-icon">💰</div>
-      <div className="stat-value">GHS {stats.totalSpent?.toFixed(2) || '0.00'}</div>
-      <div className="stat-label">Total Spent</div>
-      <div className="stat-note">All successful orders</div>
-    </div>
-    <div className="stat-card today-orders-card">
-      <div className="stat-icon">📦</div>
-      <div className="stat-value">{stats.todayOrders || 0}</div>
-      <div className="stat-label">Orders Today</div>
-      <div className="stat-note">Orders placed today</div>
-    </div>
-    <div className="stat-card data-volume-card">
-      <div className="stat-icon">💾</div>
-      <div className="stat-value">{stats.totalDataFormatted || '0 GB'}</div>
-      <div className="stat-label">Total Data Volume</div>
-      <div className="stat-note">Total data purchased</div>
-    </div>
-    <div className="stat-card delivered-orders-card">
-      <div className="stat-icon">✅</div>
-      <div className="stat-value">{stats.deliveredOrders || 0}</div>
-      <div className="stat-label">Delivered Orders</div>
-      <div className="stat-note">Successfully delivered</div>
-    </div>
-  </div>
-</div>
-
-      {/* Available Packages Section */}
       <div className="packages-section">
         <h2 className="section-title">📱 Available Data Packages</h2>
         <p className="section-subtitle">
           Click on network names to view packages. Enter recipient phone number to add to cart.
         </p>
 
-        {/* Network Accordions */}
         <div className="network-accordions">
           {networks.length === 0 ? (
             <div className="no-plans-message">
@@ -597,7 +568,6 @@ const ClientDashboard = () => {
         </div>
       </div>
 
-      {/* Transactions Table */}
       <div className="transactions-section">
         <div className="section-header">
           <h2 className="section-title">📋 Transaction History</h2>
@@ -615,7 +585,6 @@ const ClientDashboard = () => {
           <table className="transactions-table">
             <thead>
               <tr>
-                <th>TRX CODE</th>
                 <th>PACKAGE</th>
                 <th>DESCRIPTION</th>
                 <th>AMOUNT (GHS)</th>
@@ -629,14 +598,13 @@ const ClientDashboard = () => {
             <tbody>
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="no-data">
+                  <td colSpan="8" className="no-data">
                     📭 No transactions yet. Purchase your first data plan!
                   </td>
                 </tr>
               ) : (
                 transactions.map(transaction => (
                   <tr key={transaction.id}>
-                    <td className="trx-code">{transaction.id}</td>
                     <td className="package">{transaction.package}</td>
                     <td className="description">{transaction.description}</td>
                     <td className="amount">{transaction.amount.toFixed(2)}</td>
@@ -666,7 +634,6 @@ const ClientDashboard = () => {
           </table>
         </div>
 
-        {/* Table Footer with Pagination */}
         <div className="table-footer">
           <div className="entries-info">
             <span>

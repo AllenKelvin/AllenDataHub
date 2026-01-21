@@ -9,17 +9,14 @@ const PaymentSuccess = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Get order details from localStorage
     const lastOrder = localStorage.getItem('lastOrder');
     if (lastOrder) {
       setOrderDetails(JSON.parse(lastOrder));
       
-      // Clear the stored order after 5 seconds
       setTimeout(() => {
         localStorage.removeItem('lastOrder');
       }, 5000);
     } else {
-      // If no order details, redirect to dashboard
       navigate('/client-dashboard');
     }
   }, [navigate]);
@@ -40,8 +37,8 @@ const PaymentSuccess = () => {
         
         <div className="order-details">
           <div className="detail-item">
-            <strong>TRX Code:</strong>
-            <span className="trx-code">{orderDetails.trxCode}</span>
+            <strong>Order ID:</strong>
+            <span className="order-id">{orderDetails.orderId}</span>
           </div>
           
           <div className="detail-item">
@@ -72,13 +69,12 @@ const PaymentSuccess = () => {
           
           <button
             onClick={() => {
-              // Copy TRX code to clipboard
-              navigator.clipboard.writeText(orderDetails.trxCode);
-              alert('TRX code copied to clipboard!');
+              navigator.clipboard.writeText(orderDetails.orderId);
+              alert('Order ID copied to clipboard!');
             }}
             className="copy-btn"
           >
-            Copy TRX Code
+            Copy Order ID
           </button>
         </div>
         

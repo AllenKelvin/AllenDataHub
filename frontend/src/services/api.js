@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const BUILD_TIMESTAMP = "20260122-PAYMENT-FLOW-UPDATE";
-// CRITICAL FIX: Use environment variable for production
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? `${process.env.REACT_APP_API_URL}/api`
   : 'http://localhost:5000/api';
@@ -13,7 +12,6 @@ console.log('🔧 API Configuration:', {
   timestamp: BUILD_TIMESTAMP
 });
 
-// Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
@@ -23,7 +21,6 @@ const api = axios.create({
   }
 });
 
-// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -39,7 +36,6 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor
 api.interceptors.response.use(
   (response) => {
     console.log('✅ API Success:', response.config.url, response.status);
@@ -57,7 +53,6 @@ api.interceptors.response.use(
     
     console.error('❌ API Error:', errorDetails);
     
-    // Handle network errors
     if (error.message === 'Network Error') {
       console.error('🌐 Network Error - Check:');
       console.error('1. Is backend running?', API_BASE_URL);
@@ -65,7 +60,6 @@ api.interceptors.response.use(
       console.error('3. Internet connection?');
     }
     
-    // Handle authentication errors
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -79,7 +73,6 @@ api.interceptors.response.use(
   }
 );
 
-// API Endpoints
 export const authAPI = {
   register: (userData) => api.post('/auth/register', userData),
   login: (credentials) => api.post('/auth/login', credentials),
@@ -94,52 +87,40 @@ export const plansAPI = {
 };
 
 export const ordersAPI = {
-  // Order Verification (Step 1 in checkout)
   verify: (orderData) => {
     console.log('✅ Verifying order with backend:', orderData);
     return api.post('/orders/verify', orderData);
   },
   
-  // Create Order (Step 2 in checkout)
   create: (orderData) => {
     console.log('🛒 Creating order:', orderData);
     return api.post('/orders', orderData);
   },
   
-  // Get user's orders
-  getMyOrders: () => {
+  getMyOrders: (params) => {
     console.log('📋 Fetching user orders');
-    return api.get('/orders/my-orders');
+    return api.get('/orders/my-orders', { params });
   },
   
-  // Get single order
   getOrder: (id) => api.get(`/orders/${id}`),
   
-  // Get order by TRX code
-  getOrderByTrx: (trxCode) => api.get(`/orders/trx/${trxCode}`),
-  
-  // Cancel order
   cancel: (id) => api.delete(`/orders/${id}`),
   
-  // Get recent transactions for dashboard
   getRecentTransactions: (limit = 10) => 
     api.get(`/orders/recent?limit=${limit}`),
 };
 
 export const paymentAPI = {
-  // Initialize payment with Paystack (opens in new window)
   initialize: (paymentData) => {
     console.log('💰 Initializing payment:', paymentData);
     return api.post('/payment/initialize', paymentData);
   },
   
-  // Verify payment status (polling from frontend)
   verify: (reference) => {
     console.log('🔍 Verifying payment status for reference:', reference);
     return api.get(`/payment/verify/${reference}`);
   },
   
-  // Check payment status without auth (for webhook/callback)
   checkStatus: (reference) => {
     console.log('📊 Checking payment status:', reference);
     return api.get(`/payment/status/${reference}`);
@@ -155,37 +136,30 @@ export const adminAPI = {
 };
 
 export const userAPI = {
-  // Get user profile
   getProfile: () => {
     console.log('👤 Fetching user profile');
     return api.get('/users/profile');
   },
   
-  // Update user profile
   updateProfile: (data) => {
     console.log('✏️ Updating user profile:', data);
     return api.put('/users/profile', data);
   },
   
-  // Change password
   changePassword: (data) => api.post('/users/change-password', data),
   
-  // Contact support
   contactSupport: (data) => {
     console.log('📞 Contacting support:', data);
     return api.post('/users/contact', data);
   },
   
-  // Get user transaction history
   getTransactionHistory: (page = 1, limit = 10) => 
     api.get(`/users/transactions?page=${page}&limit=${limit}`),
   
-  // Get user dashboard stats
   getDashboardStats: () => api.get('/users/dashboard-stats'),
 };
 
 export const networksAPI = {
-  // MTN API
   mtn: {
     testConnection: () => api.get('/mtn/test'),
     transferData: (data) => {
@@ -195,28 +169,23 @@ export const networksAPI = {
     checkBalance: () => api.get('/mtn/balance'),
   },
   
-  // Telecel API
   telecel: {
     testConnection: () => api.get('/telecel/test'),
     transferData: (data) => api.post('/telecel/transfer', data),
   },
   
-  // AirtelTigo API
   airteltigo: {
     testConnection: () => api.get('/airteltigo/test'),
     transferData: (data) => api.post('/airteltigo/transfer', data),
   },
 };
 
-// Helper function for Double precision handling
 export const toDouble = (num) => {
   if (num === null || num === undefined) return 0;
-  // Convert to number and ensure 2 decimal places
   const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
-  return Math.round(parsed * 100) / 100; // Keep 2 decimal places
+  return Math.round(parsed * 100) / 100;
 };
 
-// Test functions
 export const testConnection = async () => {
   try {
     console.log('🧪 Testing API connection to:', API_BASE_URL);
@@ -233,34 +202,21 @@ export const testConnection = async () => {
   }
 };
 
-// Helper function to generate TRX code
-export const generateTRXCode = (orderId) => {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
-  return `TRX${timestamp}${randomStr}`.slice(0, 12);
-};
-
-// Helper function to format Ghana phone numbers
 export const formatGhanaPhone = (phone) => {
   if (!phone) return '';
-  // Remove all non-digits
   const digits = phone.replace(/\D/g, '');
   
-  // If starts with 0, convert to +233
   if (digits.startsWith('0') && digits.length === 10) {
     return `+233${digits.slice(1)}`;
   }
   
-  // If already has country code
   if (digits.startsWith('233') && digits.length === 12) {
     return `+${digits}`;
   }
   
-  // Return as is with + if needed
   return digits.startsWith('+') ? phone : `+${digits}`;
 };
 
-// Helper function to validate Ghana phone number
 export const isValidGhanaNumber = (phone) => {
   const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
   const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;

@@ -24,12 +24,10 @@ const Checkout = () => {
     verificationId: ''
   });
 
-  // Helper function for consistent Double precision handling
   const toDouble = (num) => {
     if (num === null || num === undefined) return 0;
-    // Convert to number and ensure 2 decimal places
     const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
-    return Math.round(parsed * 100) / 100; // Keep 2 decimal places
+    return Math.round(parsed * 100) / 100;
   };
 
   useEffect(() => {
@@ -37,14 +35,12 @@ const Checkout = () => {
       navigate('/cart');
     }
     
-    // Set user email from localStorage if available
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     if (user.email) {
       setFormData(prev => ({ ...prev, email: user.email, phone: user.phone || '' }));
     }
   }, [cartItems, navigate]);
 
-  // Calculate totals with Double precision
   const subtotal = toDouble(cartItems.reduce((sum, item) => {
     const itemPrice = toDouble(item.price);
     const quantity = item.quantity || 1;
@@ -54,13 +50,11 @@ const Checkout = () => {
   const serviceFee = 0.50;
   const estimatedTotal = toDouble(subtotal + serviceFee);
 
-  // Step 1: Verify order with backend
   const verifyOrderWithBackend = async () => {
     try {
       setVerifying(true);
       setOrderVerification(prev => ({ ...prev, isValid: false, message: '' }));
       
-      // Validation
       if (!formData.email || !formData.phone) {
         alert('Please fill in email and phone number');
         setVerifying(false);
@@ -73,7 +67,6 @@ const Checkout = () => {
         return;
       }
 
-      // Prepare order data with Double precision
       const orderData = {
         items: cartItems.map(item => {
           const price = toDouble(item.price);
@@ -128,7 +121,6 @@ const Checkout = () => {
     }
   };
 
-  // Step 2: Create Order and Navigate to Payment Page
   const proceedToPayment = async () => {
     if (!orderVerification.isValid) {
       alert('Please verify your order first');
@@ -138,7 +130,6 @@ const Checkout = () => {
     try {
       setLoading(true);
       
-      // Create order in backend first with Double precision
       const orderData = {
         items: cartItems.map(item => {
           const price = toDouble(item.price);
@@ -147,7 +138,7 @@ const Checkout = () => {
             planId: item._id || item.id,
             network: item.network,
             size: item.size,
-            price: price, // Already in Double
+            price: price,
             recipientPhone: item.recipientPhone,
             quantity: item.quantity || 1
           };
@@ -164,10 +155,8 @@ const Checkout = () => {
       console.log('✅ Order created:', response.data);
       
       if (response.data.success) {
-        // Store order details for payment page
         const paymentData = {
           orderId: response.data.orderId,
-          trxCode: response.data.trxCode,
           amount: orderVerification.totalAmount,
           email: formData.email,
           phone: formData.phone,
@@ -175,11 +164,9 @@ const Checkout = () => {
           verificationId: orderVerification.verificationId
         };
         
-        // Store in localStorage for payment page
         localStorage.setItem('paymentData', JSON.stringify(paymentData));
         localStorage.setItem('pendingCart', JSON.stringify(cartItems));
         
-        // Navigate to NEW payment page (opens Paystack in new window)
         navigate('/payment', { state: paymentData });
       } else {
         throw new Error(response.data.message || 'Failed to create order');
@@ -193,7 +180,6 @@ const Checkout = () => {
     }
   };
 
-  // Reset verification
   const handleResetVerification = () => {
     setOrderVerification({
       isValid: false,
@@ -219,7 +205,6 @@ const Checkout = () => {
       <h1>Checkout</h1>
       
       <div className="checkout-content">
-        {/* Order Summary */}
         <div className="order-summary">
           <h2>Order Summary</h2>
           <div className="summary-items">
@@ -259,7 +244,6 @@ const Checkout = () => {
             )}
           </div>
 
-          {/* Order Verification Status */}
           {orderVerification.message && (
             <div className={`verification-status ${orderVerification.isValid ? 'valid' : 'invalid'}`}>
               {orderVerification.isValid ? '✅' : '❌'} {orderVerification.message}
@@ -267,7 +251,6 @@ const Checkout = () => {
           )}
         </div>
 
-        {/* Checkout Form */}
         <div className="checkout-form-section">
           <div className="checkout-form">
             <h2>Customer Information</h2>
@@ -302,20 +285,17 @@ const Checkout = () => {
               />
             </div>
             
-            {/* Payment Process */}
             <div className="notice-box">
-              <strong>New Payment Process:</strong>
+              <strong>Payment Process:</strong>
               <ol>
                 <li><strong>Verify</strong> your order details with our server</li>
                 <li><strong>Proceed to Payment</strong> - Opens payment page</li>
-                <li><strong>Complete payment</strong> on Paystack secure page (opens in new window)</li>
+                <li><strong>Complete payment</strong> on Paystack secure page</li>
                 <li><strong>Auto-redirect</strong> to dashboard after successful payment</li>
               </ol>
             </div>
             
-            {/* Checkout Steps */}
             <div className="checkout-steps">
-              {/* Step 1: Verify Order */}
               <div className="checkout-step">
                 <div className="step-header">
                   <span className="step-number">1</span>
@@ -339,7 +319,6 @@ const Checkout = () => {
                 </button>
               </div>
               
-              {/* Step 2: Make Payment */}
               <div className={`checkout-step ${orderVerification.isValid ? 'active' : 'disabled'}`}>
                 <div className="step-header">
                   <span className="step-number">2</span>
@@ -396,7 +375,7 @@ const Checkout = () => {
             <div className="payment-info">
               <p><strong>Payment Methods:</strong> Card, MTN MoMo, Vodafone Cash, AirtelTigo Money, Bank Transfer</p>
               <p><strong>Security:</strong> Powered by Paystack. Your payment details are secure.</p>
-              <p><strong>Note:</strong> After clicking "Proceed to Payment", you'll be redirected to a payment page where Paystack will open in a new window.</p>
+              <p><strong>Note:</strong> After clicking "Proceed to Payment", you'll be redirected to a payment page.</p>
             </div>
           </div>
         </div>

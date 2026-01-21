@@ -16,7 +16,6 @@ const Payment = () => {
   const [pollingInterval, setPollingInterval] = useState(null);
 
   useEffect(() => {
-    // Get payment data from location state or localStorage
     const data = location.state || JSON.parse(localStorage.getItem('paymentData') || '{}');
     
     if (!data.orderId || !data.amount || !data.email) {
@@ -29,7 +28,6 @@ const Payment = () => {
     setPaymentData(data);
     initializePaystackPayment(data);
     
-    // Cleanup on unmount
     return () => {
       if (pollingInterval) {
         clearInterval(pollingInterval);
@@ -42,7 +40,6 @@ const Payment = () => {
       setLoading(true);
       setPaymentStatus('initializing');
       
-      // 1. Initialize payment with backend
       const response = await paymentAPI.initialize({
         orderId: data.orderId,
         email: data.email,
@@ -52,7 +49,6 @@ const Payment = () => {
       console.log('🔄 Payment initialization response:', response.data);
 
       if (response.data.success && response.data.paymentUrl) {
-        // 2. Open Paystack in a new window (not popup)
         const paystackWindow = window.open(
           response.data.paymentUrl,
           '_blank',
@@ -69,7 +65,6 @@ const Payment = () => {
         setPaymentStatus('waiting');
         setLoading(false);
         
-        // 3. Start polling for payment completion
         startPaymentPolling(response.data.reference, data);
       } else {
         throw new Error('Failed to initialize payment');
@@ -83,7 +78,7 @@ const Payment = () => {
   };
 
   const startPaymentPolling = (reference, data) => {
-    const maxAttempts = 50; // ~5 minutes (6-second intervals)
+    const maxAttempts = 50;
     let attempts = 0;
 
     const interval = setInterval(async () => {
@@ -94,35 +89,28 @@ const Payment = () => {
         const response = await paymentAPI.verify(reference);
         
         if (response.data.success) {
-          // Payment successful
           clearInterval(interval);
           setPaymentStatus('success');
           
-          // Store last order for success page
           localStorage.setItem('lastOrder', JSON.stringify({
-            trxCode: data.trxCode,
             amount: data.amount,
             date: new Date().toISOString(),
             orderId: data.orderId
           }));
 
-          // Clear pending cart and payment data
           localStorage.removeItem('pendingCart');
           localStorage.removeItem('paymentData');
 
-          // Redirect to success page after 2 seconds
           setTimeout(() => {
             navigate('/payment-success');
           }, 2000);
           
         } else if (attempts >= maxAttempts) {
-          // Timeout
           clearInterval(interval);
           setError('Payment timeout. Please check your payment status in your dashboard.');
           setPaymentStatus('timeout');
           setLoading(false);
         }
-        // If not successful yet, continue polling
       } catch (error) {
         console.error('Payment status check error:', error);
         if (attempts >= maxAttempts) {
@@ -132,7 +120,7 @@ const Payment = () => {
           setLoading(false);
         }
       }
-    }, 6000); // Check every 6 seconds
+    }, 6000);
 
     setPollingInterval(interval);
   };
@@ -238,10 +226,6 @@ const Payment = () => {
           <>
             <div className="payment-details">
               <h3>Payment Details</h3>
-              <div className="detail-item">
-                <strong>TRX Code:</strong>
-                <span className="trx-code">{paymentData.trxCode}</span>
-              </div>
               <div className="detail-item">
                 <strong>Order ID:</strong>
                 <span>{paymentData.orderId}</span>
