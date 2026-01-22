@@ -15,6 +15,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import UserProfile from './pages/UserProfile';
 import ClientDashboard from './pages/ClientDashboard';
 import './App.css';
+import PaymentReturn from './components/PaymentReturn';
 import './responsive.css';
 
 function App() {

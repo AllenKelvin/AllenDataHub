@@ -1,6 +1,5 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -32,24 +31,108 @@ app.use((req, res, next) => {
   next();
 });
 
-// MongoDB Connection
+// IMPROVED MongoDB Connection with better error handling
 const MONGODB_URI = process.env.MONGODB_URI;
 
 const connectDB = async () => {
   try {
+    console.log('🔌 Attempting MongoDB connection...');
+    
     await mongoose.connect(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000, // Increased timeout
       socketTimeoutMS: 45000,
+      maxPoolSize: 10, // Connection pool
+      retryWrites: true,
+      w: 'majority'
     });
+    
     console.log('✅ MongoDB Connected Successfully');
+    console.log(`📊 Host: ${mongoose.connection.host}`);
+    console.log(`🗃️ Database: ${mongoose.connection.name}`);
+    
+    // Monitor connection events
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ MongoDB connection error:', err.message);
+    });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.log('⚠️ MongoDB disconnected. Attempting to reconnect...');
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('✅ MongoDB reconnected');
+    });
+    
   } catch (err) {
-    console.log('❌ MongoDB Connection Error:', err.message);
-    console.log('⚠️ Retrying connection in 5 seconds...');
-    setTimeout(connectDB, 5000);
+    console.error('❌ MongoDB Connection Error:', err.message);
+    console.error('🔗 Connection URI:', MONGODB_URI ? 'Set' : 'NOT SET');
+    console.log('⚠️ Retrying connection in 10 seconds...');
+    setTimeout(connectDB, 10000);
   }
 };
+
+// Initialize data plans with your exact prices
+async function initializeDataPlans() {
+  try {
+    const existingPlans = await DataPlan.countDocuments();
+    if (existingPlans === 0) {
+      console.log('📊 Initializing data plans with your pricing...');
+      
+      const dataPlans = [
+        // MTN Plans
+        { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
+        { network: 'MTN', size: '2GB', price: 8.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '3GB', price: 12.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '4GB', price: 16.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '5GB', price: 20.60, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
+        { network: 'MTN', size: '6GB', price: 24.70, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '7GB', price: 28.80, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '8GB', price: 33.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '10GB', price: 39.70, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '15GB', price: 58.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '20GB', price: 77.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '25GB', price: 97.10, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '30GB', price: 117.10, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '40GB', price: 155.00, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '50GB', price: 186.00, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '100GB', price: 364.00, validity: '30 days', description: 'MTN Non-Expiry' },
+        
+        // Telecel Plans
+        { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
+        { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '15GB', price: 53.60, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '20GB', price: 70.60, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '25GB', price: 88.30, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '30GB', price: 107.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '40GB', price: 141.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '50GB', price: 176.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '100GB', price: 348.00, validity: '30 days', description: 'Telecel Bundle' },
+        
+        // AirtelTigo Plans
+        { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
+        { network: 'AirtelTigo', size: '2GB', price: 7.70, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '3GB', price: 11.70, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '4GB', price: 15.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '5GB', price: 19.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '6GB', price: 23.70, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '7GB', price: 27.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '8GB', price: 31.10, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '9GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '10GB', price: 39.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '12GB', price: 47.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '15GB', price: 60.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '20GB', price: 78.00, validity: '30 days', description: 'AirtelTigo Bundle' }
+      ];
+      
+      await DataPlan.insertMany(dataPlans);
+      console.log(`✅ ${dataPlans.length} data plans initialized`);
+    }
+  } catch (error) {
+    console.error('❌ Error initializing data plans:', error);
+  }
+}
 
 connectDB();
 
@@ -73,11 +156,10 @@ const userSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-// Order schema - SIMPLIFIED, no trxCode field
+// FIXED: Order schema - REMOVED planId completely
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: [{
-    planId: { type: String, required: true },
     network: { type: String, required: true },
     size: { type: String, required: true },
     price: { type: Number, required: true },
@@ -160,8 +242,14 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
     
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable' });
+    // Check MongoDB connection
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
+      console.log(`⚠️ Database state: ${dbState} (0=disconnected, 1=connected, 2=connecting, 3=disconnecting)`);
+      return res.status(503).json({ 
+        error: 'Database temporarily unavailable',
+        status: dbState 
+      });
     }
     
     const user = await User.findById(req.userId).select('-password');
@@ -194,7 +282,8 @@ const adminMiddleware = async (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    if (mongoose.connection.readyState !== 1) {
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
       return res.status(503).json({ error: 'Database temporarily unavailable' });
     }
     
@@ -213,15 +302,61 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ROUTES ====================
 
-// Health Check
+// Health Check with detailed DB info
 app.get('/api/health', (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  
   res.json({ 
     status: 'OK',
     service: 'AllenDataHub API',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    database: {
+      state: states[dbState] || 'unknown',
+      readyState: dbState,
+      host: mongoose.connection.host || 'unknown',
+      name: mongoose.connection.name || 'unknown'
+    }
   });
+});
+
+// Test MongoDB connection
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const dbState = mongoose.connection.readyState;
+    
+    if (dbState === 1) {
+      // Try a simple query
+      const userCount = await User.countDocuments();
+      const planCount = await DataPlan.countDocuments();
+      
+      res.json({
+        connected: true,
+        message: 'MongoDB is connected and responding',
+        stats: {
+          users: userCount,
+          plans: planCount
+        },
+        connection: {
+          host: mongoose.connection.host,
+          database: mongoose.connection.name
+        }
+      });
+    } else {
+      res.json({
+        connected: false,
+        message: `MongoDB is not connected (state: ${dbState})`,
+        connectionString: process.env.MONGODB_URI ? 'Set' : 'NOT SET'
+      });
+    }
+  } catch (error) {
+    res.json({
+      connected: false,
+      message: 'MongoDB test failed',
+      error: error.message
+    });
+  }
 });
 
 // User Registration
@@ -233,8 +368,12 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Username, email and password are required' });
     }
 
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database temporarily unavailable. Please try again.',
+        dbState: dbState
+      });
     }
 
     const existingUser = await User.findOne({ 
@@ -292,8 +431,12 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable. Please try again.' });
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
+      return res.status(503).json({ 
+        error: 'Database temporarily unavailable. Please try again.',
+        dbState: dbState
+      });
     }
 
     const user = await User.findOne({ email });
@@ -447,7 +590,8 @@ app.get('/api/plans', async (req, res) => {
       query.network = network;
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
       console.log('⚠️ MongoDB not connected, returning fallback plans');
       return getFallbackPlans(network, res);
     }
@@ -455,26 +599,8 @@ app.get('/api/plans', async (req, res) => {
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
     if (plans.length === 0) {
-      const defaultPlans = [
-        { network: 'MTN', size: '1GB', price: 4.60, validity: '30 days', description: 'MTN Non Expiry', popular: true },
-        { network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
-        { network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
-        { network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
-        { network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
-        { network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
-        { network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
-        { network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-        { network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
-      ];
-      
-      await DataPlan.insertMany(defaultPlans);
+      // If no plans exist, initialize them
+      await initializeDataPlans();
       const updatedPlans = await DataPlan.find(query).sort({ price: 1 });
       return res.json(updatedPlans);
     }
@@ -489,22 +615,21 @@ app.get('/api/plans', async (req, res) => {
 // Helper function for fallback plans
 function getFallbackPlans(network, res) {
   const fallbackPlans = [
-    { _id: 'mtn1', network: 'MTN', size: '1GB', price: 4.15, validity: '30 days', description: 'MTN Non Expiry', popular: true },
-    { _id: 'mtn2', network: 'MTN', size: '2GB', price: 8.30, validity: '30 days', description: 'MTN Non Expiry' },
-    { _id: 'mtn3', network: 'MTN', size: '3GB', price: 12.45, validity: '30 days', description: 'MTN Non Expiry' },
-    { _id: 'mtn4', network: 'MTN', size: '5GB', price: 20.75, validity: '30 days', description: 'MTN Non Expiry' },
-    { _id: 'mtn5', network: 'MTN', size: '10GB', price: 41.50, validity: '30 days', description: 'MTN Non Expiry' },
-    { _id: 'telecel1', network: 'Telecel', size: '2GB', price: 7.18, validity: '30 days', description: 'Telecel', popular: true },
-    { _id: 'telecel2', network: 'Telecel', size: '5GB', price: 17.95, validity: '30 days', description: 'Telecel' },
-    { _id: 'telecel3', network: 'Telecel', size: '10GB', price: 35.90, validity: '30 days', description: 'Telecel' },
-    { _id: 'telecel4', network: 'Telecel', size: '15GB', price: 52.90, validity: '30 days', description: 'Telecel' },
-    { _id: 'airteltigo1', network: 'AirtelTigo', size: '1GB', price: 5.00, validity: '7 days', description: 'AirtelTigo 7-Day Bundle', popular: true },
-    { _id: 'airteltigo2', network: 'AirtelTigo', size: '2GB', price: 9.50, validity: '7 days', description: 'AirtelTigo 7-Day Bundle' },
-    { _id: 'airteltigo3', network: 'AirtelTigo', size: '3GB', price: 12.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-    { _id: 'airteltigo4', network: 'AirtelTigo', size: '5GB', price: 18.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-    { _id: 'airteltigo5', network: 'AirtelTigo', size: '6GB', price: 22.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-    { _id: 'airteltigo6', network: 'AirtelTigo', size: '10GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' },
-    { _id: 'airteltigo7', network: 'AirtelTigo', size: '15GB', price: 50.00, validity: '30 days', description: 'AirtelTigo Monthly Bundle' }
+    // MTN Plans
+    { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
+    { network: 'MTN', size: '2GB', price: 8.50, validity: '30 days', description: 'MTN Non-Expiry' },
+    { network: 'MTN', size: '3GB', price: 12.50, validity: '30 days', description: 'MTN Non-Expiry' },
+    { network: 'MTN', size: '5GB', price: 20.60, validity: '30 days', description: 'MTN Non-Expiry' },
+    { network: 'MTN', size: '10GB', price: 39.70, validity: '30 days', description: 'MTN Non-Expiry' },
+    
+    // Telecel Plans
+    { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
+    { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
+    
+    // AirtelTigo Plans
+    { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
+    { network: 'AirtelTigo', size: '2GB', price: 7.70, validity: '30 days', description: 'AirtelTigo Bundle' },
+    { network: 'AirtelTigo', size: '5GB', price: 19.50, validity: '30 days', description: 'AirtelTigo Bundle' }
   ];
 
   let filteredPlans = fallbackPlans;
@@ -520,7 +645,8 @@ app.get('/api/plans/network/:network', async (req, res) => {
   try {
     const { network } = req.params;
     
-    if (mongoose.connection.readyState !== 1) {
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
       console.log('⚠️ MongoDB not connected, returning fallback network plans');
       getFallbackPlans(network, res);
       return;
@@ -619,7 +745,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       calculatedAmount: calculatedTotal,
       serviceFee: serviceFee,
       items: items,
-      verificationId: `VERIFY-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+      verificationId: `VERIFY-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       timestamp: new Date().toISOString()
     });
 
@@ -633,7 +759,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// FIXED: Create Order - No TRX code, simplified
+// FIXED: Create Order - planId REMOVED completely
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
@@ -675,7 +801,8 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
 
-    if (mongoose.connection.readyState !== 1) {
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
       console.log('❌ Database not connected');
       return res.status(503).json({ 
         success: false,
@@ -683,8 +810,17 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
 
+    // Validate userId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      console.log('❌ Invalid user ID:', req.userId);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID format'
+      });
+    }
+
+    // FIXED: planId REMOVED completely
     const preparedItems = items.map(item => ({
-      planId: item.planId || `PLAN-${crypto.randomBytes(4).toString('hex')}`,
       network: item.network,
       size: item.size,
       price: parseFloat(item.price) || 0,
@@ -695,7 +831,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     console.log('💾 Prepared items:', preparedItems);
 
     const order = new Order({
-      userId: req.userId,
+      userId: new mongoose.Types.ObjectId(req.userId),
       items: preparedItems,
       totalAmount: parseFloat(totalAmount) || 0,
       customerEmail: customerEmail,
@@ -736,6 +872,14 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
     
+    if (error.name === 'CastError' && error.kind === 'ObjectId') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid ID format',
+        details: 'The user ID is not valid'
+      });
+    }
+    
     res.status(500).json({ 
       success: false,
       error: 'Failed to create order',
@@ -750,13 +894,17 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    const orders = await Order.find({ userId: req.userId })
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    const totalOrders = await Order.countDocuments({ userId: req.userId });
+    const totalOrders = await Order.countDocuments({ userId: new mongoose.Types.ObjectId(req.userId) });
 
     res.json({
       orders,
@@ -778,7 +926,11 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
     
-    const orders = await Order.find({ userId: req.userId })
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
@@ -805,9 +957,17 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
 // Get Single Order
 app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid order ID format' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
     const order = await Order.findOne({
-      _id: req.params.id,
-      userId: req.userId
+      _id: new mongoose.Types.ObjectId(req.params.id),
+      userId: new mongoose.Types.ObjectId(req.userId)
     });
 
     if (!order) {
@@ -824,9 +984,17 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
 // Cancel Order
 app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid order ID format' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
     const order = await Order.findOne({
-      _id: req.params.id,
-      userId: req.userId
+      _id: new mongoose.Types.ObjectId(req.params.id),
+      userId: new mongoose.Types.ObjectId(req.userId)
     });
 
     if (!order) {
@@ -855,12 +1023,15 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
 // Get User Dashboard Stats
 app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   try {
-    const userId = req.userId;
-    
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const userId = new mongoose.Types.ObjectId(req.userId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const userOrders = await Order.find({ userId: new mongoose.Types.ObjectId(userId) })
+    const userOrders = await Order.find({ userId: userId })
       .sort({ createdAt: -1 })
       .lean();
     
@@ -961,13 +1132,17 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    const orders = await Order.find({ userId: req.userId })
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    const totalOrders = await Order.countDocuments({ userId: req.userId });
+    const totalOrders = await Order.countDocuments({ userId: new mongoose.Types.ObjectId(req.userId) });
 
     const transactions = orders.map(order => ({
       id: order._id,
@@ -996,11 +1171,11 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   }
 });
 
-// Initialize Payment (Paystack)
+// Initialize Payment (Paystack) - UPDATED for redirect flow
 app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   try {
-    const { orderId, email, amount } = req.body;
-    console.log('💰 Payment initialization request:', { orderId, email, amount });
+    const { orderId, email, amount, redirectUrl } = req.body;
+    console.log('💰 Payment initialization request:', { orderId, email, amount, redirectUrl });
 
     if (!orderId || !email || !amount) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -1013,17 +1188,21 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
     const validatedAmount = parseFloat(amount);
     const amountInKobo = Math.round(validatedAmount * 100);
 
-    const reference = `ALLEN-${orderId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const reference = `ALLEN-${orderId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
+    // Use provided redirectUrl or default to payment-success
+    const callbackUrl = redirectUrl || `${FRONTEND_URL}/payment-return`;
 
     const response = await paystack.post('/transaction/initialize', {
       email,
       amount: amountInKobo,
       reference: reference,
-      callback_url: `${FRONTEND_URL}/payment-success`,
+      callback_url: callbackUrl,
       metadata: {
         orderId,
         userId: req.userId,
-        trxAmount: validatedAmount
+        trxAmount: validatedAmount,
+        timestamp: new Date().toISOString()
       }
     });
 
@@ -1094,6 +1273,84 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
     res.status(500).json({ 
       error: 'Failed to verify payment',
       details: error.response?.data?.message || error.message 
+    });
+  }
+});
+
+// Add a new route for payment verification on return
+app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
+  try {
+    const { reference } = req.body;
+
+    if (!reference) {
+      return res.status(400).json({ error: 'Payment reference is required' });
+    }
+
+    const response = await paystack.get(`/transaction/verify/${reference}`);
+    const { data } = response.data;
+
+    const order = await Order.findOne({ paymentReference: reference });
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (data.status === 'success') {
+      order.paymentStatus = 'success';
+      order.status = 'processing';
+      order.updatedAt = new Date();
+      await order.save();
+
+      console.log(`✅ Payment successful for order ${order._id}`);
+
+      // Process the order through Portal-02
+      try {
+        const portal02Service = require('./services/portal02Service');
+        
+        for (const item of order.items) {
+          const result = await portal02Service.purchaseDataBundle(
+            item.recipientPhone,
+            item.size,
+            item.network
+          );
+          
+          console.log(`📦 Portal-02 purchase result for ${item.recipientPhone}:`, result.success);
+        }
+        
+        order.status = 'processing';
+        await order.save();
+      } catch (portalError) {
+        console.error('❌ Portal-02 processing error:', portalError);
+        // Order is still marked as paid, but portal processing failed
+      }
+
+      res.json({
+        success: true,
+        message: 'Payment verified and order processing',
+        orderId: order._id,
+        amount: data.amount / 100,
+        status: 'success',
+        redirectTo: '/clientdashboard?payment=success'
+      });
+    } else {
+      order.paymentStatus = 'failed';
+      order.updatedAt = new Date();
+      await order.save();
+
+      res.json({
+        success: false,
+        message: 'Payment verification failed',
+        orderId: order._id,
+        status: 'failed',
+        redirectTo: '/clientdashboard?payment=failed'
+      });
+    }
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to verify payment',
+      status: 'error',
+      redirectTo: '/clientdashboard?payment=error'
     });
   }
 });
@@ -1240,6 +1497,10 @@ app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
   try {
     const userId = req.params.userId;
 
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
     const [
       totalOrders,
       totalSpentResult,
@@ -1299,6 +1560,12 @@ app.listen(PORT, () => {
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`💳 Paystack: ${PAYSTACK_SECRET_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
+  console.log(`🔗 MongoDB URI: ${process.env.MONGODB_URI ? 'Set' : 'NOT SET - Check .env file'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`🔄 Order System: Using MongoDB ObjectId as order identifier`);
+  console.log(`🔄 Order System: planId REMOVED completely`);
+  
+  // Initialize data plans after server starts
+  setTimeout(() => {
+    initializeDataPlans();
+  }, 2000);
 });
