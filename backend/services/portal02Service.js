@@ -3,17 +3,34 @@ const axios = require('axios');
 class Portal02Service {
   constructor() {
     this.apiKey = process.env.PORTAL02_API_KEY || 'dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH';
-    this.baseURL = 'https://www.portal-02.com/api/v1'; // Added "www."
+    this.baseURL = 'https://www.portal-02.com/api/v1';
     
     this.client = axios.create({
       baseURL: this.baseURL,
       headers: {
-        'x-api-key': this.apiKey, // Changed from Authorization
+        'x-api-key': this.apiKey,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
       timeout: 30000
     });
+    
+    // CORRECT offer slugs from screenshots
+    this.offerSlugs = {
+      'MTN': 'master_beneficiary_data_bundle',
+      'Telecel': 'telecel_expiry_bundle',
+      'AirtelTigo': 'ishare_data_bundle'
+    };
+    
+    // Available volumes from screenshots
+    this.availableVolumes = {
+      'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+      'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 100],
+      'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20]
+    };
+    
+    // Webhook URL for Portal-02 to send status updates
+    this.webhookBaseUrl = process.env.BACKEND_URL || 'http://localhost:5000';
   }
 
   // Test connection
@@ -44,42 +61,63 @@ class Portal02Service {
     }
   }
 
-  // Purchase data bundle - UPDATED for Portal-02 API structure
-  async purchaseDataBundle(phoneNumber, bundleSize, network) {
+  // ✅ UPDATED: Purchase data bundle with webhook URL
+  async purchaseDataBundle(phoneNumber, bundleSize, network, orderReference = null) {
     try {
       console.log(`📦 Portal-02: Purchasing ${bundleSize} for ${phoneNumber} (${network})`);
       
       const formattedPhone = this.formatPhoneNumber(phoneNumber);
-      const offerSlug = this.getOfferSlug(bundleSize, network);
+      const volume = this.extractVolumeNumber(bundleSize);
       
-      // Portal-02 API expects this structure
+      // Validate volume is available for this network
+      if (!this.isVolumeAvailable(network, volume)) {
+        return {
+          success: false,
+          error: `${volume}GB is not available for ${network}. Available volumes: ${this.availableVolumes[network].join(', ')}GB`
+        };
+      }
+      
+      // Get offer slug from screenshots
+      const offerSlug = this.getOfferSlug(network);
+      
+      // ✅ IMPORTANT: Include webhook URL for status updates
+      const webhookUrl = `${this.webhookBaseUrl}/api/webhooks/portal02`;
+      
+      // ✅ Payload structure from Portal-02 documentation
       const payload = {
         type: 'single',
-        volume: this.convertToMB(bundleSize),
+        volume: volume,
         phone: formattedPhone,
         offerSlug: offerSlug,
-        webhookUrl: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/api/webhooks/orders` : undefined
+        webhookUrl: webhookUrl
       };
       
-      console.log('Portal-02 payload:', payload);
+      // Add reference if provided (for matching later)
+      if (orderReference) {
+        payload.reference = orderReference;
+      }
       
-      // Map network to Portal-02 endpoint
+      console.log('✅ Portal-02 payload with webhook:', payload);
+      
+      // Endpoint mapping from screenshots
       const endpoint = this.mapNetworkToEndpoint(network);
+      console.log(`📤 Sending to: /order/${endpoint}`);
+      
       const response = await this.client.post(`/order/${endpoint}`, payload);
       
-      console.log('Portal-02 response:', response.data);
+      console.log('✅ Portal-02 response:', response.data);
       
       return {
         success: true,
         transactionId: response.data.orderId || response.data.id,
-        reference: response.data.reference,
-        status: response.data.status || 'processing',
-        message: 'Order submitted successfully',
+        reference: response.data.reference || response.data.orderId,
+        status: response.data.status || 'pending',
+        message: 'Order submitted successfully to vendor',
         raw: response.data
       };
       
     } catch (error) {
-      console.error('Portal-02 purchase error:', {
+      console.error('❌ Portal-02 purchase error:', {
         status: error.response?.status,
         data: error.response?.data,
         message: error.message
@@ -95,24 +133,73 @@ class Portal02Service {
     }
   }
 
-  // Bulk purchase
-  async purchaseBulkData(items, network) {
+  // ✅ NEW: Check order status from Portal-02
+  async checkOrderStatus(orderId) {
+    try {
+      console.log(`🔍 Checking order status for: ${orderId}`);
+      
+      // According to Portal-02 docs: GET /api/v1/order/status/{orderId}
+      const response = await this.client.get(`/order/status/${orderId}`);
+      
+      console.log(`✅ Order status for ${orderId}:`, response.data);
+      
+      return {
+        success: true,
+        order: response.data,
+        status: response.data.status,
+        message: 'Order status retrieved successfully'
+      };
+      
+    } catch (error) {
+      console.error('❌ Order status check error:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message
+      };
+    }
+  }
+
+  // Bulk purchase with webhook
+  async purchaseBulkData(items, network, orderReference = null) {
     try {
       console.log(`📦 Portal-02: Bulk purchase for ${network}, ${items.length} items`);
       
       const bulkItems = items.map(item => ({
-        volume: this.convertToMB(item.size),
+        volume: this.extractVolumeNumber(item.size),
         recipient: this.formatPhoneNumber(item.phone)
       }));
       
-      const offerSlug = this.getOfferSlug(items[0].size, network);
+      // Validate all volumes
+      for (const item of bulkItems) {
+        if (!this.isVolumeAvailable(network, item.volume)) {
+          return {
+            success: false,
+            error: `${item.volume}GB is not available for ${network}. Available volumes: ${this.availableVolumes[network].join(', ')}GB`
+          };
+        }
+      }
+      
+      const offerSlug = this.getOfferSlug(network);
+      
+      // ✅ Include webhook URL
+      const webhookUrl = `${this.webhookBaseUrl}/api/webhooks/portal02`;
       
       const payload = {
         type: 'bulk',
         items: bulkItems,
         offerSlug: offerSlug,
-        webhookUrl: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/api/webhooks/orders` : undefined
+        webhookUrl: webhookUrl
       };
+      
+      // Add reference if provided
+      if (orderReference) {
+        payload.reference = orderReference;
+      }
       
       const endpoint = this.mapNetworkToEndpoint(network);
       const response = await this.client.post(`/order/${endpoint}`, payload);
@@ -120,8 +207,9 @@ class Portal02Service {
       return {
         success: true,
         transactionId: response.data.orderId,
-        status: response.data.status || 'processing',
-        message: 'Bulk order submitted',
+        reference: response.data.reference || response.data.orderId,
+        status: response.data.status || 'pending',
+        message: 'Bulk order submitted to vendor',
         raw: response.data
       };
       
@@ -153,10 +241,8 @@ class Portal02Service {
 
   // Helper: Format phone number
   formatPhoneNumber(phone) {
-    // Remove any non-digits
     let cleaned = phone.replace(/\D/g, '');
     
-    // Handle Ghana numbers
     if (cleaned.startsWith('0') && cleaned.length === 10) {
       cleaned = '233' + cleaned.substring(1);
     } else if (cleaned.startsWith('+233')) {
@@ -168,21 +254,40 @@ class Portal02Service {
     return cleaned;
   }
 
-  // Helper: Convert size to MB
-  convertToMB(size) {
-    const match = size.match(/(\d+(\.\d+)?)\s*(GB|MB)/i);
-    if (!match) return 0;
-    
-    const value = parseFloat(match[1]);
-    const unit = match[3].toUpperCase();
-    
-    if (unit === 'GB') {
-      return Math.round(value * 1000); // Convert GB to MB
+  // Extract volume number from bundle size (e.g., "1GB" -> 1)
+  extractVolumeNumber(size) {
+    if (typeof size === 'number') {
+      return size;
     }
-    return Math.round(value); // Already in MB
+    
+    if (typeof size === 'string') {
+      const match = size.match(/(\d+(\.\d+)?)/);
+      if (match) {
+        return parseInt(match[1], 10);
+      }
+    }
+    
+    return 0;
   }
 
-  // Helper: Map network to Portal-02 endpoint
+  // Check if volume is available for network
+  isVolumeAvailable(network, volume) {
+    const volumes = this.availableVolumes[network];
+    if (!volumes) return false;
+    
+    return volumes.includes(volume);
+  }
+
+  // Get offer slug from screenshots
+  getOfferSlug(network) {
+    const slug = this.offerSlugs[network];
+    if (!slug) {
+      throw new Error(`No offer slug found for network: ${network}`);
+    }
+    return slug;
+  }
+
+  // Map network to Portal-02 endpoint
   mapNetworkToEndpoint(network) {
     const mapping = {
       'MTN': 'mtn',
@@ -191,58 +296,71 @@ class Portal02Service {
     };
     return mapping[network] || network.toLowerCase();
   }
-
-  // Helper: Get offer slug for Portal-02
-  getOfferSlug(bundleSize, network) {
-    // Define offer slugs based on your plans
-    const offerSlugs = {
-      'MTN': {
-        '1GB': 'mtn_data_bundle',
-        '2GB': 'mtn_data_bundle',
-        '3GB': 'mtn_data_bundle',
-        '4GB': 'mtn_data_bundle',
-        '5GB': 'mtn_data_bundle',
-        '6GB': 'mtn_data_bundle',
-        '7GB': 'mtn_data_bundle',
-        '8GB': 'mtn_data_bundle',
-        '10GB': 'mtn_data_bundle',
-        '15GB': 'mtn_data_bundle',
-        '20GB': 'mtn_data_bundle',
-        '25GB': 'mtn_data_bundle',
-        '30GB': 'mtn_data_bundle',
-        '40GB': 'mtn_data_bundle',
-        '50GB': 'mtn_data_bundle',
-        '100GB': 'mtn_data_bundle'
-      },
-      'Telecel': {
-        '5GB': 'telecel_data_bundle',
-        '10GB': 'telecel_data_bundle',
-        '15GB': 'telecel_data_bundle',
-        '20GB': 'telecel_data_bundle',
-        '25GB': 'telecel_data_bundle',
-        '30GB': 'telecel_data_bundle',
-        '40GB': 'telecel_data_bundle',
-        '50GB': 'telecel_data_bundle',
-        '100GB': 'telecel_data_bundle'
-      },
-      'AirtelTigo': {
-        '1GB': 'airteltigo_data_bundle',
-        '2GB': 'airteltigo_data_bundle',
-        '3GB': 'airteltigo_data_bundle',
-        '4GB': 'airteltigo_data_bundle',
-        '5GB': 'airteltigo_data_bundle',
-        '6GB': 'airteltigo_data_bundle',
-        '7GB': 'airteltigo_data_bundle',
-        '8GB': 'airteltigo_data_bundle',
-        '9GB': 'airteltigo_data_bundle',
-        '10GB': 'airteltigo_data_bundle',
-        '12GB': 'airteltigo_data_bundle',
-        '15GB': 'airteltigo_data_bundle',
-        '20GB': 'airteltigo_data_bundle'
-      }
-    };
+  
+  // Retry mechanism for failed purchases
+  async purchaseDataBundleWithRetry(phoneNumber, bundleSize, network, orderReference = null, maxRetries = 2) {
+    let lastError;
     
-    return offerSlugs[network]?.[bundleSize] || `${network.toLowerCase()}_data_bundle`;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Attempt ${attempt}/${maxRetries} for ${network} ${bundleSize} to ${phoneNumber}`);
+        
+        const result = await this.purchaseDataBundle(phoneNumber, bundleSize, network, orderReference);
+        
+        if (result.success) {
+          console.log(`✅ Purchase successful on attempt ${attempt}`);
+          return result;
+        } else {
+          lastError = new Error(result.error || 'Purchase failed');
+          console.log(`⚠️ Purchase failed on attempt ${attempt}:`, result.error);
+        }
+      } catch (error) {
+        lastError = error;
+        console.log(`❌ Error on attempt ${attempt}:`, error.message);
+      }
+      
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    
+    throw lastError || new Error('All purchase attempts failed');
+  }
+  
+  // ✅ NEW: Process Portal-02 webhook payload
+  processWebhookPayload(payload) {
+    try {
+      console.log('📥 Processing Portal-02 webhook payload:', payload);
+      
+      const { event, orderId, reference, status, recipient, volume, timestamp } = payload;
+      
+      if (event !== 'order.status.updated') {
+        return { success: false, error: 'Unknown webhook event type' };
+      }
+      
+      const validStatuses = ['pending', 'processing', 'delivered', 'failed', 'cancelled', 'refunded', 'resolved'];
+      if (!validStatuses.includes(status)) {
+        return { success: false, error: `Invalid status: ${status}` };
+      }
+      
+      return {
+        success: true,
+        event,
+        orderId,
+        reference,
+        status,
+        recipient,
+        volume,
+        timestamp: new Date(timestamp),
+        message: `Order ${orderId} status updated to ${status}`
+      };
+      
+    } catch (error) {
+      console.error('❌ Error processing webhook payload:', error);
+      return { success: false, error: error.message };
+    }
   }
 }
 

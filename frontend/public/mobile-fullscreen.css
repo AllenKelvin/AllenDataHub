@@ -1,0 +1,117 @@
+/* Mobile Full-Screen Fixes */
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  position: relative !important;
+}
+
+/* Reset all containers to full width */
+body > * {
+  max-width: 100vw !important;
+}
+
+/* Prevent horizontal scroll */
+.container, .container-fluid, .wrapper, .main-container {
+  max-width: 100vw !important;
+  overflow-x: hidden !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Mobile-specific full screen */
+@media (max-width: 768px) {
+  html, body {
+    height: -webkit-fill-available !important;
+    position: fixed !important;
+    width: 100vw !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  
+  /* Remove any margins/padding that cause white edges */
+  * {
+    box-sizing: border-box !important;
+  }
+  
+  .main-content, 
+  .dashboard-container,
+  .home-container,
+  .app-container,
+  #root,
+  .container {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Ensure all sections take full width */
+  div[class*="container"],
+  div[class*="wrapper"],
+  section,
+  main,
+  header,
+  footer,
+  nav {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+  }
+  
+  /* Fix for specific components */
+  .card,
+  .modal-content,
+  .form-control,
+  .btn {
+    border-radius: 8px !important;
+  }
+  
+  /* Remove any fixed widths */
+  .row {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  
+  .col, .col-1, .col-2, .col-3, .col-4, .col-5, .col-6, 
+  .col-7, .col-8, .col-9, .col-10, .col-11, .col-12 {
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+  }
+}
+
+/* Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  body {
+    height: -webkit-fill-available !important;
+  }
+}
+
+/* Fix for iOS input zoom */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Hide scrollbars but keep functionality */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #121212 !important;
+    color: #ffffff !important;
+  }
+}
