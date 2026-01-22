@@ -1302,3 +1302,44 @@ button,
     display: none !important;
   }
 }
+
+/* Add these to your existing ClientDashboard.css */
+
+/* Chat Support Component Styles */
+/* Note: Most chat styles are in ChatSupport.css, but you might want to add some global overrides */
+
+/* Make sure the chat button is above other elements */
+.chat-button {
+  z-index: 1000 !important;
+}
+
+/* Ensure modal is above everything */
+.confirmation-modal {
+  z-index: 2000 !important;
+}
+
+/* Dark mode support for chat component */
+.dark .chat-panel {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+.dark .chat-header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.dark .chat-option {
+  background: #334155;
+}
+
+.dark .chat-option:hover {
+  background: #475569;
+}
+
+.dark .chat-footer {
+  border-top-color: #334155;
+}
+
+.dark .modal-content {
+  background: #1e293b;
+}

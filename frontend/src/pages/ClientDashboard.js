@@ -1,7 +1,9 @@
+// src/pages/ClientDashboard.js
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
 import { plansAPI, ordersAPI, userAPI } from '../services/api';
+import ChatSupport from '../components/ChatSupport/ChatSupport';
 import './ClientDashboard.css';
 
 const ClientDashboard = () => {
@@ -396,309 +398,314 @@ const ClientDashboard = () => {
   }
 
   return (
-    <div className={`client-dashboard ${darkMode ? 'dark' : ''}`}>
-      {error && (
-        <div className="error-message">
-          <span className="error-icon">❌</span>
-          <span className="error-text">{error}</span>
-          <button className="retry-btn" onClick={handleRefresh}>
-            Retry
-          </button>
-        </div>
-      )}
-
-      <div className="dashboard-header">
-        <div className="header-top">
-          <h1>📊 Client Dashboard</h1>
-          <button 
-            className="refresh-btn"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            {loading ? '🔄 Loading...' : '🔄 Refresh Data'}
-          </button>
-        </div>
-        {user && (
-          <div className="user-info-card">
-            <div className="user-details">
-              <div className="user-field">
-                <strong>Username:</strong> {user.username || user.name || 'User'}
-              </div>
-              <div className="user-field">
-                <strong>Email:</strong> {user.email || 'Not set'}
-              </div>
-              <div className="user-field">
-                <strong>Status:</strong> <span className="status-active">Active</span>
-              </div>
-              <div className="user-field">
-                <strong>Member Since:</strong> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-              </div>
-              <div className="user-field">
-                <strong>Phone:</strong> {user.phone || 'Not set'}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="stats-section">
-        <div className="stats-header">
-          <h2 className="section-title">📈 Your Statistics</h2>
-          <p className="section-subtitle">Real-time data from your orders</p>
-        </div>
-        <div className="stats-grid">
-          <div className="stat-card total-spent-card">
-            <div className="stat-icon">💰</div>
-            <div className="stat-value">GHS {stats.totalSpent?.toFixed(2) || '0.00'}</div>
-            <div className="stat-label">Total Spent</div>
-            <div className="stat-note">All successful orders</div>
-          </div>
-          <div className="stat-card today-orders-card">
-            <div className="stat-icon">📦</div>
-            <div className="stat-value">{stats.todayOrders || 0}</div>
-            <div className="stat-label">Orders Today</div>
-            <div className="stat-note">Orders placed today</div>
-          </div>
-          <div className="stat-card data-volume-card">
-            <div className="stat-icon">💾</div>
-            <div className="stat-value">{stats.totalDataFormatted || '0 GB'}</div>
-            <div className="stat-label">Total Data Volume</div>
-            <div className="stat-note">Total data purchased</div>
-          </div>
-          <div className="stat-card delivered-orders-card">
-            <div className="stat-icon">✅</div>
-            <div className="stat-value">{stats.deliveredOrders || 0}</div>
-            <div className="stat-label">Delivered Orders</div>
-            <div className="stat-note">Successfully delivered</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="packages-section">
-        <h2 className="section-title">📱 Available Data Packages</h2>
-        <p className="section-subtitle">
-          Click on network names to view packages. Enter recipient phone number to add to cart.
-        </p>
-
-        <div className="network-accordions">
-          {networks.length === 0 ? (
-            <div className="no-plans-message">
-              <p>No data plans available. Please check your connection or contact support.</p>
-            </div>
-          ) : (
-            networks.map(network => (
-              <div key={network.name} className="network-accordion">
-                <div 
-                  className="accordion-header"
-                  onClick={() => toggleNetwork(network.name)}
-                  style={{ 
-                    borderLeftColor: network.color,
-                    background: `linear-gradient(135deg, ${network.color}20 0%, ${network.color}10 100%)`
-                  }}
-                >
-                  <div className="network-title">
-                    <span 
-                      className="network-icon"
-                      style={{ backgroundColor: network.color }}
-                    >
-                      {network.icon}
-                    </span>
-                    <span className="network-name">{network.name}</span>
-                    <span className="plan-count">({network.plans.length} plans)</span>
-                  </div>
-                  <span className="accordion-arrow">
-                    {expandedNetwork === network.name ? '▲' : '▼'}
-                  </span>
-                </div>
-                
-                {expandedNetwork === network.name && (
-                  <div className="accordion-content">
-                    <div className="plans-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>VOLUME</th>
-                            <th>PRICE (GHS)</th>
-                            <th>VALIDITY</th>
-                            <th>DESCRIPTION</th>
-                            <th>BENEFICIARY NUMBER</th>
-                            <th>ACTION</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {network.plans.map(plan => (
-                            <tr key={plan._id}>
-                              <td className="volume">{plan.size}</td>
-                              <td className="price">{plan.price.toFixed(2)}</td>
-                              <td className="validity">{plan.validity}</td>
-                              <td className="description">{plan.description}</td>
-                              <td>
-                                <input
-                                  type="tel"
-                                  value={phoneNumbers[plan._id] || ''}
-                                  onChange={(e) => handlePhoneChange(plan._id, e.target.value)}
-                                  placeholder="0241234567"
-                                  className="phone-input"
-                                  maxLength="10"
-                                />
-                              </td>
-                              <td>
-                                <button
-                                  onClick={() => handleAddToCart(plan, network)}
-                                  disabled={loading}
-                                  className="add-to-cart-btn"
-                                  style={{ 
-                                    backgroundColor: network.color,
-                                    color: network.name === 'MTN' ? '#000' : '#fff'
-                                  }}
-                                >
-                                  {loading ? 'Adding...' : '🛒 Add to Cart'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="transactions-section">
-        <div className="section-header">
-          <h2 className="section-title">📋 Transaction History</h2>
-          <div className="table-actions">
-            <button 
-              className="export-btn"
-              onClick={() => alert('Export feature coming soon!')}
-            >
-              📥 Export CSV
+    <>
+      <div className={`client-dashboard ${darkMode ? 'dark' : ''}`}>
+        {error && (
+          <div className="error-message">
+            <span className="error-icon">❌</span>
+            <span className="error-text">{error}</span>
+            <button className="retry-btn" onClick={handleRefresh}>
+              Retry
             </button>
           </div>
-        </div>
-        
-        <div className="transactions-table-container">
-          <table className="transactions-table">
-            <thead>
-              <tr>
-                <th>PACKAGE</th>
-                <th>DESCRIPTION</th>
-                <th>AMOUNT (GHS)</th>
-                <th>BENEFICIARY</th>
-                <th>PAYMENT SOURCE</th>
-                <th>PAYMENT STATUS</th>
-                <th>DATE</th>
-                <th>STATUS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="no-data">
-                    📭 No transactions yet. Purchase your first data plan!
-                  </td>
-                </tr>
-              ) : (
-                transactions.map(transaction => (
-                  <tr key={transaction.id}>
-                    <td className="package">{transaction.package}</td>
-                    <td className="description">{transaction.description}</td>
-                    <td className="amount">{transaction.amount.toFixed(2)}</td>
-                    <td className="beneficiary">{transaction.beneficiary}</td>
-                    <td className="payment-source">{transaction.paymentSource}</td>
-                    <td>
-                      <span 
-                        className="payment-status"
-                        style={{ backgroundColor: getPaymentColor(transaction.paymentStatus) }}
-                      >
-                        {transaction.paymentStatus}
-                      </span>
-                    </td>
-                    <td className="date">{transaction.date}</td>
-                    <td>
-                      <span 
-                        className="delivery-status"
-                        style={{ backgroundColor: getStatusColor(transaction.status) }}
-                      >
-                        {transaction.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        )}
 
-        <div className="table-footer">
-          <div className="entries-info">
-            <span>
-              Showing {transactions.length} of {stats.totalOrders} transactions
-              {stats.totalOrders > itemsPerPage && ` (Page ${currentPage} of ${totalPages})`}
-            </span>
+        <div className="dashboard-header">
+          <div className="header-top">
+            <h1>📊 Client Dashboard</h1>
+            <button 
+              className="refresh-btn"
+              onClick={handleRefresh}
+              disabled={loading}
+            >
+              {loading ? '🔄 Loading...' : '🔄 Refresh Data'}
+            </button>
           </div>
-          
-          {stats.totalOrders > itemsPerPage && (
-            <div className="pagination">
-              <button 
-                className="page-btn"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-              >
-                ‹ Previous
-              </button>
-              
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1;
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = currentPage - 2 + i;
-                }
-                
-                return (
-                  <button
-                    key={pageNum}
-                    className={`page-btn ${currentPage === pageNum ? 'active' : ''}`}
-                    onClick={() => handlePageChange(pageNum)}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-              
-              {totalPages > 5 && currentPage < totalPages - 2 && (
-                <>
-                  <span className="page-dots">...</span>
-                  <button
-                    className="page-btn"
-                    onClick={() => handlePageChange(totalPages)}
-                  >
-                    {totalPages}
-                  </button>
-                </>
-              )}
-              
-              <button 
-                className="page-btn"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-              >
-                Next ›
-              </button>
+          {user && (
+            <div className="user-info-card">
+              <div className="user-details">
+                <div className="user-field">
+                  <strong>Username:</strong> {user.username || user.name || 'User'}
+                </div>
+                <div className="user-field">
+                  <strong>Email:</strong> {user.email || 'Not set'}
+                </div>
+                <div className="user-field">
+                  <strong>Status:</strong> <span className="status-active">Active</span>
+                </div>
+                <div className="user-field">
+                  <strong>Member Since:</strong> {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                </div>
+                <div className="user-field">
+                  <strong>Phone:</strong> {user.phone || 'Not set'}
+                </div>
+              </div>
             </div>
           )}
         </div>
+
+        <div className="stats-section">
+          <div className="stats-header">
+            <h2 className="section-title">📈 Your Statistics</h2>
+            <p className="section-subtitle">Real-time data from your orders</p>
+          </div>
+          <div className="stats-grid">
+            <div className="stat-card total-spent-card">
+              <div className="stat-icon">💰</div>
+              <div className="stat-value">GHS {stats.totalSpent?.toFixed(2) || '0.00'}</div>
+              <div className="stat-label">Total Spent</div>
+              <div className="stat-note">All successful orders</div>
+            </div>
+            <div className="stat-card today-orders-card">
+              <div className="stat-icon">📦</div>
+              <div className="stat-value">{stats.todayOrders || 0}</div>
+              <div className="stat-label">Orders Today</div>
+              <div className="stat-note">Orders placed today</div>
+            </div>
+            <div className="stat-card data-volume-card">
+              <div className="stat-icon">💾</div>
+              <div className="stat-value">{stats.totalDataFormatted || '0 GB'}</div>
+              <div className="stat-label">Total Data Volume</div>
+              <div className="stat-note">Total data purchased</div>
+            </div>
+            <div className="stat-card delivered-orders-card">
+              <div className="stat-icon">✅</div>
+              <div className="stat-value">{stats.deliveredOrders || 0}</div>
+              <div className="stat-label">Delivered Orders</div>
+              <div className="stat-note">Successfully delivered</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="packages-section">
+          <h2 className="section-title">📱 Available Data Packages</h2>
+          <p className="section-subtitle">
+            Click on network names to view packages. Enter recipient phone number to add to cart.
+          </p>
+
+          <div className="network-accordions">
+            {networks.length === 0 ? (
+              <div className="no-plans-message">
+                <p>No data plans available. Please check your connection or contact support.</p>
+              </div>
+            ) : (
+              networks.map(network => (
+                <div key={network.name} className="network-accordion">
+                  <div 
+                    className="accordion-header"
+                    onClick={() => toggleNetwork(network.name)}
+                    style={{ 
+                      borderLeftColor: network.color,
+                      background: `linear-gradient(135deg, ${network.color}20 0%, ${network.color}10 100%)`
+                    }}
+                  >
+                    <div className="network-title">
+                      <span 
+                        className="network-icon"
+                        style={{ backgroundColor: network.color }}
+                      >
+                        {network.icon}
+                      </span>
+                      <span className="network-name">{network.name}</span>
+                      <span className="plan-count">({network.plans.length} plans)</span>
+                    </div>
+                    <span className="accordion-arrow">
+                      {expandedNetwork === network.name ? '▲' : '▼'}
+                    </span>
+                  </div>
+                  
+                  {expandedNetwork === network.name && (
+                    <div className="accordion-content">
+                      <div className="plans-table">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>VOLUME</th>
+                              <th>PRICE (GHS)</th>
+                              <th>VALIDITY</th>
+                              <th>DESCRIPTION</th>
+                              <th>BENEFICIARY NUMBER</th>
+                              <th>ACTION</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {network.plans.map(plan => (
+                              <tr key={plan._id}>
+                                <td className="volume">{plan.size}</td>
+                                <td className="price">{plan.price.toFixed(2)}</td>
+                                <td className="validity">{plan.validity}</td>
+                                <td className="description">{plan.description}</td>
+                                <td>
+                                  <input
+                                    type="tel"
+                                    value={phoneNumbers[plan._id] || ''}
+                                    onChange={(e) => handlePhoneChange(plan._id, e.target.value)}
+                                    placeholder="0241234567"
+                                    className="phone-input"
+                                    maxLength="10"
+                                  />
+                                </td>
+                                <td>
+                                  <button
+                                    onClick={() => handleAddToCart(plan, network)}
+                                    disabled={loading}
+                                    className="add-to-cart-btn"
+                                    style={{ 
+                                      backgroundColor: network.color,
+                                      color: network.name === 'MTN' ? '#000' : '#fff'
+                                    }}
+                                  >
+                                    {loading ? 'Adding...' : '🛒 Add to Cart'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="transactions-section">
+          <div className="section-header">
+            <h2 className="section-title">📋 Transaction History</h2>
+            <div className="table-actions">
+              <button 
+                className="export-btn"
+                onClick={() => alert('Export feature coming soon!')}
+              >
+                📥 Export CSV
+              </button>
+            </div>
+          </div>
+          
+          <div className="transactions-table-container">
+            <table className="transactions-table">
+              <thead>
+                <tr>
+                  <th>PACKAGE</th>
+                  <th>DESCRIPTION</th>
+                  <th>AMOUNT (GHS)</th>
+                  <th>BENEFICIARY</th>
+                  <th>PAYMENT SOURCE</th>
+                  <th>PAYMENT STATUS</th>
+                  <th>DATE</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="no-data">
+                      📭 No transactions yet. Purchase your first data plan!
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map(transaction => (
+                    <tr key={transaction.id}>
+                      <td className="package">{transaction.package}</td>
+                      <td className="description">{transaction.description}</td>
+                      <td className="amount">{transaction.amount.toFixed(2)}</td>
+                      <td className="beneficiary">{transaction.beneficiary}</td>
+                      <td className="payment-source">{transaction.paymentSource}</td>
+                      <td>
+                        <span 
+                          className="payment-status"
+                          style={{ backgroundColor: getPaymentColor(transaction.paymentStatus) }}
+                        >
+                          {transaction.paymentStatus}
+                        </span>
+                      </td>
+                      <td className="date">{transaction.date}</td>
+                      <td>
+                        <span 
+                          className="delivery-status"
+                          style={{ backgroundColor: getStatusColor(transaction.status) }}
+                        >
+                          {transaction.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-footer">
+            <div className="entries-info">
+              <span>
+                Showing {transactions.length} of {stats.totalOrders} transactions
+                {stats.totalOrders > itemsPerPage && ` (Page ${currentPage} of ${totalPages})`}
+              </span>
+            </div>
+            
+            {stats.totalOrders > itemsPerPage && (
+              <div className="pagination">
+                <button 
+                  className="page-btn"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  ‹ Previous
+                </button>
+                
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <button
+                      key={pageNum}
+                      className={`page-btn ${currentPage === pageNum ? 'active' : ''}`}
+                      onClick={() => handlePageChange(pageNum)}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                
+                {totalPages > 5 && currentPage < totalPages - 2 && (
+                  <>
+                    <span className="page-dots">...</span>
+                    <button
+                      className="page-btn"
+                      onClick={() => handlePageChange(totalPages)}
+                    >
+                      {totalPages}
+                    </button>
+                  </>
+                )}
+                
+                <button 
+                  className="page-btn"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next ›
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Floating Chat Support */}
+      <ChatSupport />
+    </>
   );
 };
 
