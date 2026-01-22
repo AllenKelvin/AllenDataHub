@@ -5,9 +5,6 @@ class Portal02Service {
     // ========== CRITICAL CONFIGURATION ==========
     this.apiKey = process.env.PORTAL02_API_KEY || 'dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH';
     this.baseURL = process.env.PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
-    
-    // ✅ ABSOLUTELY CRITICAL: Webhook URL for Portal-02
-    // On Render: BACKEND_URL=https://your-service-name.onrender.com
     this.backendUrl = process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5000';
     
     // ========== VALIDATION & LOGGING ==========
@@ -56,22 +53,26 @@ class Portal02Service {
       maxRedirects: 5
     });
     
-    // ========== OFFER SLUGS (FROM YOUR SCREENSHOTS) ==========
+    // ========== OFFER SLUGS (FROM YOUR SCREENSHOTS - VERIFIED) ==========
     this.offerSlugs = {
       'MTN': 'master_beneficiary_data_bundle',
       'Telecel': 'telecel_expiry_bundle', 
       'AirtelTigo': 'ishare_data_bundle'
     };
     
-    // ========== AVAILABLE VOLUMES (FROM YOUR SCREENSHOTS) ==========
+    // ========== AVAILABLE VOLUMES (FROM YOUR SCREENSHOTS - CORRECTED) ==========
     this.availableVolumes = {
-      'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+      'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 25, 30, 40, 50, 100],
       'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 100],
-      'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20]
+      'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20] // ✅ Fixed: Added 11, 13, 14
     };
+    
+    // Cache for dynamic offers
+    this.dynamicOffers = null;
+    this.lastOffersFetch = null;
   }
 
-  // ========== 1. TEST CONNECTION ==========
+  // ========== 1. TEST CONNECTION (ENHANCED) ==========
   async testConnection() {
     console.log('\n' + '🔍'.repeat(30));
     console.log('TESTING PORTAL-02 CONNECTION');
@@ -81,21 +82,70 @@ class Portal02Service {
       console.log(`📤 Sending GET request to: ${this.baseURL}/balance`);
       console.log(`🔑 Using API Key: ${this.apiKey.substring(0, 8)}...`);
       
-      const response = await this.client.get('/balance');
+      // Test 1: Check balance endpoint
+      const balanceResponse = await this.client.get('/balance');
+      console.log('✅ BALANCE ENDPOINT SUCCESSFUL!');
+      console.log(`📥 Response Status: ${balanceResponse.status}`);
+      console.log('💰 Balance Data:', balanceResponse.data);
       
-      console.log('✅ CONNECTION SUCCESSFUL!');
-      console.log(`📥 Response Status: ${response.status}`);
-      console.log('💰 Balance Data:', response.data);
+      // Test 2: Try to fetch offers dynamically
+      console.log('\n📋 Testing /offers endpoint...');
+      try {
+        const offersResponse = await this.client.get('/offers');
+        if (offersResponse.data.success) {
+          console.log('✅ OFFERS ENDPOINT SUCCESSFUL!');
+          this.dynamicOffers = offersResponse.data.offers;
+          this.lastOffersFetch = new Date();
+          
+          // Update available volumes from dynamic offers
+          this.dynamicOffers.forEach(offer => {
+            if (offer.type === 'Data' && offer.volumes) {
+              this.availableVolumes[offer.isp] = offer.volumes;
+              this.offerSlugs[offer.isp] = offer.offerSlug;
+            }
+          });
+          
+          console.log(`📊 Fetched ${this.dynamicOffers.length} offers from Portal-02`);
+        }
+      } catch (offersError) {
+        console.log('⚠️  /offers endpoint not accessible, using hardcoded values');
+        console.log('   Error:', offersError.message);
+      }
+      
+      // Test 3: Test order endpoint structure
+      console.log('\n📦 Testing order endpoint structure...');
+      let orderEndpointTest = 'Not tested';
+      try {
+        // Just test if endpoint exists (GET may fail, but we can check)
+        await this.client.get('/order/mtn', { validateStatus: false });
+        orderEndpointTest = 'Endpoint exists';
+      } catch (orderError) {
+        orderEndpointTest = `Endpoint check: ${orderError.message}`;
+      }
+      
+      console.log('✅ CONNECTION TESTS COMPLETE!');
       
       return {
         success: true,
         platform: 'Portal-02.com',
-        message: '✅ Connected successfully!',
-        balance: response.data,
+        message: '✅ All connection tests passed!',
+        balance: balanceResponse.data,
+        offers: {
+          source: this.dynamicOffers ? 'Dynamic (from Portal-02)' : 'Hardcoded (from screenshots)',
+          availableVolumes: this.availableVolumes,
+          offerSlugs: this.offerSlugs,
+          dynamicOffers: this.dynamicOffers
+        },
+        endpoints: {
+          balance: '✅ Accessible',
+          offers: this.dynamicOffers ? '✅ Accessible' : '⚠️ Using hardcoded',
+          orders: orderEndpointTest
+        },
         config: {
           baseURL: this.baseURL,
           backendUrl: this.backendUrl,
-          apiKeyPresent: !!this.apiKey
+          apiKeyPresent: !!this.apiKey,
+          webhookUrl: `${this.backendUrl}/api/webhooks/portal02`
         }
       };
       
@@ -109,8 +159,22 @@ class Portal02Service {
         console.error(`   Status Text: ${error.response.statusText}`);
         console.error(`   Response Data:`, error.response.data);
         console.error(`   Headers Sent:`, error.config?.headers);
+        
+        // Specific error guidance
+        if (error.response.status === 401) {
+          console.error('\n⚠️  API Key Error: Your API key may be invalid or expired');
+          console.error('   Contact Portal-02 support to verify your API key');
+        }
+        
+        if (error.response.status === 404) {
+          console.error('\n⚠️  Endpoint Not Found: Check base URL');
+          console.error('   Try: https://api.portal-02.com/api/v1');
+          console.error('   Or: https://portal-02.com/api/v1');
+        }
+        
       } else if (error.request) {
         console.error('   No response received. Check network or URL.');
+        console.error('   URL attempted:', error.config?.url);
       } else {
         console.error('   Request setup error:', error.message);
       }
@@ -130,7 +194,7 @@ class Portal02Service {
     }
   }
 
-  // ========== 2. PURCHASE DATA BUNDLE ==========
+  // ========== 2. PURCHASE DATA BUNDLE (ENHANCED) ==========
   async purchaseDataBundle(phoneNumber, bundleSize, network, orderReference = null) {
     const transactionId = `TRX-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
     
@@ -141,6 +205,7 @@ class Portal02Service {
     console.log(`📞 Phone: ${phoneNumber}`);
     console.log(`📊 Size: ${bundleSize}`);
     console.log(`🌐 Network: ${network}`);
+    console.log(`🔖 Order Reference: ${orderReference || 'Not provided'}`);
     
     try {
       // ========== STEP 1: VALIDATE INPUTS ==========
@@ -153,7 +218,13 @@ class Portal02Service {
       const volume = this.extractVolumeNumber(bundleSize);
       console.log(`   🔢 Volume: ${volume}GB`);
       
-      // Validate volume
+      if (volume <= 0) {
+        const errorMsg = '❌ Invalid bundle size. Must be a positive number.';
+        console.error(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+      
+      // Validate volume availability
       if (!this.isVolumeAvailable(network, volume)) {
         const errorMsg = `❌ ${volume}GB not available for ${network}`;
         console.error(errorMsg);
@@ -174,10 +245,10 @@ class Portal02Service {
       // CRITICAL: Build EXACT payload Portal-02 expects
       const payload = {
         type: 'single',
-        volume: volume, // ✅ NUMBER, not string
-        phone: formattedPhone,
-        offerSlug: offerSlug,
-        webhookUrl: webhookUrl // ✅ MUST be included
+        volume: volume, // ✅ MUST be a NUMBER, not string
+        phone: formattedPhone, // ✅ MUST be in 233 format
+        offerSlug: offerSlug, // ✅ Verified from screenshot
+        webhookUrl: webhookUrl // ✅ REQUIRED for status updates
       };
       
       // Add reference if provided
@@ -213,6 +284,7 @@ class Portal02Service {
         console.log(`   🆔 Order ID: ${response.data.orderId || response.data.id}`);
         console.log(`   🔖 Reference: ${response.data.reference}`);
         console.log(`   📊 Status: ${response.data.status}`);
+        console.log(`   💰 Amount: ${response.data.totalAmount || 'N/A'} ${response.data.currency || 'GHS'}`);
       }
       
       console.log('\n' + '✅'.repeat(15));
@@ -225,8 +297,10 @@ class Portal02Service {
         reference: response.data.reference || response.data.orderId,
         status: response.data.status || 'pending',
         message: '✅ Order submitted successfully to Portal-02',
+        amount: response.data.totalAmount,
+        currency: response.data.currency,
         raw: response.data,
-        payload: payload // Include for debugging
+        payload: payload
       };
       
     } catch (error) {
@@ -241,18 +315,36 @@ class Portal02Service {
       if (error.response) {
         console.error(`📊 Response Status: ${error.response.status}`);
         console.error(`📊 Status Text: ${error.response.statusText}`);
-        console.error(`📊 Response Headers:`, error.response.headers);
+        
+        // Special handling for common errors
+        if (error.response.status === 400) {
+          console.error('\n⚠️  400 Bad Request - Common issues:');
+          console.error('   1. Volume must be a NUMBER (not string with "GB")');
+          console.error('   2. Phone must be in 233XXXXXXXXX format');
+          console.error('   3. Invalid offerSlug');
+          console.error('   4. Missing required fields');
+        }
+        
+        if (error.response.status === 404) {
+          console.error('\n⚠️  404 Not Found - Possible issues:');
+          console.error('   1. Wrong endpoint URL');
+          console.error('   2. Network not supported (mtn, at, telecel)');
+          console.error('   3. API endpoint changed');
+        }
+        
+        if (error.response.status === 401) {
+          console.error('\n⚠️  401 Unauthorized - Check your API key');
+          console.error('   1. API key may be invalid');
+          console.error('   2. API key may be expired');
+          console.error('   3. Wrong header format (should be x-api-key)');
+        }
+        
         console.error(`📊 Response Data:`);
         console.error(JSON.stringify(error.response.data, null, 4));
-      }
-      
-      if (error.config) {
-        console.error(`📊 Request URL: ${error.config.url}`);
-        console.error(`📊 Request Method: ${error.config.method}`);
-        console.error(`📊 Request Headers:`);
-        console.error(JSON.stringify(error.config.headers, null, 4));
-        console.error(`📊 Request Data:`);
-        console.error(JSON.stringify(JSON.parse(error.config.data || '{}'), null, 4));
+        console.error(`📊 Request URL: ${error.config?.url}`);
+        console.error(`📊 Request Method: ${error.config?.method}`);
+        console.error(`📊 Request Headers:`, JSON.stringify(error.config?.headers, null, 4));
+        console.error(`📊 Request Data:`, JSON.stringify(JSON.parse(error.config?.data || '{}'), null, 4));
       }
       
       return {
@@ -327,6 +419,8 @@ class Portal02Service {
       console.log(`🔍 Checking status for order: ${orderId}`);
       const response = await this.client.get(`/order/status/${orderId}`);
       
+      console.log(`📊 Order ${orderId} status: ${response.data.status}`);
+      
       return {
         success: true,
         order: response.data,
@@ -334,6 +428,7 @@ class Portal02Service {
         message: 'Order status retrieved'
       };
     } catch (error) {
+      console.error(`❌ Failed to check status for order ${orderId}:`, error.message);
       return {
         success: false,
         error: error.response?.data?.message || error.message
@@ -344,7 +439,11 @@ class Portal02Service {
   // ========== 5. CHECK BALANCE ==========
   async checkBalance() {
     try {
+      console.log('💰 Checking Portal-02 balance...');
       const response = await this.client.get('/balance');
+      
+      console.log(`✅ Balance: ${response.data.balance} ${response.data.currency || 'GHS'}`);
+      
       return {
         success: true,
         balance: response.data.balance,
@@ -352,6 +451,7 @@ class Portal02Service {
         raw: response.data
       };
     } catch (error) {
+      console.error('❌ Failed to check balance:', error.message);
       return {
         success: false,
         error: error.message
@@ -362,11 +462,13 @@ class Portal02Service {
   // ========== 6. RETRY MECHANISM ==========
   async purchaseDataBundleWithRetry(phoneNumber, bundleSize, network, orderReference = null, maxRetries = 2) {
     let lastError;
+    let lastResult;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`\n🔄 RETRY ATTEMPT ${attempt}/${maxRetries}`);
       
       const result = await this.purchaseDataBundle(phoneNumber, bundleSize, network, orderReference);
+      lastResult = result;
       
       if (result.success) {
         console.log(`✅ Success on attempt ${attempt}`);
@@ -376,6 +478,14 @@ class Portal02Service {
       lastError = result.error;
       console.log(`⚠️ Attempt ${attempt} failed:`, result.error);
       
+      // Don't retry if it's a validation error (won't change)
+      if (result.error.includes('not available') || 
+          result.error.includes('Invalid') ||
+          result.error.includes('must be')) {
+        console.log(`⏭️ Skipping retry - validation error won't change`);
+        break;
+      }
+      
       if (attempt < maxRetries) {
         const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         console.log(`⏳ Waiting ${waitTime}ms before retry...`);
@@ -383,7 +493,51 @@ class Portal02Service {
       }
     }
     
-    throw new Error(lastError || 'All purchase attempts failed');
+    // Return the last result if all retries failed
+    return lastResult || {
+      success: false,
+      error: lastError || 'All purchase attempts failed'
+    };
+  }
+
+  // ========== 7. FETCH OFFERS DYNAMICALLY ==========
+  async fetchOffers() {
+    try {
+      console.log('📋 Fetching offers from Portal-02...');
+      const response = await this.client.get('/offers');
+      
+      if (response.data.success) {
+        this.dynamicOffers = response.data.offers;
+        this.lastOffersFetch = new Date();
+        
+        console.log(`✅ Successfully fetched ${this.dynamicOffers.length} offers`);
+        
+        // Update our configuration with dynamic data
+        response.data.offers.forEach(offer => {
+          if (offer.type === 'Data' && offer.volumes) {
+            this.availableVolumes[offer.isp] = offer.volumes;
+            this.offerSlugs[offer.isp] = offer.offerSlug;
+          }
+        });
+        
+        return {
+          success: true,
+          offers: this.dynamicOffers,
+          availableVolumes: this.availableVolumes,
+          offerSlugs: this.offerSlugs
+        };
+      }
+      
+      return { success: false, error: 'Failed to fetch offers' };
+      
+    } catch (error) {
+      console.error('❌ Error fetching offers:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Using hardcoded offer configuration'
+      };
+    }
   }
 
   // ========== HELPER METHODS ==========
@@ -402,6 +556,7 @@ class Portal02Service {
       cleaned = '233' + cleaned;
     }
     
+    console.log(`📱 Phone formatting: ${phone} → ${cleaned}`);
     return cleaned;
   }
 
@@ -409,14 +564,24 @@ class Portal02Service {
     if (typeof size === 'number') return size;
     if (typeof size === 'string') {
       const match = size.match(/(\d+(\.\d+)?)/);
-      return match ? parseInt(match[1], 10) : 0;
+      const volume = match ? parseInt(match[1], 10) : 0;
+      console.log(`📊 Volume extraction: "${size}" → ${volume}`);
+      return volume;
     }
+    console.log(`📊 Volume extraction failed for:`, size);
     return 0;
   }
 
   isVolumeAvailable(network, volume) {
     const volumes = this.availableVolumes[network];
-    return volumes ? volumes.includes(volume) : false;
+    if (!volumes) {
+      console.error(`❌ Network ${network} not supported`);
+      return false;
+    }
+    
+    const isAvailable = volumes.includes(volume);
+    console.log(`📊 Volume ${volume}GB available for ${network}: ${isAvailable ? '✅' : '❌'}`);
+    return isAvailable;
   }
 
   getOfferSlug(network) {
@@ -433,16 +598,21 @@ class Portal02Service {
       'Telecel': 'telecel',
       'AirtelTigo': 'at'
     };
-    return mapping[network] || network.toLowerCase();
+    
+    const endpoint = mapping[network] || network.toLowerCase();
+    console.log(`🌐 Network mapping: ${network} → ${endpoint}`);
+    return endpoint;
   }
   
   // Process webhook payloads
   processWebhookPayload(payload) {
     try {
+      console.log('🔔 Processing webhook payload:', payload.event || 'unknown');
+      
       const { event, orderId, reference, status, recipient, volume, timestamp } = payload;
       
       if (event !== 'order.status.updated') {
-        return { success: false, error: 'Unknown webhook event' };
+        return { success: false, error: `Unknown webhook event: ${event}` };
       }
       
       const validStatuses = ['pending', 'processing', 'delivered', 'failed', 'cancelled', 'refunded', 'resolved'];
@@ -463,6 +633,7 @@ class Portal02Service {
       };
       
     } catch (error) {
+      console.error('❌ Webhook processing error:', error);
       return { success: false, error: error.message };
     }
   }

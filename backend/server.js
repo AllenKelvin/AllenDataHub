@@ -119,7 +119,10 @@ async function initializeDataPlans() {
         { network: 'AirtelTigo', size: '8GB', price: 31.10, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '9GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '10GB', price: 39.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '11GB', price: 42.50, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '12GB', price: 47.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '13GB', price: 51.00, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '14GB', price: 55.00, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '15GB', price: 60.00, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '20GB', price: 78.00, validity: '30 days', description: 'AirtelTigo Bundle' }
       ];
@@ -146,7 +149,7 @@ function validateOrderItems(items) {
   const availableVolumes = {
     'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
     'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 100],
-    'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20]
+    'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20]
   };
 
   for (const item of items) {
@@ -234,12 +237,6 @@ const orderSchema = new mongoose.Schema({
     volume: Number,
     timestamp: Date,
     receivedAt: { type: Date, default: Date.now }
-  }],
-  // Store failed items
-  failedItems: [{
-    itemIndex: Number,
-    error: String,
-    recipient: String
   }],
   // Store any processing error
   processingError: String,
@@ -404,6 +401,8 @@ const adminMiddleware = async (req, res, next) => {
 // ✅ ASYNC FUNCTION: Process Portal-02 webhook
 async function processPortal02Webhook(payload) {
   try {
+    console.log('🔔 Webhook processing started:', payload.event || 'unknown');
+    
     const portal02Service = require('./services/portal02Service');
     
     // Process the webhook payload
@@ -688,7 +687,7 @@ app.get('/api/test/portal02-setup', authMiddleware, async (req, res) => {
       volumeExtraction: volumeTests,
       baseUrl: portal02Service.baseURL,
       apiKeyConfigured: !!process.env.PORTAL02_API_KEY,
-      webhookUrl: portal02Service.webhookBaseUrl ? `${portal02Service.webhookBaseUrl}/api/webhooks/portal02` : 'Not configured'
+      webhookUrl: portal02Service.backendUrl ? `${portal02Service.backendUrl}/api/webhooks/portal02` : 'Not configured'
     });
     
   } catch (error) {
@@ -1750,36 +1749,116 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   }
 });
 
-// Verify Payment (for webhook/async verification)
+// ========== CRITICAL FIX: Verify Payment with Portal-02 Integration ==========
 app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
+    console.log(`🔍 Payment verification called for ref: ${reference}`);
 
+    // Verify with Paystack
     const response = await paystack.get(`/transaction/verify/${reference}`);
     const { data } = response.data;
+    console.log(`📊 Paystack verification result: ${data.status}`);
 
     const order = await Order.findOne({ paymentReference: reference });
     if (!order) {
+      console.log(`❌ Order not found for reference: ${reference}`);
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    if (data.status === 'success') {
-      order.paymentStatus = 'success';
-      order.status = 'processing';
-      order.updatedAt = new Date();
-      await order.save();
+    console.log(`📦 Found order: ${order._id}, Current status: ${order.status}, Payment status: ${order.paymentStatus}`);
 
-      console.log(`✅ Payment verified for order ${order._id}`);
+    if (data.status === 'success') {
+      // Check if we've already processed this
+      if (order.paymentStatus !== 'success') {
+        console.log(`✅ First time payment success for order ${order._id}`);
+        
+        // Update order status
+        order.paymentStatus = 'success';
+        order.status = 'processing';
+        order.updatedAt = new Date();
+        await order.save();
+
+        console.log(`🚀 STARTING PORTAL-02 PROCESSING FOR ORDER ${order._id}`);
+        
+        try {
+          const portal02Service = require('./services/portal02Service');
+          const processingResults = [];
+          
+          console.log(`📦 Processing ${order.items.length} items...`);
+          
+          // Process each item
+          for (const [index, item] of order.items.entries()) {
+            console.log(`   Item ${index + 1}: ${item.network} ${item.size} → ${item.recipientPhone}`);
+            
+            // Create unique reference
+            const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
+            console.log(`   Creating reference: ${itemReference}`);
+            
+            const result = await portal02Service.purchaseDataBundleWithRetry(
+              item.recipientPhone,
+              item.size,
+              item.network,
+              itemReference
+            );
+            
+            console.log(`   Portal-02 result: ${result.success ? '✅' : '❌'} ${result.message || result.error}`);
+            
+            processingResults.push({
+              itemIndex: index,
+              success: result.success,
+              transactionId: result.transactionId || result.reference,
+              reference: result.reference,
+              message: result.message,
+              error: result.error,
+              status: result.status || 'pending',
+              webhookReceived: false,
+              processedAt: new Date()
+            });
+            
+            // Small delay between items
+            if (index < order.items.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+          }
+          
+          // Update order with processing results
+          order.processingResults = processingResults;
+          order.updatedAt = new Date();
+          await order.save();
+          
+          console.log(`📊 Portal-02 processing completed for order ${order._id}`);
+          
+          // Check results
+          const successfulItems = processingResults.filter(r => r.success);
+          const failedItems = processingResults.filter(r => !r.success);
+          
+          if (failedItems.length > 0) {
+            order.status = successfulItems.length > 0 ? 'partially_delivered' : 'processing_error';
+            await order.save();
+          }
+          
+        } catch (portal02Error) {
+          console.error(`❌ Portal-02 processing error: ${portal02Error.message}`);
+          order.processingError = portal02Error.message;
+          order.status = 'processing_error';
+          await order.save();
+        }
+      } else {
+        console.log(`⚠️ Payment already processed for order ${order._id}, skipping Portal-02`);
+      }
       
       res.json({
         success: true,
-        message: 'Payment verified successfully',
-        order: order,
-        id: order._id,
+        message: 'Payment verified successfully. Data processing initiated.',
+        orderId: order._id,
+        status: order.status,
         amount: data.amount / 100,
-        needsProcessing: true
+        portal02Processing: !!order.processingResults?.length
       });
+      
     } else {
+      console.log(`❌ Payment failed for order ${order._id}`);
       order.paymentStatus = 'failed';
       order.status = 'failed';
       order.updatedAt = new Date();
@@ -1788,11 +1867,11 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
       res.json({
         success: false,
         message: 'Payment verification failed',
-        order: order
+        orderId: order._id
       });
     }
   } catch (error) {
-    console.error('Payment verification error:', error);
+    console.error('❌ Payment verification error:', error.message);
     res.status(500).json({ 
       error: 'Failed to verify payment',
       details: error.response?.data?.message || error.message 
@@ -1825,7 +1904,7 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
 
       console.log(`✅ Payment successful for order ${order._id}`);
       
-      // ✅ UPDATED: Pass order reference to Portal-02 for tracking
+      // ✅ Process with Portal-02
       const portal02Service = require('./services/portal02Service');
       const processingResults = [];
       
@@ -1843,7 +1922,7 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
             item.recipientPhone,
             item.size,
             item.network,
-            itemReference // ✅ Pass reference for webhook matching
+            itemReference
           );
           
           processingResults.push({
