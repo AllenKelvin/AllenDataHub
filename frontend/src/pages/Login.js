@@ -279,9 +279,9 @@ const Login = () => {
       <div className="login-footer">
         <p>© 2024 AllenDataHub. All rights reserved.</p>
         <div className="footer-links">
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Service</Link>
-          <Link to="/contact">Contact Support</Link>
+          <Link to="/privacy"></Link>
+          <Link to="/terms"></Link>
+          <Link to="/contact"></Link>
         </div>
       </div>
     </div>
