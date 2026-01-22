@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
+import { useTheme } from '../context/ThemeContext';
+import './Signup.css';
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -12,35 +14,78 @@ const Signup = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState(''); // ADD THIS
+  const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
+  // Password strength calculation
+  const calculatePasswordStrength = (password) => {
+    if (!password) return { strength: '', width: 0, text: '' };
+    
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password)) score++;
+    
+    if (score <= 2) return { strength: 'weak', width: 30, text: 'Weak' };
+    if (score <= 4) return { strength: 'medium', width: 60, text: 'Medium' };
+    return { strength: 'strong', width: 100, text: 'Strong' };
+  };
+
+  const passwordStrength = calculatePasswordStrength(formData.password);
+
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
     setError(''); // Clear error when user types
+    setSuccessMessage(''); // Clear success message
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccessMessage('');
 
-    // Basic validation
+    // Validation
+    if (!formData.username || !formData.email || !formData.phone || !formData.password) {
+      setError('Please fill in all required fields');
+      setLoading(false);
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match!');
       setLoading(false);
       return;
     }
 
-    if (formData.phone.length < 10) {
-      setError('Please enter a valid phone number');
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      setLoading(false);
+      return;
+    }
+
+    if (!formData.email.includes('@')) {
+      setError('Please enter a valid email address');
+      setLoading(false);
+      return;
+    }
+
+    if (formData.phone.replace(/\D/g, '').length < 10) {
+      setError('Please enter a valid phone number (at least 10 digits)');
       setLoading(false);
       return;
     }
 
     try {
+      console.log('🔐 Attempting registration...');
+      
       // Call the real backend API
       const response = await authAPI.register({
         username: formData.username,
@@ -49,211 +94,207 @@ const Signup = () => {
         password: formData.password
       });
 
-      console.log('Registration successful:', response.data);
+      console.log('✅ Registration successful:', response.data);
       
-      // Save token to localStorage
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+      // ✅ FIXED: Show success message and redirect to login
+      setSuccessMessage('🎉 Account created successfully! Redirecting to login page...');
       
-      alert('Account created successfully! Please login.');
-      navigate('/login');
+      // Clear form
+      setFormData({
+        username: '',
+        email: '',
+        phone: '',
+        password: '',
+        confirmPassword: ''
+      });
+      
+      // Redirect to login page after 2 seconds
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
+      
     } catch (error) {
-      console.error('Registration error:', error);
-      setError(error.response?.data?.error || 'Registration failed. Please try again.');
+      console.error('❌ Registration error:', error);
+      
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (error.response) {
+        errorMessage = error.response.data?.error || 
+                      error.response.data?.message || 
+                      `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else {
+        errorMessage = error.message || 'An unexpected error occurred.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ 
-      padding: '2rem', 
-      maxWidth: '400px', 
-      margin: '0 auto',
-      minHeight: '70vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <div style={{ 
-        width: '100%', 
-        padding: '2rem', 
-        border: '1px solid #e8e8e8', 
-        borderRadius: '10px',
-        backgroundColor: 'white',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-      }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem', color: '#1890ff' }}>
-          Create Account
-        </h2>
+    <div className={`signup-container ${darkMode ? 'dark' : 'light'}`}>
+      {/* Theme Toggle Button */}
+      <button className="signup-theme-toggle" onClick={toggleTheme}>
+        {darkMode ? '☀️' : '🌙'}
+      </button>
+
+      <div className="signup-card">
+        <div className="signup-header">
+          <h2>Create Account</h2>
+          <p className="signup-subtitle">Join AllenDataHub and start managing your data transactions</p>
+        </div>
         
-        {error && (
-          <div style={{ 
-            padding: '1rem', 
-            backgroundColor: '#fff2f0', 
-            border: '1px solid #ffccc7',
-            borderRadius: '5px',
-            marginBottom: '1rem',
-            color: '#a8071a'
-          }}>
-            {error}
+        {/* Success Message */}
+        {successMessage && (
+          <div className="success-message">
+            <span className="success-icon">✅</span>
+            <span className="success-text">{successMessage}</span>
           </div>
         )}
         
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Username *
-            </label>
+        {/* Error Message */}
+        {error && (
+          <div className="signup-error">
+            <span className="error-icon">❌</span>
+            <span className="error-text">{error}</span>
+          </div>
+        )}
+        
+        <form className="signup-form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="username">Username *</label>
             <input
               type="text"
+              id="username"
               name="username"
               value={formData.username}
               onChange={handleChange}
               required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
+              disabled={loading || !!successMessage} // Disable if success
+              className="form-input"
               placeholder="Enter your username"
+              autoComplete="username"
             />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Email Address *
-            </label>
+          <div className="form-group">
+            <label htmlFor="email">Email Address *</label>
             <input
               type="email"
+              id="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
               required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
+              disabled={loading || !!successMessage}
+              className="form-input"
               placeholder="Enter your email"
+              autoComplete="email"
             />
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Phone Number *
-            </label>
+          <div className="form-group">
+            <label htmlFor="phone">Phone Number *</label>
             <input
               type="tel"
+              id="phone"
               name="phone"
               value={formData.phone}
               onChange={handleChange}
               required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
-              placeholder="e.g., 0551234567"
+              disabled={loading || !!successMessage}
+              className="form-input"
+              placeholder="e.g., 0241234567"
+              autoComplete="tel"
             />
+            <small style={{ color: darkMode ? '#94a3b8' : '#64748b', fontSize: '0.85rem', marginTop: '0.25rem', display: 'block' }}>
+              Format: 0241234567 or 0551234567
+            </small>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Password *
-            </label>
+          <div className="form-group">
+            <label htmlFor="password">Password *</label>
             <input
               type="password"
+              id="password"
               name="password"
               value={formData.password}
               onChange={handleChange}
               required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
+              disabled={loading || !!successMessage}
+              className="form-input"
               placeholder="Enter your password"
+              autoComplete="new-password"
             />
+            {formData.password && !successMessage && (
+              <div className="password-strength">
+                <div className="strength-bar">
+                  <div className={`strength-fill strength-${passwordStrength.strength}`} 
+                       style={{ width: `${passwordStrength.width}%` }}></div>
+                </div>
+                <span className={`strength-text text-${passwordStrength.strength}`}>
+                  {passwordStrength.text}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-              Confirm Password *
-            </label>
+          <div className="form-group">
+            <label htmlFor="confirmPassword">Confirm Password *</label>
             <input
               type="password"
+              id="confirmPassword"
               name="confirmPassword"
               value={formData.confirmPassword}
               onChange={handleChange}
               required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.8rem',
-                border: '1px solid #d9d9d9',
-                borderRadius: '5px',
-                fontSize: '1rem',
-                opacity: loading ? 0.6 : 1
-              }}
+              disabled={loading || !!successMessage}
+              className="form-input"
               placeholder="Confirm your password"
+              autoComplete="new-password"
             />
+            {formData.password && formData.confirmPassword && formData.password === formData.confirmPassword && !successMessage && (
+              <small style={{ color: '#38a169', fontSize: '0.85rem', marginTop: '0.25rem', display: 'block' }}>
+                ✓ Passwords match
+              </small>
+            )}
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '1rem',
-              backgroundColor: loading ? '#d9d9d9' : '#1890ff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              fontSize: '1.1rem',
-              fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: '1rem',
-              opacity: loading ? 0.6 : 1
-            }}
+            className="submit-btn"
+            disabled={loading || !!successMessage}
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            {loading ? (
+              <>
+                <span className="loading-spinner"></span>
+                Creating Account...
+              </>
+            ) : successMessage ? (
+              'Account Created!'
+            ) : (
+              <>
+                <span className="btn-icon">🚀</span>
+                Create Account
+              </>
+            )}
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', margin: 0 }}>
-          Already have an account?{' '}
-          <Link to="/login" style={{ color: '#1890ff', textDecoration: 'none' }}>
-            Login here
-          </Link>
-        </p>
+        <div className="login-link-container">
+          <p>Already have an account?{' '}
+            <Link to="/login" className="login-link">
+              Login here
+            </Link>
+          </p>
+        </div>
 
-        <div style={{ 
-          marginTop: '1.5rem', 
-          padding: '1rem', 
-          backgroundColor: '#f6ffed', 
-          border: '1px solid #b7eb8f',
-          borderRadius: '5px',
-          textAlign: 'center'
-        }}>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: '#389e0d' }}>
-            <strong>Real Database:</strong> Users are saved to MongoDB Atlas
+        <div className="database-info">
+          <p>
+            <strong>Welcome:</strong> Users are securely saved with AllenDataHub
           </p>
         </div>
       </div>

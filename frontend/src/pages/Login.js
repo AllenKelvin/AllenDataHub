@@ -2,6 +2,7 @@ import React, { useState, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext'; // ADD THIS
 import './Login.css';
 
 const Login = () => {
@@ -13,7 +14,9 @@ const Login = () => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [monkeyEyesClosed, setMonkeyEyesClosed] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false); // ADD THIS
   const { darkMode, toggleTheme } = useTheme();
+  const { login } = useAuth(); // UPDATE THIS
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,6 +32,14 @@ const Login = () => {
       } else {
         navigate('/client-dashboard');
       }
+    }
+
+    // Check for session expired message
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('message') === 'session_expired') {
+      setSessionExpired(true);
+      // Remove the parameter from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [navigate]);
 
@@ -77,11 +88,10 @@ const Login = () => {
       console.log('✅ Login successful response:', response.data);
       
       if (response.data && response.data.token) {
-        // Save token and user data
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        // Use the auth context login function
+        login(response.data.user, response.data.token);
         
-        console.log('💾 User data saved to localStorage:', response.data.user);
+        console.log('💾 User data saved via AuthContext:', response.data.user);
         
         // Show success message
         setError(''); // Clear any previous errors
@@ -136,6 +146,16 @@ const Login = () => {
           <h1>AllenDataHub</h1>
           <p className="logo-subtitle">Secure Data Transactions Platform</p>
         </div>
+        
+        {/* Session Expired Message */}
+        {sessionExpired && (
+          <div className="session-expired-message">
+            <div className="expired-icon">⏰</div>
+            <h3>Session Expired</h3>
+            <p>Your session has expired due to 30 minutes of inactivity.</p>
+            <p>Please log in again to continue.</p>
+          </div>
+        )}
         
         {/* Animated Monkey */}
         <div className="monkey-container">
@@ -277,7 +297,7 @@ const Login = () => {
 
       {/* Footer */}
       <div className="login-footer">
-        <p>© 2024 AllenDataHub. All rights reserved.</p>
+        <p></p>
         <div className="footer-links">
           <Link to="/privacy"></Link>
           <Link to="/terms"></Link>

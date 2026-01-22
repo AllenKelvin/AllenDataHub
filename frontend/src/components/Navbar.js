@@ -2,44 +2,49 @@ import React, { useState, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext'; // ADD THIS
 import './Navbar.css';
 
 const Navbar = () => {
   const { cartItems } = useCart();
   const { darkMode, toggleTheme } = useTheme();
-  const [user, setUser] = useState(null);
+  const { user, logout, trackActivity } = useAuth(); // UPDATE THIS
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    // Check if user is logged in
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+  // Track activity when user interacts with navbar
+  const handleNavbarActivity = () => {
+    if (user) {
+      trackActivity?.();
     }
-    
-    // Listen for storage changes (for login/logout)
-    const handleStorageChange = () => {
-      const updatedUser = localStorage.getItem('user');
-      setUser(updatedUser ? JSON.parse(updatedUser) : null);
+  };
+
+  useEffect(() => {
+    // Add activity tracking to navbar interactions
+    const navbarElements = document.querySelectorAll('.navbar a, .navbar button');
+    navbarElements.forEach(element => {
+      element.addEventListener('click', handleNavbarActivity);
+      element.addEventListener('mouseenter', handleNavbarActivity);
+    });
+
+    return () => {
+      navbarElements.forEach(element => {
+        element.removeEventListener('click', handleNavbarActivity);
+        element.removeEventListener('mouseenter', handleNavbarActivity);
+      });
     };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+  }, [user, trackActivity]);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
+    logout();
     navigate('/login');
-    window.location.reload(); // Force refresh to update navbar
+    // No need to reload - AuthContext will handle state update
   };
 
   const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
   return (
-    <nav className={`navbar ${darkMode ? 'dark' : ''}`}>
+    <nav className={`navbar ${darkMode ? 'dark' : ''}`} onClick={handleNavbarActivity}>
       <div className="navbar-container">
         {/* Left Side - Brand */}
         <div className="navbar-left">
@@ -125,7 +130,7 @@ const Navbar = () => {
 
       {/* Mobile Menu */}
       {menuOpen && (
-        <div className="mobile-menu">
+        <div className="mobile-menu" onClick={handleNavbarActivity}>
           {user ? (
             <>
               <Link to="/client-dashboard" className="mobile-link" onClick={() => setMenuOpen(false)}>

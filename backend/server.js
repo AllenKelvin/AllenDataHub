@@ -137,6 +137,29 @@ async function initializeDataPlans() {
 
 connectDB();
 
+// Setup cron jobs for transaction cleanup
+const setupCronJobs = () => {
+  // Import the transaction cleaner
+  const transactionCleaner = require('./services/transactionCleaner');
+  
+  // Run every hour (3600000 ms)
+  setInterval(async () => {
+    try {
+      console.log('⏰ Running scheduled transaction cleanup...');
+      await transactionCleaner.cleanOldTransactions();
+    } catch (error) {
+      console.error('❌ Scheduled cleanup failed:', error);
+    }
+  }, 3600000); // 1 hour
+  
+  console.log('✅ Scheduled transaction cleanup initialized (runs hourly)');
+};
+
+// Call it after database connects
+mongoose.connection.once('open', () => {
+  setupCronJobs();
+});
+
 // Helper function to normalize numbers to Double precision
 const toDouble = (num) => {
   if (num === null || num === undefined) return 0;
@@ -240,6 +263,13 @@ const orderSchema = new mongoose.Schema({
   }],
   // Store any processing error
   processingError: String,
+  
+  // ========== ADD THESE NEW FIELDS FOR 24-HOUR CLEARING ==========
+  isVisibleToUser: { type: Boolean, default: true }, // Controls if user can see it
+  archived: { type: Boolean, default: false }, // Soft delete flag
+  archiveReason: { type: String }, // Why it was archived
+  archivedAt: { type: Date }, // When it was archived
+  
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -1192,7 +1222,10 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       customerPhone: customerPhone,
       paymentMethod: paymentMethod || 'paystack',
       paymentStatus: 'pending',
-      status: 'placed'
+      status: 'placed',
+      // New fields are automatically set to defaults
+      isVisibleToUser: true,
+      archived: false
     });
 
     await order.save();
@@ -1242,23 +1275,33 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Orders
+// Get User Orders (updated to respect visibility flags)
 app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, showAll = false } = req.query;
     const skip = (page - 1) * limit;
 
     if (!mongoose.Types.ObjectId.isValid(req.userId)) {
       return res.status(400).json({ error: 'Invalid user ID format' });
     }
 
-    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
+    const query = { 
+      userId: new mongoose.Types.ObjectId(req.userId) 
+    };
+    
+    // Only show visible orders by default
+    if (!showAll) {
+      query.isVisibleToUser = true;
+      query.archived = false;
+    }
+
+    const orders = await Order.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    const totalOrders = await Order.countDocuments({ userId: new mongoose.Types.ObjectId(req.userId) });
+    const totalOrders = await Order.countDocuments(query);
 
     res.json({
       orders,
@@ -1275,7 +1318,7 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Recent Transactions
+// Get Recent Transactions (updated to respect visibility flags)
 app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
@@ -1284,7 +1327,11 @@ app.get('/api/orders/recent', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID format' });
     }
 
-    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
+    const orders = await Order.find({ 
+      userId: new mongoose.Types.ObjectId(req.userId),
+      isVisibleToUser: true,
+      archived: false
+    })
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
@@ -1537,7 +1584,7 @@ app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Dashboard Stats
+// Get User Dashboard Stats (updated to respect visibility flags)
 app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.userId)) {
@@ -1548,7 +1595,11 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const userOrders = await Order.find({ userId: userId })
+    const userOrders = await Order.find({ 
+      userId: userId,
+      isVisibleToUser: true,
+      archived: false
+    })
       .sort({ createdAt: -1 })
       .lean();
     
@@ -1643,23 +1694,33 @@ function getFallbackStats() {
   };
 }
 
-// Get Transaction History
+// Get Transaction History (updated to respect visibility flags)
 app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, showAll = false } = req.query;
     const skip = (page - 1) * limit;
 
     if (!mongoose.Types.ObjectId.isValid(req.userId)) {
       return res.status(400).json({ error: 'Invalid user ID format' });
     }
 
-    const orders = await Order.find({ userId: new mongoose.Types.ObjectId(req.userId) })
+    const query = { 
+      userId: new mongoose.Types.ObjectId(req.userId) 
+    };
+    
+    // Only show visible transactions by default
+    if (!showAll) {
+      query.isVisibleToUser = true;
+      query.archived = false;
+    }
+
+    const orders = await Order.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    const totalOrders = await Order.countDocuments({ userId: new mongoose.Types.ObjectId(req.userId) });
+    const totalOrders = await Order.countDocuments(query);
 
     const transactions = orders.map(order => ({
       id: order._id,
@@ -1671,7 +1732,9 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
       paymentStatus: order.paymentStatus,
       deliveryStatus: order.status,
       date: order.createdAt,
-      status: order.status
+      status: order.status,
+      isVisibleToUser: order.isVisibleToUser,
+      archived: order.archived
     }));
 
     res.json({
@@ -1686,6 +1749,145 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Transactions history error:', error);
     res.status(500).json({ error: 'Failed to fetch transaction history' });
+  }
+});
+
+// ==================== TRANSACTION CLEANING ROUTES ====================
+
+// Get user's visible transactions (automatically filters archived ones)
+app.get('/api/users/transactions/visible', authMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, showArchived = false } = req.query;
+    const skip = (page - 1) * limit;
+
+    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    // Build query
+    const query = { userId: new mongoose.Types.ObjectId(req.userId) };
+    
+    // Only show non-archived by default
+    if (!showArchived) {
+      query.isVisibleToUser = true;
+      query.archived = false;
+    }
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const totalOrders = await Order.countDocuments(query);
+
+    res.json({
+      transactions: orders,
+      pagination: {
+        total: totalOrders,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalOrders / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Visible transactions fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Manually clean user's old transactions
+app.post('/api/users/transactions/clean', authMiddleware, async (req, res) => {
+  try {
+    const { hours = 24 } = req.body;
+    const userId = req.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const transactionCleaner = require('./services/transactionCleaner');
+    const result = await transactionCleaner.cleanUserTransactions(userId, hours);
+
+    res.json({
+      success: true,
+      message: `Cleaned ${result.modifiedCount} transactions older than ${hours} hours`,
+      cleanedCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Transaction cleanup error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to clean transactions' 
+    });
+  }
+});
+
+// Restore user's archived transactions
+app.post('/api/users/transactions/restore', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID format' });
+    }
+
+    const transactionCleaner = require('./services/transactionCleaner');
+    const result = await transactionCleaner.restoreUserTransactions(userId);
+
+    res.json({
+      success: true,
+      message: `Restored ${result.modifiedCount} archived transactions`,
+      restoredCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Transaction restore error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to restore transactions' 
+    });
+  }
+});
+
+// Get transaction statistics
+app.get('/api/users/transactions/stats', authMiddleware, async (req, res) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.userId);
+    
+    const [
+      totalOrders,
+      visibleOrders,
+      archivedOrders,
+      todayOrders
+    ] = await Promise.all([
+      Order.countDocuments({ userId }),
+      Order.countDocuments({ 
+        userId, 
+        isVisibleToUser: true,
+        archived: false 
+      }),
+      Order.countDocuments({ 
+        userId, 
+        archived: true 
+      }),
+      Order.countDocuments({ 
+        userId,
+        createdAt: { 
+          $gte: new Date().setHours(0, 0, 0, 0) 
+        }
+      })
+    ]);
+
+    res.json({
+      totalOrders,
+      visibleOrders,
+      archivedOrders,
+      todayOrders,
+      visiblePercentage: totalOrders > 0 ? Math.round((visibleOrders / totalOrders) * 100) : 0
+    });
+  } catch (error) {
+    console.error('Transaction stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch transaction stats' });
   }
 });
 
@@ -2042,12 +2244,18 @@ app.post('/api/webhooks/portal02', async (req, res) => {
 
 app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 20, status, showArchived = false } = req.query;
     const skip = (page - 1) * limit;
 
     let query = {};
     if (status && status !== 'all') {
       query.status = status;
+    }
+    
+    // Only show non-archived by default
+    if (!showArchived) {
+      query.isVisibleToUser = true;
+      query.archived = false;
     }
 
     const orders = await Order.find(query)

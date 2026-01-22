@@ -1,4 +1,4 @@
-/* Login.css - Updated with AllenDataHub styling */
+/* Login.css - Updated with AllenDataHub styling and Fixed Monkey Animation */
 
 .login-container {
   min-height: 100vh;
@@ -64,12 +64,73 @@
   animation: fadeIn 0.8s ease;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.3);
+  position: relative;
 }
 
 .dark .login-card {
   background: rgba(30, 41, 59, 0.92);
   color: #f8fafc;
   border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* ========== SESSION EXPIRED MESSAGE ========== */
+.session-expired-message {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 25px;
+  text-align: center;
+  animation: slideDown 0.5s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dark .session-expired-message {
+  background: #2d3748;
+  border-color: #4a5568;
+  color: #f8fafc;
+}
+
+.session-expired-message::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #e53e3e, #ed8936, #e53e3e);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.expired-icon {
+  font-size: 40px;
+  margin-bottom: 15px;
+  animation: bounce 1s ease infinite;
+  display: block;
+}
+
+.session-expired-message h3 {
+  margin: 0 0 10px 0;
+  color: #d69e2e;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.dark .session-expired-message h3 {
+  color: #fbbf24;
+}
+
+.session-expired-message p {
+  margin: 5px 0;
+  color: #744210;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.dark .session-expired-message p {
+  color: #e2e8f0;
 }
 
 /* Logo */
@@ -111,10 +172,11 @@
   color: #94a3b8;
 }
 
-/* Monkey Animation */
+/* ========== FIXED MONKEY ANIMATION ========== */
 .monkey-container {
   position: relative;
   margin-bottom: 2.5rem;
+  height: 140px; /* Fixed height to prevent layout shift */
 }
 
 .monkey-emoji {
@@ -123,18 +185,22 @@
   display: inline-block;
   animation: bounce 2s infinite;
   margin-bottom: 1rem;
+  line-height: 1; /* Ensure proper line height */
 }
 
+/* FIXED: Monkey Eyes Positioning */
 .monkey-eyes {
   position: absolute;
-  top: 28%;
-  left: 0;
+  top: 28px; /* Fixed pixel positioning instead of percentage */
+  left: 50%;
+  transform: translateX(-50%);
   width: 100%;
   height: 24px;
   display: flex;
   justify-content: center;
   gap: 44px;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease; /* Smooth transition */
+  z-index: 2;
 }
 
 .eye {
@@ -142,13 +208,41 @@
   height: 14px;
   background: #000;
   border-radius: 50%;
-  transition: height 0.2s ease;
+  transition: all 0.3s ease; /* Smooth transition for eye closing */
+  position: relative;
 }
 
+/* FIXED: Eye closing animation */
 .monkey-eyes.closed .eye {
-  height: 3px;
+  height: 4px; /* Slightly taller for better visibility */
+  width: 16px; /* Slightly wider when closed */
   background: #000;
-  border-radius: 3px;
+  border-radius: 2px;
+  transform: translateY(2px); /* Center vertically when closed */
+}
+
+/* Add subtle blink animation when not closed */
+@keyframes subtleBlink {
+  0%, 90%, 100% { 
+    height: 14px;
+    border-radius: 50%;
+  }
+  95% { 
+    height: 4px;
+    border-radius: 2px;
+  }
+}
+
+.monkey-eyes:not(.closed) .eye {
+  animation: subtleBlink 4s infinite;
+}
+
+.monkey-eyes:not(.closed) .left-eye {
+  animation-delay: 0.5s;
+}
+
+.monkey-eyes:not(.closed) .right-eye {
+  animation-delay: 0.7s;
 }
 
 .welcome-title {
@@ -628,8 +722,145 @@
   text-decoration: underline;
 }
 
-/* Animations */
+/* ========== GLOBAL INACTIVITY WARNING MODAL ========== */
+.inactivity-warning-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease;
+}
+
+.warning-content {
+  background: white;
+  padding: 30px;
+  border-radius: 16px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dark .warning-content {
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.warning-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #e53e3e, #ed8936, #e53e3e);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite linear;
+}
+
+.warning-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+  display: block;
+  animation: pulse 2s infinite;
+}
+
+.warning-content h3 {
+  margin: 0 0 15px 0;
+  color: #e53e3e;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.dark .warning-content h3 {
+  color: #fca5a5;
+}
+
+.warning-content p {
+  margin: 0 0 30px 0;
+  color: #666;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.dark .warning-content p {
+  color: #cbd5e1;
+}
+
+.warning-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.warning-btn {
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 15px;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.warning-btn.primary {
+  background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+  color: white;
+  border: 2px solid transparent;
+}
+
+.warning-btn.primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(49, 130, 206, 0.3);
+  background: linear-gradient(135deg, #2c5282 0%, #1e3a8a 100%);
+}
+
+.warning-btn.secondary {
+  background: #f1f5f9;
+  color: #4a5568;
+  border: 2px solid #e2e8f0;
+}
+
+.dark .warning-btn.secondary {
+  background: #334155;
+  color: #cbd5e1;
+  border-color: #475569;
+}
+
+.warning-btn.secondary:hover {
+  background: #e2e8f0;
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.dark .warning-btn.secondary:hover {
+  background: #475569;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ========== ANIMATIONS ========== */
+
 @keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
   from {
     opacity: 0;
     transform: translateY(30px) scale(0.95);
@@ -640,12 +871,23 @@
   }
 }
 
-@keyframes bounce {
-  0%, 100% {
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
     transform: translateY(0);
   }
-  50% {
-    transform: translateY(-15px);
+}
+
+@keyframes bounce {
+  0%, 100% { 
+    transform: translateY(0); 
+  }
+  50% { 
+    transform: translateY(-15px); 
   }
 }
 
@@ -662,6 +904,57 @@
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes subtleBlink {
+  0%, 90%, 100% { 
+    height: 14px;
+    border-radius: 50%;
+  }
+  95% { 
+    height: 4px;
+    border-radius: 2px;
+  }
+}
+
+/* Loading Container for ProtectedRoute */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 20px;
+}
+
+.loading-container .loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(102, 126, 234, 0.2);
+  border-radius: 50%;
+  border-top-color: #667eea;
+  animation: spin 1s linear infinite;
+}
+
+.loading-container p {
+  color: #64748b;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.dark .loading-container p {
+  color: #94a3b8;
 }
 
 /* Responsive */
@@ -687,9 +980,20 @@
     font-size: 4.5rem;
   }
   
+  /* FIXED: Adjust monkey eyes for mobile */
   .monkey-eyes {
+    top: 22px;
     gap: 32px;
-    top: 26%;
+  }
+  
+  .eye {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .monkey-eyes.closed .eye {
+    width: 14px;
+    height: 3px;
   }
   
   .welcome-title {
@@ -708,6 +1012,31 @@
   .social-btn {
     padding: 0.9rem;
     font-size: 0.95rem;
+  }
+  
+  /* Responsive for warning modal */
+  .warning-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .warning-btn {
+    width: 100%;
+    min-width: unset;
+  }
+  
+  .warning-content {
+    padding: 25px 20px;
+    margin: 1rem;
+  }
+  
+  .warning-content h3 {
+    font-size: 20px;
+  }
+  
+  .warning-content p {
+    font-size: 15px;
+    margin-bottom: 25px;
   }
 }
 
@@ -734,4 +1063,54 @@
   .input-icon {
     left: 1rem;
   }
+  
+  .session-expired-message {
+    padding: 15px;
+  }
+  
+  .expired-icon {
+    font-size: 32px;
+  }
+  
+  .session-expired-message h3 {
+    font-size: 16px;
+  }
+  
+  .session-expired-message p {
+    font-size: 13px;
+  }
+  
+  /* FIXED: Further adjust monkey for very small screens */
+  .monkey-emoji {
+    font-size: 4rem;
+  }
+  
+  .monkey-eyes {
+    top: 20px;
+    gap: 28px;
+  }
+  
+  .eye {
+    width: 10px;
+    height: 10px;
+  }
+  
+  .monkey-eyes.closed .eye {
+    width: 12px;
+    height: 3px;
+  }
+}
+
+/* Ensure warning modal is on top of everything */
+.inactivity-warning-modal {
+  z-index: 99999 !important;
+}
+
+/* Prevent layout shift */
+.monkey-container {
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
