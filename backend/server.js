@@ -236,6 +236,7 @@ const orderSchema = new mongoose.Schema({
     enum: ['placed', 'processing', 'processing_error', 'partially_delivered', 'delivered', 'cancelled', 'failed'], 
     default: 'placed' 
   },
+  statusReason: { type: String }, // Reason for status change
   // Store processing results
   processingResults: [{
     itemIndex: Number,
@@ -428,12 +429,13 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ASYNC WEBHOOK PROCESSING ====================
 
-// ✅ ASYNC FUNCTION: Process Portal-02 webhook
+// ✅ ASYNC FUNCTION: Process Portal-02 webhook with status service
 async function processPortal02Webhook(payload) {
   try {
     console.log('🔔 Webhook processing started:', payload.event || 'unknown');
     
     const portal02Service = require('./services/portal02Service');
+    const statusService = require('./services/statusService');
     
     // Process the webhook payload
     const processed = portal02Service.processWebhookPayload(payload);
@@ -530,39 +532,30 @@ async function processPortal02Webhook(payload) {
     
     order.processingResults = updatedResults;
     
-    // Map Portal-02 status to our status
-    let ourStatus = order.status;
+    // Map Portal-02 status to our status using status service
+    let targetStatus;
     switch (status) {
       case 'delivered':
       case 'resolved':
-        ourStatus = 'delivered';
+        targetStatus = 'delivered';
         break;
       case 'failed':
       case 'cancelled':
       case 'refunded':
-        ourStatus = 'failed';
+        targetStatus = 'failed';
         break;
       case 'processing':
-        ourStatus = 'processing';
+        targetStatus = 'processing';
         break;
       case 'pending':
-        ourStatus = 'processing';
+        targetStatus = 'processing';
         break;
+      default:
+        targetStatus = 'processing';
     }
     
-    // Check if all items are delivered
-    const allDelivered = updatedResults.every(r => 
-      r.status === 'delivered' || r.status === 'resolved'
-    );
-    
-    if (allDelivered && order.status !== 'delivered') {
-      ourStatus = 'delivered';
-      console.log(`🎉 All items delivered for order ${order._id}`);
-    }
-    
-    // Update order status
-    order.status = ourStatus;
-    order.updatedAt = new Date();
+    // Use status service to update order status
+    await statusService.updateOrderStatus(order._id, targetStatus, `Portal-02 webhook: ${status}`);
     
     // Add webhook history
     if (!order.webhookHistory) {
@@ -582,7 +575,7 @@ async function processPortal02Webhook(payload) {
     
     await order.save();
     
-    console.log(`✅ Order ${order._id} updated to status: ${ourStatus} via webhook`);
+    console.log(`✅ Order ${order._id} status updated to: ${targetStatus} via webhook`);
     
     // Send notification to user if status is delivered or failed
     if (status === 'delivered' || status === 'failed' || status === 'cancelled') {
@@ -1383,6 +1376,46 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Get Order Status Timeline
+app.get('/api/orders/:id/status-timeline', authMiddleware, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ error: 'Invalid order ID format' });
+    }
+
+    const order = await Order.findOne({
+      _id: new mongoose.Types.ObjectId(orderId),
+      userId: new mongoose.Types.ObjectId(req.userId)
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const statusService = require('./services/statusService');
+    const timeline = await statusService.getOrderStatusTimeline(orderId);
+
+    res.json({
+      success: true,
+      orderId: order._id,
+      currentStatus: order.status,
+      paymentStatus: order.paymentStatus,
+      timeline,
+      processingResults: order.processingResults,
+      webhookHistory: order.webhookHistory || []
+    });
+    
+  } catch (error) {
+    console.error('Order status timeline error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Cancel Order
 app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
@@ -1523,7 +1556,7 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ NEW: Check Portal-02 order status
+// Check Portal-02 order status
 app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
   try {
     const orderId = req.params.id;
@@ -1951,7 +1984,7 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   }
 });
 
-// ========== CRITICAL FIX: Verify Payment with Portal-02 Integration ==========
+// ========== FIXED: Verify Payment with Portal-02 Integration ==========
 app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
@@ -1975,9 +2008,9 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
       if (order.paymentStatus !== 'success') {
         console.log(`✅ First time payment success for order ${order._id}`);
         
-        // Update order status
+        // Update payment status but keep order as 'placed' initially
         order.paymentStatus = 'success';
-        order.status = 'processing';
+        order.status = 'placed'; // ✅ CORRECT: Start with 'placed'
         order.updatedAt = new Date();
         await order.save();
 
@@ -2026,24 +2059,40 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
           
           // Update order with processing results
           order.processingResults = processingResults;
+          
+          // Determine initial status based on results
+          let newStatus = 'placed'; // Default remains placed
+          
+          if (processingResults.length > 0) {
+            const successfulItems = processingResults.filter(r => r.success);
+            if (successfulItems.length === processingResults.length) {
+              // All items submitted successfully to vendor
+              newStatus = 'processing';
+            } else if (successfulItems.length > 0) {
+              // Some succeeded, some failed
+              newStatus = 'processing';
+            } else {
+              // All failed
+              newStatus = 'failed';
+            }
+          }
+          
+          order.status = newStatus;
           order.updatedAt = new Date();
           await order.save();
           
-          console.log(`📊 Portal-02 processing completed for order ${order._id}`);
+          console.log(`📊 Portal-02 processing completed for order ${order._id}. Status: ${newStatus}`);
           
-          // Check results
-          const successfulItems = processingResults.filter(r => r.success);
-          const failedItems = processingResults.filter(r => !r.success);
-          
-          if (failedItems.length > 0) {
-            order.status = successfulItems.length > 0 ? 'partially_delivered' : 'processing_error';
-            await order.save();
+          // Schedule auto-progression if needed
+          const statusService = require('./services/statusService');
+          if (newStatus === 'processing') {
+            statusService.scheduleStatusProgression(order._id, 'processing', 'delivered');
           }
           
         } catch (portal02Error) {
           console.error(`❌ Portal-02 processing error: ${portal02Error.message}`);
           order.processingError = portal02Error.message;
-          order.status = 'processing_error';
+          order.status = 'failed';
           await order.save();
         }
       } else {
@@ -2081,7 +2130,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ UPDATED: Payment verification on return with Portal-02 integration
+// Payment verification on return with Portal-02 integration
 app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.body;
@@ -2100,13 +2149,13 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
 
     if (data.status === 'success') {
       order.paymentStatus = 'success';
-      order.status = 'processing';
+      order.status = 'placed'; // ✅ Start with 'placed'
       order.updatedAt = new Date();
       await order.save();
 
       console.log(`✅ Payment successful for order ${order._id}`);
       
-      // ✅ Process with Portal-02
+      // Process with Portal-02
       const portal02Service = require('./services/portal02Service');
       const processingResults = [];
       
@@ -2148,10 +2197,31 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
         
         // Update order with processing results
         order.processingResults = processingResults;
+        
+        // Determine status based on results
+        let newStatus = 'placed';
+        if (processingResults.length > 0) {
+          const successfulItems = processingResults.filter(r => r.success);
+          if (successfulItems.length === processingResults.length) {
+            newStatus = 'processing';
+          } else if (successfulItems.length > 0) {
+            newStatus = 'processing';
+          } else {
+            newStatus = 'failed';
+          }
+        }
+        
+        order.status = newStatus;
         order.updatedAt = new Date();
         await order.save();
         
-        console.log(`📊 Order ${order._id} submitted to Portal-02 with ${processingResults.length} items`);
+        console.log(`📊 Order ${order._id} submitted to Portal-02 with ${processingResults.length} items. Status: ${newStatus}`);
+        
+        // Schedule auto-progression if needed
+        if (newStatus === 'processing') {
+          const statusService = require('./services/statusService');
+          statusService.scheduleStatusProgression(order._id, 'processing', 'delivered');
+        }
         
         // Don't wait for Portal-02 delivery, just confirm submission
         res.json({
@@ -2159,7 +2229,7 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
           message: 'Payment successful! Your order has been submitted for processing.',
           orderId: order._id,
           amount: data.amount / 100,
-          status: 'processing',
+          status: newStatus,
           deliveryStatus: 'submitted',
           portal02Items: processingResults.length,
           redirectTo: `/clientdashboard?payment=success&order=${order._id}`
@@ -2211,7 +2281,7 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
 
 // ==================== WEBHOOK ROUTES ====================
 
-// ✅ COMPLETE: Webhook endpoint for Portal-02 status updates
+// Webhook endpoint for Portal-02 status updates
 app.post('/api/webhooks/portal02', async (req, res) => {
   try {
     console.log('📥 Portal-02 webhook received at:', new Date().toISOString());

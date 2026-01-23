@@ -73,9 +73,9 @@ class Portal02Service {
     
     // ========== AVAILABLE VOLUMES (FROM YOUR SCREENSHOTS - CORRECTED) ==========
     this.availableVolumes = {
-      'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 25, 30, 40, 50, 100],
+      'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
       'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 100],
-      'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20] // ✅ Fixed: Added 11, 13, 14
+      'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20]
     };
     
     // Cache for dynamic offers
