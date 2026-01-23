@@ -121,6 +121,12 @@ export const paymentAPI = {
     return api.get(`/payment/verify/${reference}`);
   },
   
+  // ✅ NEW METHOD: For verifying payment when user returns from Paystack
+  verifyReturn: (reference) => {
+    console.log('🔄 Verifying payment return for reference:', reference);
+    return api.post('/payment/verify-return', { reference });
+  },
+  
   checkStatus: (reference) => {
     console.log('📊 Checking payment status:', reference);
     return api.get(`/payment/status/${reference}`);

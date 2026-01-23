@@ -164,9 +164,11 @@ const Checkout = () => {
           verificationId: orderVerification.verificationId
         };
         
+        // Store payment data for redirect flow
         localStorage.setItem('paymentData', JSON.stringify(paymentData));
         localStorage.setItem('pendingCart', JSON.stringify(cartItems));
         
+        // Navigate to payment page which will auto-redirect to Paystack
         navigate('/payment', { state: paymentData });
       } else {
         throw new Error(response.data.message || 'Failed to create order');
@@ -289,9 +291,9 @@ const Checkout = () => {
               <strong>Payment Process:</strong>
               <ol>
                 <li><strong>Verify</strong> your order details with our server</li>
-                <li><strong>Proceed to Payment</strong> - Opens payment page</li>
-                <li><strong>Complete payment</strong> on Paystack secure page</li>
-                <li><strong>Auto-redirect</strong> to dashboard after successful payment</li>
+                <li><strong>Proceed to Payment</strong> - You'll be redirected to Paystack</li>
+                <li><strong>Complete payment</strong> on Paystack secure checkout page</li>
+                <li><strong>Auto-redirect</strong> back to your dashboard after payment</li>
               </ol>
             </div>
             
@@ -327,7 +329,7 @@ const Checkout = () => {
                     <span className="step-required">(Complete step 1 first)</span>
                   )}
                 </div>
-                <p>Go to secure payment page to complete your purchase.</p>
+                <p>You'll be redirected to Paystack's secure checkout page.</p>
                 <button
                   type="button"
                   onClick={proceedToPayment}
@@ -343,7 +345,7 @@ const Checkout = () => {
                   ) : (
                     <>
                       <span className="pay-icon">💳</span>
-                      Proceed to Payment - GH₵{orderVerification.totalAmount.toFixed(2)}
+                      Proceed to Paystack Checkout - GH₵{orderVerification.totalAmount.toFixed(2)}
                     </>
                   )}
                 </button>
@@ -374,8 +376,8 @@ const Checkout = () => {
             
             <div className="payment-info">
               <p><strong>Payment Methods:</strong> Card, MTN MoMo, Vodafone Cash, AirtelTigo Money, Bank Transfer</p>
-              <p><strong>Security:</strong> Powered by Paystack. Your payment details are secure.</p>
-              <p><strong>Note:</strong> After clicking "Proceed to Payment", you'll be redirected to a payment page.</p>
+              <p><strong>Security:</strong> Powered by Paystack. You'll be redirected to Paystack's secure payment page.</p>
+              <p><strong>Note:</strong> After clicking "Proceed to Payment", you'll be redirected to Paystack.com.</p>
             </div>
           </div>
         </div>

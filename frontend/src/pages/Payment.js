@@ -12,9 +12,10 @@ const Payment = () => {
   const [loading, setLoading] = useState(true);
   const [paymentData, setPaymentData] = useState(null);
   const [error, setError] = useState('');
-  const [paymentUrl, setPaymentUrl] = useState('');
+  const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
+    // Get payment data from navigation state or localStorage
     const data = location.state || JSON.parse(localStorage.getItem('paymentData') || '{}');
     
     if (!data.orderId || !data.amount || !data.email) {
@@ -31,7 +32,7 @@ const Payment = () => {
     try {
       setLoading(true);
       
-      // Get current URL for redirect back (using your existing PaymentReturn component)
+      // Redirect URL for Paystack to return to after payment
       const redirectUrl = `${window.location.origin}/payment-return`;
       
       console.log('🔄 Initializing Paystack redirect payment...', {
@@ -41,41 +42,50 @@ const Payment = () => {
         redirectUrl
       });
 
+      // Initialize payment with redirect URL
       const response = await paymentAPI.initialize({
         orderId: data.orderId,
         email: data.email,
         amount: data.amount,
-        redirectUrl: redirectUrl // Pass redirect URL to backend
+        redirectUrl: redirectUrl
       });
 
       console.log('✅ Paystack redirect response:', response.data);
 
       if (response.data.success && response.data.paymentUrl) {
-        // Store payment data for verification in PaymentReturn
+        // Store reference for verification later
         localStorage.setItem('paymentData', JSON.stringify({
           ...data,
           reference: response.data.reference
         }));
         
-        setPaymentUrl(response.data.paymentUrl);
-        setLoading(false);
+        // Auto-redirect to Paystack after a brief delay
+        setTimeout(() => {
+          setRedirecting(true);
+          console.log('🔗 Redirecting to Paystack:', response.data.paymentUrl);
+          window.location.href = response.data.paymentUrl;
+        }, 1500);
+        
       } else {
-        throw new Error('Failed to initialize payment');
+        throw new Error(response.data.error || 'Failed to initialize payment');
       }
     } catch (error) {
       console.error('❌ Payment initialization error:', error);
-      setError(error.response?.data?.error || 'Failed to initialize payment. Please try again.');
+      setError(error.response?.data?.error || error.message || 'Failed to initialize payment. Please try again.');
       setLoading(false);
     }
   };
 
-  const handleRedirectToPaystack = () => {
-    if (paymentUrl) {
-      console.log('🔗 Redirecting to Paystack checkout:', paymentUrl);
-      
-      // Immediately redirect to Paystack checkout page
-      window.location.href = paymentUrl;
+  const handleManualRedirect = () => {
+    if (paymentData) {
+      setError('');
+      setLoading(true);
+      initializePaystackRedirect(paymentData);
     }
+  };
+
+  const handleBackToCheckout = () => {
+    navigate('/checkout');
   };
 
   const handleCancelPayment = () => {
@@ -84,28 +94,35 @@ const Payment = () => {
     navigate('/client-dashboard');
   };
 
-  const handleRetryPayment = () => {
-    if (paymentData) {
-      setError('');
-      setLoading(true);
-      setPaymentUrl('');
-      initializePaystackRedirect(paymentData);
-    }
-  };
-
-  const handleManualRedirect = () => {
-    if (paymentUrl) {
-      window.open(paymentUrl, '_blank');
-    }
-  };
+  if (redirecting) {
+    return (
+      <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
+        <div className="payment-redirecting">
+          <div className="spinner"></div>
+          <h2>Redirecting to Paystack...</h2>
+          <p>You're being redirected to Paystack's secure checkout page.</p>
+          <p className="redirect-note">
+            If you're not redirected automatically in a few seconds, 
+            please click the button below:
+          </p>
+          <button 
+            onClick={() => window.location.href = paymentData?.paymentUrl}
+            className="manual-redirect-btn"
+          >
+            Go to Paystack Now
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
       <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
         <div className="payment-loading">
           <div className="spinner"></div>
-          <h2>Preparing Secure Payment Gateway</h2>
-          <p>Setting up your payment session. Please wait...</p>
+          <h2>Preparing Secure Payment</h2>
+          <p>Setting up your payment session with Paystack. Please wait...</p>
         </div>
       </div>
     );
@@ -133,10 +150,10 @@ const Payment = () => {
           )}
           
           <div className="error-actions">
-            <button onClick={handleRetryPayment} className="retry-btn">
+            <button onClick={handleManualRedirect} className="retry-btn">
               Retry Payment Setup
             </button>
-            <button onClick={() => navigate('/checkout')} className="back-btn">
+            <button onClick={handleBackToCheckout} className="back-btn">
               Back to Checkout
             </button>
             <button onClick={handleCancelPayment} className="cancel-btn">
@@ -148,118 +165,50 @@ const Payment = () => {
     );
   }
 
+  // Fallback UI (should not be shown with auto-redirect)
   return (
     <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
       <div className="payment-info">
         <div className="payment-header">
           <h2>Complete Your Payment</h2>
-          <p>Click the button below to proceed to Paystack's secure checkout</p>
+          <p>You should be redirected automatically to Paystack's secure checkout page.</p>
         </div>
         
-        {paymentData && (
-          <>
-            <div className="payment-details">
-              <h3>Order Summary</h3>
-              <div className="detail-item">
-                <strong>Order ID:</strong>
-                <span>{paymentData.orderId}</span>
-              </div>
-              <div className="detail-item">
-                <strong>Amount to Pay:</strong>
-                <span className="amount">GH₵{paymentData.amount.toFixed(2)}</span>
-              </div>
-              <div className="detail-item">
-                <strong>Customer Email:</strong>
-                <span>{paymentData.email}</span>
+        <div className="payment-instructions">
+          <h3>What happens next:</h3>
+          <div className="flow-steps">
+            <div className="flow-step">
+              <div className="step-number">1</div>
+              <div className="step-content">
+                <strong>Redirect to Paystack</strong>
+                <p>You'll be taken to Paystack's secure payment page</p>
               </div>
             </div>
-            
-            <div className="payment-instructions">
-              <h3>Payment Flow:</h3>
-              <div className="flow-steps">
-                <div className="flow-step">
-                  <div className="step-number">1</div>
-                  <div className="step-content">
-                    <strong>Click "Proceed to Paystack"</strong>
-                    <p>You'll be redirected to Paystack's secure payment page</p>
-                  </div>
-                </div>
-                <div className="flow-step">
-                  <div className="step-number">2</div>
-                  <div className="step-content">
-                    <strong>Complete Payment</strong>
-                    <p>Choose: Card, Mobile Money (MTN, Vodafone, AirtelTigo), or Bank Transfer</p>
-                  </div>
-                </div>
-                <div className="flow-step">
-                  <div className="step-number">3</div>
-                  <div className="step-content">
-                    <strong>Automatic Return</strong>
-                    <p>After payment, you'll return to AllenDataHub automatically</p>
-                  </div>
-                </div>
-                <div className="flow-step">
-                  <div className="step-number">4</div>
-                  <div className="step-content">
-                    <strong>Order Processing</strong>
-                    <p>Your data bundle will be delivered immediately</p>
-                  </div>
-                </div>
+            <div className="flow-step">
+              <div className="step-number">2</div>
+              <div className="step-content">
+                <strong>Complete Payment</strong>
+                <p>Choose: Card, Mobile Money, or Bank Transfer</p>
               </div>
             </div>
-            
-            <div className="security-info">
-              <div className="security-item">
-                <span className="security-icon">🔒</span>
-                <span className="security-text">PCI DSS Compliant & Encrypted</span>
-              </div>
-              <div className="security-item">
-                <span className="security-icon">✅</span>
-                <span className="security-text">Verified by Paystack (Stripe)</span>
-              </div>
-              <div className="security-item">
-                <span className="security-icon">📧</span>
-                <span className="security-text">Receipt sent to your email</span>
+            <div className="flow-step">
+              <div className="step-number">3</div>
+              <div className="step-content">
+                <strong>Return to AllenDataHub</strong>
+                <p>After payment, you'll return to your dashboard</p>
               </div>
             </div>
-            
-            <div className="payment-actions">
-              <button 
-                onClick={handleRedirectToPaystack}
-                className="paystack-btn"
-              >
-                Proceed to Paystack Checkout
-              </button>
-              
-              <p className="manual-redirect-note">
-                If the button doesn't work, <button 
-                  onClick={handleManualRedirect}
-                  className="link-btn"
-                >
-                  click here to open in new tab
-                </button>
-              </p>
-              
-              <div className="alternative-actions">
-                <button onClick={() => navigate('/checkout')} className="back-btn">
-                  ← Back to Checkout
-                </button>
-                <button onClick={handleCancelPayment} className="cancel-btn">
-                  Cancel Order
-                </button>
-              </div>
-              
-              <p className="security-note">
-                <strong>Important:</strong> You will be redirected to paystack.com. 
-                Never enter payment details on any other website.
-              </p>
-              
-              <p className="support-note">
-                Need help? Contact support if you encounter payment issues.
-              </p>
-            </div>
-          </>
-        )}
+          </div>
+        </div>
+        
+        <div className="payment-actions">
+          <button onClick={handleBackToCheckout} className="back-btn">
+            ← Back to Checkout
+          </button>
+          <button onClick={handleCancelPayment} className="cancel-btn">
+            Cancel Order
+          </button>
+        </div>
       </div>
     </div>
   );
