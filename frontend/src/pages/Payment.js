@@ -12,8 +12,7 @@ const Payment = () => {
   const [loading, setLoading] = useState(true);
   const [paymentData, setPaymentData] = useState(null);
   const [error, setError] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('initializing');
-  const [pollingInterval, setPollingInterval] = useState(null);
+  const [paymentUrl, setPaymentUrl] = useState('');
 
   useEffect(() => {
     const data = location.state || JSON.parse(localStorage.getItem('paymentData') || '{}');
@@ -21,114 +20,65 @@ const Payment = () => {
     if (!data.orderId || !data.amount || !data.email) {
       setError('Invalid payment data. Please return to checkout and try again.');
       setLoading(false);
-      setPaymentStatus('error');
       return;
     }
 
     setPaymentData(data);
-    initializePaystackPayment(data);
-    
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-    };
+    initializePaystackRedirect(data);
   }, [location]);
 
-  const initializePaystackPayment = async (data) => {
+  const initializePaystackRedirect = async (data) => {
     try {
       setLoading(true);
-      setPaymentStatus('initializing');
       
+      // Get current URL for redirect back (using your existing PaymentReturn component)
+      const redirectUrl = `${window.location.origin}/payment-return`;
+      
+      console.log('🔄 Initializing Paystack redirect payment...', {
+        orderId: data.orderId,
+        email: data.email,
+        amount: data.amount,
+        redirectUrl
+      });
+
       const response = await paymentAPI.initialize({
         orderId: data.orderId,
         email: data.email,
-        amount: data.amount
+        amount: data.amount,
+        redirectUrl: redirectUrl // Pass redirect URL to backend
       });
 
-      console.log('🔄 Payment initialization response:', response.data);
+      console.log('✅ Paystack redirect response:', response.data);
 
       if (response.data.success && response.data.paymentUrl) {
-        const paystackWindow = window.open(
-          response.data.paymentUrl,
-          '_blank',
-          'width=800,height=600,scrollbars=yes,location=yes'
-        );
-
-        if (!paystackWindow) {
-          setError('Please allow popups for this site to complete payment.');
-          setPaymentStatus('error');
-          setLoading(false);
-          return;
-        }
-
-        setPaymentStatus('waiting');
-        setLoading(false);
+        // Store payment data for verification in PaymentReturn
+        localStorage.setItem('paymentData', JSON.stringify({
+          ...data,
+          reference: response.data.reference
+        }));
         
-        startPaymentPolling(response.data.reference, data);
+        setPaymentUrl(response.data.paymentUrl);
+        setLoading(false);
       } else {
         throw new Error('Failed to initialize payment');
       }
     } catch (error) {
       console.error('❌ Payment initialization error:', error);
       setError(error.response?.data?.error || 'Failed to initialize payment. Please try again.');
-      setPaymentStatus('error');
       setLoading(false);
     }
   };
 
-  const startPaymentPolling = (reference, data) => {
-    const maxAttempts = 50;
-    let attempts = 0;
-
-    const interval = setInterval(async () => {
-      attempts++;
-      console.log(`🔍 Payment polling attempt ${attempts}/${maxAttempts} for ref: ${reference}`);
+  const handleRedirectToPaystack = () => {
+    if (paymentUrl) {
+      console.log('🔗 Redirecting to Paystack checkout:', paymentUrl);
       
-      try {
-        const response = await paymentAPI.verify(reference);
-        
-        if (response.data.success) {
-          clearInterval(interval);
-          setPaymentStatus('success');
-          
-          localStorage.setItem('lastOrder', JSON.stringify({
-            amount: data.amount,
-            date: new Date().toISOString(),
-            orderId: data.orderId
-          }));
-
-          localStorage.removeItem('pendingCart');
-          localStorage.removeItem('paymentData');
-
-          setTimeout(() => {
-            navigate('/payment-success');
-          }, 2000);
-          
-        } else if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          setError('Payment timeout. Please check your payment status in your dashboard.');
-          setPaymentStatus('timeout');
-          setLoading(false);
-        }
-      } catch (error) {
-        console.error('Payment status check error:', error);
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          setError('Payment verification failed. Please check your dashboard.');
-          setPaymentStatus('error');
-          setLoading(false);
-        }
-      }
-    }, 6000);
-
-    setPollingInterval(interval);
+      // Immediately redirect to Paystack checkout page
+      window.location.href = paymentUrl;
+    }
   };
 
   const handleCancelPayment = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-    }
     localStorage.removeItem('paymentData');
     localStorage.removeItem('pendingCart');
     navigate('/client-dashboard');
@@ -138,8 +88,14 @@ const Payment = () => {
     if (paymentData) {
       setError('');
       setLoading(true);
-      setPaymentStatus('initializing');
-      initializePaystackPayment(paymentData);
+      setPaymentUrl('');
+      initializePaystackRedirect(paymentData);
+    }
+  };
+
+  const handleManualRedirect = () => {
+    if (paymentUrl) {
+      window.open(paymentUrl, '_blank');
     }
   };
 
@@ -148,9 +104,8 @@ const Payment = () => {
       <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
         <div className="payment-loading">
           <div className="spinner"></div>
-          <h2>Initializing Payment...</h2>
-          <p>Please wait while we prepare your secure payment gateway.</p>
-          <p>You will be redirected to Paystack shortly.</p>
+          <h2>Preparing Secure Payment Gateway</h2>
+          <p>Setting up your payment session. Please wait...</p>
         </div>
       </div>
     );
@@ -161,7 +116,7 @@ const Payment = () => {
       <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
         <div className="payment-error">
           <div className="error-icon">❌</div>
-          <h2>Payment Error</h2>
+          <h2>Payment Setup Error</h2>
           <p className="error-message">{error}</p>
           
           {paymentData && (
@@ -179,7 +134,7 @@ const Payment = () => {
           
           <div className="error-actions">
             <button onClick={handleRetryPayment} className="retry-btn">
-              Retry Payment
+              Retry Payment Setup
             </button>
             <button onClick={() => navigate('/checkout')} className="back-btn">
               Back to Checkout
@@ -196,42 +151,21 @@ const Payment = () => {
   return (
     <div className={`payment-container ${darkMode ? 'dark' : ''}`}>
       <div className="payment-info">
-        <div className="payment-status">
-          {paymentStatus === 'waiting' && (
-            <div className="status-waiting">
-              <div className="spinner"></div>
-              <h2>Waiting for Payment...</h2>
-              <p>Please complete your payment in the Paystack window.</p>
-            </div>
-          )}
-          
-          {paymentStatus === 'success' && (
-            <div className="status-success">
-              <div className="success-icon">✅</div>
-              <h2>Payment Successful!</h2>
-              <p>Your payment has been verified. Redirecting to success page...</p>
-            </div>
-          )}
-          
-          {paymentStatus === 'timeout' && (
-            <div className="status-timeout">
-              <div className="timeout-icon">⏰</div>
-              <h2>Payment Timeout</h2>
-              <p>The payment process took too long. Please check your dashboard for status.</p>
-            </div>
-          )}
+        <div className="payment-header">
+          <h2>Complete Your Payment</h2>
+          <p>Click the button below to proceed to Paystack's secure checkout</p>
         </div>
         
-        {paymentData && paymentStatus === 'waiting' && (
+        {paymentData && (
           <>
             <div className="payment-details">
-              <h3>Payment Details</h3>
+              <h3>Order Summary</h3>
               <div className="detail-item">
                 <strong>Order ID:</strong>
                 <span>{paymentData.orderId}</span>
               </div>
               <div className="detail-item">
-                <strong>Amount:</strong>
+                <strong>Amount to Pay:</strong>
                 <span className="amount">GH₵{paymentData.amount.toFixed(2)}</span>
               </div>
               <div className="detail-item">
@@ -241,41 +175,91 @@ const Payment = () => {
             </div>
             
             <div className="payment-instructions">
-              <h3>Instructions:</h3>
-              <ul>
-                <li><strong>1.</strong> Complete your payment in the Paystack window that opened</li>
-                <li><strong>2.</strong> Do not close this page until payment is complete</li>
-                <li><strong>3.</strong> Payment will be verified automatically</li>
-                <li><strong>4.</strong> You'll be redirected to your dashboard after successful payment</li>
-                <li><strong>5.</strong> If Paystack window closed, <button 
-                  onClick={() => window.open(paymentData.paymentUrl, '_blank')}
-                  className="link-btn"
-                >
-                  click here to reopen
-                </button></li>
-              </ul>
+              <h3>Payment Flow:</h3>
+              <div className="flow-steps">
+                <div className="flow-step">
+                  <div className="step-number">1</div>
+                  <div className="step-content">
+                    <strong>Click "Proceed to Paystack"</strong>
+                    <p>You'll be redirected to Paystack's secure payment page</p>
+                  </div>
+                </div>
+                <div className="flow-step">
+                  <div className="step-number">2</div>
+                  <div className="step-content">
+                    <strong>Complete Payment</strong>
+                    <p>Choose: Card, Mobile Money (MTN, Vodafone, AirtelTigo), or Bank Transfer</p>
+                  </div>
+                </div>
+                <div className="flow-step">
+                  <div className="step-number">3</div>
+                  <div className="step-content">
+                    <strong>Automatic Return</strong>
+                    <p>After payment, you'll return to AllenDataHub automatically</p>
+                  </div>
+                </div>
+                <div className="flow-step">
+                  <div className="step-number">4</div>
+                  <div className="step-content">
+                    <strong>Order Processing</strong>
+                    <p>Your data bundle will be delivered immediately</p>
+                  </div>
+                </div>
+              </div>
             </div>
             
-            <div className="payment-note">
-              <h4>💡 Important Notes:</h4>
-              <ul>
-                <li>Payment methods: Card, Mobile Money (MTN, Vodafone, AirtelTigo)</li>
-                <li>Secure payment powered by Paystack</li>
-                <li>Receipt will be sent to your email</li>
-                <li>If payment fails, you can retry from your dashboard</li>
-              </ul>
+            <div className="security-info">
+              <div className="security-item">
+                <span className="security-icon">🔒</span>
+                <span className="security-text">PCI DSS Compliant & Encrypted</span>
+              </div>
+              <div className="security-item">
+                <span className="security-icon">✅</span>
+                <span className="security-text">Verified by Paystack (Stripe)</span>
+              </div>
+              <div className="security-item">
+                <span className="security-icon">📧</span>
+                <span className="security-text">Receipt sent to your email</span>
+              </div>
+            </div>
+            
+            <div className="payment-actions">
+              <button 
+                onClick={handleRedirectToPaystack}
+                className="paystack-btn"
+              >
+                Proceed to Paystack Checkout
+              </button>
+              
+              <p className="manual-redirect-note">
+                If the button doesn't work, <button 
+                  onClick={handleManualRedirect}
+                  className="link-btn"
+                >
+                  click here to open in new tab
+                </button>
+              </p>
+              
+              <div className="alternative-actions">
+                <button onClick={() => navigate('/checkout')} className="back-btn">
+                  ← Back to Checkout
+                </button>
+                <button onClick={handleCancelPayment} className="cancel-btn">
+                  Cancel Order
+                </button>
+              </div>
+              
+              <p className="security-note">
+                <strong>Important:</strong> You will be redirected to paystack.com. 
+                Never enter payment details on any other website.
+              </p>
+              
+              <p className="support-note">
+                Need help? Contact support if you encounter payment issues.
+              </p>
             </div>
           </>
         )}
-        
-        <div className="payment-actions">
-          <button onClick={handleCancelPayment} className="cancel-payment-btn">
-            Cancel Payment
-          </button>
-          <p className="support-note">
-            Need help? Contact support if you encounter any issues.
-          </p>
-        </div>
       </div>
     </div>
   );
