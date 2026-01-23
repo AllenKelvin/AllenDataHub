@@ -71,15 +71,15 @@ const connectDB = async () => {
   }
 };
 
-// Initialize data plans with your exact prices and CORRECT vendor volumes
+// Initialize data plans
 async function initializeDataPlans() {
   try {
     const existingPlans = await DataPlan.countDocuments();
     if (existingPlans === 0) {
-      console.log('📊 Initializing data plans with CORRECT vendor volumes...');
+      console.log('📊 Initializing data plans...');
       
       const dataPlans = [
-        // MTN Plans - ONLY available volumes from vendor screenshots
+        // MTN Plans
         { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
         { network: 'MTN', size: '2GB', price: 8.50, validity: '30 days', description: 'MTN Non-Expiry' },
         { network: 'MTN', size: '3GB', price: 12.50, validity: '30 days', description: 'MTN Non-Expiry' },
@@ -97,7 +97,7 @@ async function initializeDataPlans() {
         { network: 'MTN', size: '50GB', price: 186.00, validity: '30 days', description: 'MTN Non-Expiry' },
         { network: 'MTN', size: '100GB', price: 364.00, validity: '30 days', description: 'MTN Non-Expiry' },
         
-        // Telecel Plans - ONLY available volumes from vendor screenshots
+        // Telecel Plans
         { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
         { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
         { network: 'Telecel', size: '15GB', price: 53.60, validity: '30 days', description: 'Telecel Bundle' },
@@ -108,7 +108,7 @@ async function initializeDataPlans() {
         { network: 'Telecel', size: '50GB', price: 176.00, validity: '30 days', description: 'Telecel Bundle' },
         { network: 'Telecel', size: '100GB', price: 348.00, validity: '30 days', description: 'Telecel Bundle' },
         
-        // AirtelTigo Plans - ONLY available volumes from vendor screenshots
+        // AirtelTigo Plans
         { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
         { network: 'AirtelTigo', size: '2GB', price: 7.70, validity: '30 days', description: 'AirtelTigo Bundle' },
         { network: 'AirtelTigo', size: '3GB', price: 11.70, validity: '30 days', description: 'AirtelTigo Bundle' },
@@ -128,7 +128,7 @@ async function initializeDataPlans() {
       ];
       
       await DataPlan.insertMany(dataPlans);
-      console.log(`✅ ${dataPlans.length} data plans initialized with CORRECT vendor volumes`);
+      console.log(`✅ ${dataPlans.length} data plans initialized`);
     }
   } catch (error) {
     console.error('❌ Error initializing data plans:', error);
@@ -139,10 +139,8 @@ connectDB();
 
 // Setup cron jobs for transaction cleanup
 const setupCronJobs = () => {
-  // Import the transaction cleaner
   const transactionCleaner = require('./services/transactionCleaner');
   
-  // Run every hour (3600000 ms)
   setInterval(async () => {
     try {
       console.log('⏰ Running scheduled transaction cleanup...');
@@ -150,12 +148,11 @@ const setupCronJobs = () => {
     } catch (error) {
       console.error('❌ Scheduled cleanup failed:', error);
     }
-  }, 3600000); // 1 hour
+  }, 3600000);
   
   console.log('✅ Scheduled transaction cleanup initialized (runs hourly)');
 };
 
-// Call it after database connects
 mongoose.connection.once('open', () => {
   setupCronJobs();
 });
@@ -236,8 +233,7 @@ const orderSchema = new mongoose.Schema({
     enum: ['placed', 'processing', 'processing_error', 'partially_delivered', 'delivered', 'cancelled', 'failed'], 
     default: 'placed' 
   },
-  statusReason: { type: String }, // Reason for status change
-  // Store processing results
+  statusReason: { type: String },
   processingResults: [{
     itemIndex: Number,
     success: Boolean,
@@ -251,7 +247,6 @@ const orderSchema = new mongoose.Schema({
     processedAt: { type: Date, default: Date.now },
     lastUpdated: Date
   }],
-  // Store webhook history
   webhookHistory: [{
     event: String,
     orderId: String,
@@ -262,15 +257,11 @@ const orderSchema = new mongoose.Schema({
     timestamp: Date,
     receivedAt: { type: Date, default: Date.now }
   }],
-  // Store any processing error
   processingError: String,
-  
-  // ========== ADD THESE NEW FIELDS FOR 24-HOUR CLEARING ==========
-  isVisibleToUser: { type: Boolean, default: true }, // Controls if user can see it
-  archived: { type: Boolean, default: false }, // Soft delete flag
-  archiveReason: { type: String }, // Why it was archived
-  archivedAt: { type: Date }, // When it was archived
-  
+  isVisibleToUser: { type: Boolean, default: true },
+  archived: { type: Boolean, default: false },
+  archiveReason: { type: String },
+  archivedAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -296,7 +287,6 @@ const contactSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Schema for unmatched webhooks
 const unmatchedWebhookSchema = new mongoose.Schema({
   orderId: String,
   reference: String,
@@ -308,7 +298,6 @@ const unmatchedWebhookSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Schema for webhook errors
 const webhookErrorSchema = new mongoose.Schema({
   error: String,
   payload: Object,
@@ -322,7 +311,6 @@ const Order = mongoose.model('Order', orderSchema);
 const DataPlan = mongoose.model('DataPlan', dataPlanSchema);
 const Contact = mongoose.model('Contact', contactSchema);
 
-// Create models for webhook tracking
 let UnmatchedWebhook, WebhookError;
 try {
   UnmatchedWebhook = mongoose.model('UnmatchedWebhook');
@@ -429,15 +417,12 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ASYNC WEBHOOK PROCESSING ====================
 
-// ✅ ASYNC FUNCTION: Process Portal-02 webhook with status service
 async function processPortal02Webhook(payload) {
   try {
     console.log('🔔 Webhook processing started:', payload.event || 'unknown');
     
     const portal02Service = require('./services/portal02Service');
-    const statusService = require('./services/statusService');
     
-    // Process the webhook payload
     const processed = portal02Service.processWebhookPayload(payload);
     
     if (!processed.success) {
@@ -449,27 +434,22 @@ async function processPortal02Webhook(payload) {
     
     console.log(`🔍 Looking for order with reference: ${reference} or orderId: ${orderId}`);
     
-    // Try to find order by reference or orderId in processingResults
     let order = null;
     
-    // First, try to find by transactionId in processingResults
     order = await Order.findOne({
       'processingResults.transactionId': { $in: [orderId, reference] }
     });
     
-    // If not found, try by reference in processingResults
     if (!order) {
       order = await Order.findOne({
         'processingResults.reference': { $in: [orderId, reference] }
       });
     }
     
-    // If not found, try by paymentReference
     if (!order) {
       order = await Order.findOne({ 'paymentReference': reference });
     }
     
-    // If still not found, try by any matching field
     if (!order) {
       order = await Order.findOne({
         $or: [
@@ -484,7 +464,6 @@ async function processPortal02Webhook(payload) {
     if (!order) {
       console.error(`❌ Order not found for reference: ${reference}, orderId: ${orderId}`);
       
-      // Create a log entry for unmatched webhooks
       await UnmatchedWebhook.create({
         orderId,
         reference,
@@ -516,7 +495,6 @@ async function processPortal02Webhook(payload) {
       return result;
     });
     
-    // If no specific result found, add a new one
     if (!updatedResults.find(r => r.transactionId === orderId || r.transactionId === reference || 
                                  r.reference === orderId || r.reference === reference)) {
       updatedResults.push({
@@ -532,32 +510,40 @@ async function processPortal02Webhook(payload) {
     
     order.processingResults = updatedResults;
     
-    // Map Portal-02 status to our status using status service
-    let targetStatus;
+    // Map Portal-02 status to our status
+    let ourStatus = order.status;
     switch (status) {
       case 'delivered':
       case 'resolved':
-        targetStatus = 'delivered';
+        ourStatus = 'delivered';
         break;
       case 'failed':
       case 'cancelled':
       case 'refunded':
-        targetStatus = 'failed';
+        ourStatus = 'failed';
         break;
       case 'processing':
-        targetStatus = 'processing';
+        ourStatus = 'processing';
         break;
       case 'pending':
-        targetStatus = 'processing';
+        ourStatus = 'processing';
         break;
-      default:
-        targetStatus = 'processing';
     }
     
-    // Use status service to update order status
-    await statusService.updateOrderStatus(order._id, targetStatus, `Portal-02 webhook: ${status}`);
+    // Check if all items are delivered
+    const allDelivered = updatedResults.every(r => 
+      r.status === 'delivered' || r.status === 'resolved'
+    );
     
-    // Add webhook history
+    if (allDelivered && order.status !== 'delivered') {
+      ourStatus = 'delivered';
+      console.log(`🎉 All items delivered for order ${order._id}`);
+    }
+    
+    // Update order status
+    order.status = ourStatus;
+    order.updatedAt = new Date();
+    
     if (!order.webhookHistory) {
       order.webhookHistory = [];
     }
@@ -575,15 +561,13 @@ async function processPortal02Webhook(payload) {
     
     await order.save();
     
-    console.log(`✅ Order ${order._id} status updated to: ${targetStatus} via webhook`);
+    console.log(`✅ Order ${order._id} updated to status: ${ourStatus} via webhook`);
     
-    // Send notification to user if status is delivered or failed
     if (status === 'delivered' || status === 'failed' || status === 'cancelled') {
       try {
         const user = await User.findById(order.userId);
         if (user) {
           console.log(`📧 Notification: Order ${order._id} status changed to ${status} for user ${user.email}`);
-          // Here you could send email, SMS, or push notification
         }
       } catch (notifyError) {
         console.error('❌ Error sending notification:', notifyError);
@@ -593,7 +577,6 @@ async function processPortal02Webhook(payload) {
   } catch (error) {
     console.error('❌ Error processing Portal-02 webhook:', error);
     
-    // Log the error for investigation
     await WebhookError.create({
       error: error.message,
       payload,
@@ -664,40 +647,23 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Test Portal-02 setup with correct info from screenshots
+// Test Portal-02 setup
 app.get('/api/test/portal02-setup', authMiddleware, async (req, res) => {
   try {
     const portal02Service = require('./services/portal02Service');
     
-    // 1. Test connection
     const connection = await portal02Service.testConnection();
     
-    // 2. Show available volumes
     const availableInfo = {
       MTN: portal02Service.availableVolumes?.MTN || [],
       Telecel: portal02Service.availableVolumes?.Telecel || [],
       AirtelTigo: portal02Service.availableVolumes?.AirtelTigo || []
     };
     
-    // 3. Show offer slugs
     const offerSlugs = {
       MTN: portal02Service.offerSlugs?.MTN || 'master_beneficiary_data_bundle',
       Telecel: portal02Service.offerSlugs?.Telecel || 'telecel_expiry_bundle',
       AirtelTigo: portal02Service.offerSlugs?.AirtelTigo || 'ishare_data_bundle'
-    };
-    
-    // 4. Test phone formatting
-    const testPhones = {
-      '0241234567': portal02Service.formatPhoneNumber('0241234567'),
-      '233241234567': portal02Service.formatPhoneNumber('233241234567'),
-      '+233241234567': portal02Service.formatPhoneNumber('+233241234567')
-    };
-    
-    // 5. Test volume extraction
-    const volumeTests = {
-      '1GB': portal02Service.extractVolumeNumber ? portal02Service.extractVolumeNumber('1GB') : 1,
-      '10GB': portal02Service.extractVolumeNumber ? portal02Service.extractVolumeNumber('10GB') : 10,
-      '100GB': portal02Service.extractVolumeNumber ? portal02Service.extractVolumeNumber('100GB') : 100
     };
     
     res.json({
@@ -706,8 +672,6 @@ app.get('/api/test/portal02-setup', authMiddleware, async (req, res) => {
       connection,
       availableVolumes: availableInfo,
       offerSlugs,
-      phoneFormatting: testPhones,
-      volumeExtraction: volumeTests,
       baseUrl: portal02Service.baseURL,
       apiKeyConfigured: !!process.env.PORTAL02_API_KEY,
       webhookUrl: portal02Service.backendUrl ? `${portal02Service.backendUrl}/api/webhooks/portal02` : 'Not configured'
@@ -962,7 +926,6 @@ app.get('/api/plans', async (req, res) => {
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
     if (plans.length === 0) {
-      // If no plans exist, initialize them
       await initializeDataPlans();
       const updatedPlans = await DataPlan.find(query).sort({ price: 1 });
       return res.json(updatedPlans);
@@ -978,16 +941,11 @@ app.get('/api/plans', async (req, res) => {
 // Helper function for fallback plans
 function getFallbackPlans(network, res) {
   const fallbackPlans = [
-    // MTN Plans
     { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
     { network: 'MTN', size: '5GB', price: 20.60, validity: '30 days', description: 'MTN Non-Expiry' },
     { network: 'MTN', size: '10GB', price: 39.70, validity: '30 days', description: 'MTN Non-Expiry' },
-    
-    // Telecel Plans
     { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
     { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
-    
-    // AirtelTigo Plans
     { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
     { network: 'AirtelTigo', size: '5GB', price: 19.50, validity: '30 days', description: 'AirtelTigo Bundle' }
   ];
@@ -1053,7 +1011,6 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
       });
     }
 
-    // Validate volumes against vendor availability
     const volumeValidation = validateOrderItems(items);
     if (!volumeValidation.valid) {
       return res.status(400).json({
@@ -1132,7 +1089,6 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
     console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
-    console.log('👤 User ID:', req.userId);
     
     const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
 
@@ -1144,7 +1100,6 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
 
-    // Validate volumes against vendor availability
     const volumeValidation = validateOrderItems(items);
     if (!volumeValidation.valid) {
       return res.status(400).json({
@@ -1188,7 +1143,6 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       });
     }
 
-    // Validate userId is a valid ObjectId
     if (!mongoose.Types.ObjectId.isValid(req.userId)) {
       console.log('❌ Invalid user ID:', req.userId);
       return res.status(400).json({
@@ -1216,7 +1170,6 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
       paymentMethod: paymentMethod || 'paystack',
       paymentStatus: 'pending',
       status: 'placed',
-      // New fields are automatically set to defaults
       isVisibleToUser: true,
       archived: false
     });
@@ -1241,7 +1194,6 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error('❌ Order creation error:', error.message);
-    console.error('❌ Error stack:', error.stack);
     
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
@@ -1255,8 +1207,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
     if (error.name === 'CastError' && error.kind === 'ObjectId') {
       return res.status(400).json({
         success: false,
-        error: 'Invalid ID format',
-        details: 'The user ID is not valid'
+        error: 'Invalid ID format'
       });
     }
     
@@ -1268,7 +1219,7 @@ app.post('/api/orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Orders (updated to respect visibility flags)
+// Get User Orders
 app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, showAll = false } = req.query;
@@ -1282,7 +1233,6 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
       userId: new mongoose.Types.ObjectId(req.userId) 
     };
     
-    // Only show visible orders by default
     if (!showAll) {
       query.isVisibleToUser = true;
       query.archived = false;
@@ -1311,7 +1261,7 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Recent Transactions (updated to respect visibility flags)
+// Get Recent Transactions
 app.get('/api/orders/recent', authMiddleware, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
@@ -1376,46 +1326,6 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Order Status Timeline
-app.get('/api/orders/:id/status-timeline', authMiddleware, async (req, res) => {
-  try {
-    const orderId = req.params.id;
-    
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ error: 'Invalid order ID format' });
-    }
-
-    const order = await Order.findOne({
-      _id: new mongoose.Types.ObjectId(orderId),
-      userId: new mongoose.Types.ObjectId(req.userId)
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const statusService = require('./services/statusService');
-    const timeline = await statusService.getOrderStatusTimeline(orderId);
-
-    res.json({
-      success: true,
-      orderId: order._id,
-      currentStatus: order.status,
-      paymentStatus: order.paymentStatus,
-      timeline,
-      processingResults: order.processingResults,
-      webhookHistory: order.webhookHistory || []
-    });
-    
-  } catch (error) {
-    console.error('Order status timeline error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Cancel Order
 app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
@@ -1455,7 +1365,7 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Manually trigger data delivery for an order
+// Manually trigger data delivery
 app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
   try {
     const orderId = req.params.id;
@@ -1486,11 +1396,9 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
     const portal02Service = require('./services/portal02Service');
     const processingResults = [];
     
-    // Process each item
     for (const [index, item] of order.items.entries()) {
       console.log(`📦 Delivering item ${index + 1}: ${item.network} ${item.size} to ${item.recipientPhone}`);
       
-      // Create a unique reference for this item
       const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
       
       const result = await portal02Service.purchaseDataBundleWithRetry(
@@ -1511,17 +1419,14 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
         webhookReceived: false
       });
       
-      // Small delay between items
       if (index < order.items.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
     
-    // Check results
     const successfulItems = processingResults.filter(r => r.success);
     const failedItems = processingResults.filter(r => !r.success);
     
-    // Update order status based on results
     let newStatus = 'processing';
     if (successfulItems.length === order.items.length) {
       newStatus = 'delivered';
@@ -1577,7 +1482,6 @@ app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
     const portal02Service = require('./services/portal02Service');
     const statusResults = [];
     
-    // Check status for each transaction in processingResults
     for (const result of order.processingResults) {
       if (result.transactionId) {
         try {
@@ -1617,7 +1521,7 @@ app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
   }
 });
 
-// Get User Dashboard Stats (updated to respect visibility flags)
+// Get User Dashboard Stats
 app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.userId)) {
@@ -1678,12 +1582,7 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
       amount: order.totalAmount,
       status: order.status,
       paymentStatus: order.paymentStatus,
-      date: order.createdAt,
-      items: order.items.map(item => ({
-        network: item.network,
-        size: item.size,
-        price: item.price
-      }))
+      date: order.createdAt
     }));
     
     res.json({
@@ -1708,26 +1607,22 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     console.error('Dashboard stats error:', error);
     res.status(500).json({ 
       error: 'Failed to fetch dashboard stats',
-      stats: getFallbackStats()
+      stats: {
+        totalOrders: 0,
+        todayOrders: 0,
+        deliveredOrders: 0,
+        totalSpent: 0,
+        averageOrderValue: 0,
+        totalDataGB: 0,
+        totalDataMB: 0,
+        totalDataFormatted: '0 GB',
+        orderSuccessRate: 0
+      }
     });
   }
 });
 
-function getFallbackStats() {
-  return {
-    totalOrders: 0,
-    todayOrders: 0,
-    deliveredOrders: 0,
-    totalSpent: 0,
-    averageOrderValue: 0,
-    totalDataGB: 0,
-    totalDataMB: 0,
-    totalDataFormatted: '0 GB',
-    orderSuccessRate: 0
-  };
-}
-
-// Get Transaction History (updated to respect visibility flags)
+// Get Transaction History
 app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 10, showAll = false } = req.query;
@@ -1741,7 +1636,6 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
       userId: new mongoose.Types.ObjectId(req.userId) 
     };
     
-    // Only show visible transactions by default
     if (!showAll) {
       query.isVisibleToUser = true;
       query.archived = false;
@@ -1765,9 +1659,7 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
       paymentStatus: order.paymentStatus,
       deliveryStatus: order.status,
       date: order.createdAt,
-      status: order.status,
-      isVisibleToUser: order.isVisibleToUser,
-      archived: order.archived
+      status: order.status
     }));
 
     res.json({
@@ -1785,148 +1677,9 @@ app.get('/api/users/transactions', authMiddleware, async (req, res) => {
   }
 });
 
-// ==================== TRANSACTION CLEANING ROUTES ====================
-
-// Get user's visible transactions (automatically filters archived ones)
-app.get('/api/users/transactions/visible', authMiddleware, async (req, res) => {
-  try {
-    const { page = 1, limit = 10, showArchived = false } = req.query;
-    const skip = (page - 1) * limit;
-
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    // Build query
-    const query = { userId: new mongoose.Types.ObjectId(req.userId) };
-    
-    // Only show non-archived by default
-    if (!showArchived) {
-      query.isVisibleToUser = true;
-      query.archived = false;
-    }
-
-    const orders = await Order.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    const totalOrders = await Order.countDocuments(query);
-
-    res.json({
-      transactions: orders,
-      pagination: {
-        total: totalOrders,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalOrders / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Visible transactions fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch transactions' });
-  }
-});
-
-// Manually clean user's old transactions
-app.post('/api/users/transactions/clean', authMiddleware, async (req, res) => {
-  try {
-    const { hours = 24 } = req.body;
-    const userId = req.userId;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const transactionCleaner = require('./services/transactionCleaner');
-    const result = await transactionCleaner.cleanUserTransactions(userId, hours);
-
-    res.json({
-      success: true,
-      message: `Cleaned ${result.modifiedCount} transactions older than ${hours} hours`,
-      cleanedCount: result.modifiedCount
-    });
-  } catch (error) {
-    console.error('Transaction cleanup error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to clean transactions' 
-    });
-  }
-});
-
-// Restore user's archived transactions
-app.post('/api/users/transactions/restore', authMiddleware, async (req, res) => {
-  try {
-    const userId = req.userId;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const transactionCleaner = require('./services/transactionCleaner');
-    const result = await transactionCleaner.restoreUserTransactions(userId);
-
-    res.json({
-      success: true,
-      message: `Restored ${result.modifiedCount} archived transactions`,
-      restoredCount: result.modifiedCount
-    });
-  } catch (error) {
-    console.error('Transaction restore error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to restore transactions' 
-    });
-  }
-});
-
-// Get transaction statistics
-app.get('/api/users/transactions/stats', authMiddleware, async (req, res) => {
-  try {
-    const userId = new mongoose.Types.ObjectId(req.userId);
-    
-    const [
-      totalOrders,
-      visibleOrders,
-      archivedOrders,
-      todayOrders
-    ] = await Promise.all([
-      Order.countDocuments({ userId }),
-      Order.countDocuments({ 
-        userId, 
-        isVisibleToUser: true,
-        archived: false 
-      }),
-      Order.countDocuments({ 
-        userId, 
-        archived: true 
-      }),
-      Order.countDocuments({ 
-        userId,
-        createdAt: { 
-          $gte: new Date().setHours(0, 0, 0, 0) 
-        }
-      })
-    ]);
-
-    res.json({
-      totalOrders,
-      visibleOrders,
-      archivedOrders,
-      todayOrders,
-      visiblePercentage: totalOrders > 0 ? Math.round((visibleOrders / totalOrders) * 100) : 0
-    });
-  } catch (error) {
-    console.error('Transaction stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch transaction stats' });
-  }
-});
-
 // ==================== PAYMENT ROUTES ====================
 
-// Initialize Payment (Paystack) - UPDATED for redirect flow
+// Initialize Payment
 app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email, amount, redirectUrl } = req.body;
@@ -1945,7 +1698,6 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
 
     const reference = `ALLEN-${orderId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
-    // Use provided redirectUrl or default to payment-return
     const callbackUrl = redirectUrl || `${FRONTEND_URL}/payment-return`;
 
     const response = await paystack.post('/transaction/initialize', {
@@ -2010,15 +1762,17 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
         
         // Update payment status but keep order as 'placed' initially
         order.paymentStatus = 'success';
-        order.status = 'placed'; // ✅ CORRECT: Start with 'placed'
+        order.status = 'placed'; // ✅ Start with 'placed'
         order.updatedAt = new Date();
         await order.save();
 
         console.log(`🚀 STARTING PORTAL-02 PROCESSING FOR ORDER ${order._id}`);
         
+        let portal02Success = false;
+        let processingResults = [];
+        
         try {
           const portal02Service = require('./services/portal02Service');
-          const processingResults = [];
           
           console.log(`📦 Processing ${order.items.length} items...`);
           
@@ -2051,6 +1805,10 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
               processedAt: new Date()
             });
             
+            if (result.success) {
+              portal02Success = true;
+            }
+            
             // Small delay between items
             if (index < order.items.length - 1) {
               await new Promise(resolve => setTimeout(resolve, 300));
@@ -2060,9 +1818,8 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
           // Update order with processing results
           order.processingResults = processingResults;
           
-          // Determine initial status based on results
-          let newStatus = 'placed'; // Default remains placed
-          
+          // Determine status based on results
+          let newStatus = 'placed';
           if (processingResults.length > 0) {
             const successfulItems = processingResults.filter(r => r.success);
             if (successfulItems.length === processingResults.length) {
@@ -2083,30 +1840,43 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
           
           console.log(`📊 Portal-02 processing completed for order ${order._id}. Status: ${newStatus}`);
           
-          // Schedule auto-progression if needed
-          const statusService = require('./services/statusService');
-          if (newStatus === 'processing') {
-            statusService.scheduleStatusProgression(order._id, 'processing', 'delivered');
-          }
-          
         } catch (portal02Error) {
           console.error(`❌ Portal-02 processing error: ${portal02Error.message}`);
           order.processingError = portal02Error.message;
           order.status = 'failed';
           await order.save();
+          
+          return res.json({
+            success: false,
+            message: 'Payment successful but failed to process with vendor',
+            orderId: order._id,
+            status: 'failed',
+            amount: data.amount / 100,
+            error: portal02Error.message
+          });
         }
+        
+        res.json({
+          success: true,
+          message: portal02Success ? 
+            'Payment successful! Data processing initiated.' : 
+            'Payment successful but vendor processing failed.',
+          orderId: order._id,
+          status: order.status,
+          amount: data.amount / 100,
+          portal02Success: portal02Success,
+          portal02Results: processingResults
+        });
+        
       } else {
-        console.log(`⚠️ Payment already processed for order ${order._id}, skipping Portal-02`);
+        console.log(`⚠️ Payment already processed for order ${order._id}`);
+        res.json({
+          success: true,
+          message: 'Payment already verified',
+          orderId: order._id,
+          status: order.status
+        });
       }
-      
-      res.json({
-        success: true,
-        message: 'Payment verified successfully. Data processing initiated.',
-        orderId: order._id,
-        status: order.status,
-        amount: data.amount / 100,
-        portal02Processing: !!order.processingResults?.length
-      });
       
     } else {
       console.log(`❌ Payment failed for order ${order._id}`);
@@ -2130,7 +1900,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   }
 });
 
-// Payment verification on return with Portal-02 integration
+// Payment verification on return
 app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.body;
@@ -2149,24 +1919,21 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
 
     if (data.status === 'success') {
       order.paymentStatus = 'success';
-      order.status = 'placed'; // ✅ Start with 'placed'
+      order.status = 'placed';
       order.updatedAt = new Date();
       await order.save();
 
       console.log(`✅ Payment successful for order ${order._id}`);
       
-      // Process with Portal-02
       const portal02Service = require('./services/portal02Service');
       const processingResults = [];
       
       try {
         console.log(`🚀 Starting Portal-02 processing for order ${order._id}`);
         
-        // Process each item with order reference
         for (const [index, item] of order.items.entries()) {
           console.log(`📦 Processing item ${index + 1}: ${item.network} ${item.size} to ${item.recipientPhone}`);
           
-          // Create a unique reference for this item
           const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
           
           const result = await portal02Service.purchaseDataBundleWithRetry(
@@ -2189,16 +1956,13 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
           
           console.log(`✅ Item ${index + 1} submitted. Transaction ID: ${result.transactionId}`);
           
-          // Small delay between items
           if (index < order.items.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 300));
           }
         }
         
-        // Update order with processing results
         order.processingResults = processingResults;
         
-        // Determine status based on results
         let newStatus = 'placed';
         if (processingResults.length > 0) {
           const successfulItems = processingResults.filter(r => r.success);
@@ -2217,13 +1981,6 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
         
         console.log(`📊 Order ${order._id} submitted to Portal-02 with ${processingResults.length} items. Status: ${newStatus}`);
         
-        // Schedule auto-progression if needed
-        if (newStatus === 'processing') {
-          const statusService = require('./services/statusService');
-          statusService.scheduleStatusProgression(order._id, 'processing', 'delivered');
-        }
-        
-        // Don't wait for Portal-02 delivery, just confirm submission
         res.json({
           success: true,
           message: 'Payment successful! Your order has been submitted for processing.',
@@ -2238,7 +1995,6 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
       } catch (processingError) {
         console.error('❌ Error submitting to Portal-02:', processingError);
         
-        // Update order to reflect error
         order.status = 'processing_error';
         order.processingError = processingError.message;
         order.updatedAt = new Date();
@@ -2281,27 +2037,23 @@ app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
 
 // ==================== WEBHOOK ROUTES ====================
 
-// Webhook endpoint for Portal-02 status updates
 app.post('/api/webhooks/portal02', async (req, res) => {
   try {
     console.log('📥 Portal-02 webhook received at:', new Date().toISOString());
     console.log('📦 Webhook payload:', JSON.stringify(req.body, null, 2));
     
-    // IMPORTANT: Respond within 5 seconds as per Portal-02 requirements
     res.status(200).json({ 
       success: true, 
       message: 'Webhook received successfully',
       timestamp: new Date().toISOString()
     });
     
-    // Process the webhook asynchronously after responding
     processPortal02Webhook(req.body).catch(error => {
       console.error('❌ Error processing webhook asynchronously:', error);
     });
     
   } catch (error) {
     console.error('❌ Webhook reception error:', error);
-    // Still respond with 200 to prevent retries
     res.status(200).json({ 
       success: false, 
       error: 'Failed to process webhook',
@@ -2322,7 +2074,6 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
       query.status = status;
     }
     
-    // Only show non-archived by default
     if (!showArchived) {
       query.isVisibleToUser = true;
       query.archived = false;
@@ -2454,48 +2205,6 @@ app.patch('/api/admin/orders/:id/status', adminMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/admin/users/:userId/stats', adminMiddleware, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const [
-      totalOrders,
-      totalSpentResult,
-      recentOrders
-    ] = await Promise.all([
-      Order.countDocuments({ userId: new mongoose.Types.ObjectId(userId) }),
-      Order.aggregate([
-        { $match: { 
-          userId: new mongoose.Types.ObjectId(userId),
-          paymentStatus: 'success'
-        }},
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.find({ userId: new mongoose.Types.ObjectId(userId) })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean()
-    ]);
-
-    const totalSpent = totalSpentResult.length > 0 ? totalSpentResult[0].total : 0;
-
-    res.json({
-      userId,
-      totalOrders,
-      totalSpent,
-      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
-      recentOrders: recentOrders
-    });
-  } catch (error) {
-    console.error('User stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch user stats' });
-  }
-});
-
 // ==================== ERROR HANDLERS ====================
 
 app.use((req, res) => {
@@ -2527,7 +2236,6 @@ app.listen(PORT, () => {
   console.log(`📦 Portal-02 Base URL: https://www.portal-02.com/api/v1`);
   console.log(`🔔 Webhook URL: ${process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/portal02`);
   
-  // Initialize data plans after server starts
   setTimeout(() => {
     if (mongoose.connection.readyState === 1) {
       initializeDataPlans();
