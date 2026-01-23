@@ -5,7 +5,7 @@ class Portal02Service {
     // ========== CRITICAL CONFIGURATION ==========
     this.apiKey = process.env.PORTAL02_API_KEY || 'dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH';
     this.baseURL = process.env.PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
-    this.backendUrl = process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5000';
+   this.backendUrl = 'https://allen-data-hub-backend.onrender.com';
     
     console.log('\n' + '='.repeat(60));
     console.log('🔧 PORTAL-02 SERVICE INITIALIZATION');

@@ -4,22 +4,17 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+const portal02 = require('./services/portal02Service'); // Ensure this path is correct!
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-// Middleware
-const corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'https://allendatahub.com',
-    'https://allen-data-hub.vercel.app'
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
+// ✅ FIXED: Removed localhost to prevent the vendor from getting confused
+app.use(cors({
+  origin: ['https://allendatahub.com', 'https://allen-data-hub.vercel.app'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // Request logging middleware
@@ -213,8 +208,9 @@ const userSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// 1. UPDATED ORDER SCHEMA
 const orderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   items: [{
     network: { type: String, required: true },
     size: { type: String, required: true },
@@ -228,9 +224,10 @@ const orderSchema = new mongoose.Schema({
   paymentMethod: { type: String, enum: ['paystack', 'cash', 'mobile_money'], default: 'paystack' },
   paymentStatus: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
   paymentReference: { type: String },
+  vendorOrderId: { type: String }, 
   status: { 
     type: String, 
-    enum: ['placed', 'processing', 'processing_error', 'partially_delivered', 'delivered', 'cancelled', 'failed'], 
+    enum: ['placed', 'processing', 'delivered', 'failed', 'cancelled'], 
     default: 'placed' 
   },
   statusReason: { type: String },
@@ -266,6 +263,7 @@ const orderSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// 2. DATA PLAN SCHEMA
 const dataPlanSchema = new mongoose.Schema({
   network: { type: String, required: true },
   size: { type: String, required: true },
@@ -276,6 +274,7 @@ const dataPlanSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// 3. CONTACT SCHEMA
 const contactSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: { type: String },
@@ -287,6 +286,7 @@ const contactSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+// 4. WEBHOOK SCHEMAS
 const unmatchedWebhookSchema = new mongoose.Schema({
   orderId: String,
   reference: String,
@@ -305,25 +305,18 @@ const webhookErrorSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// MongoDB Models
+// 5. REGISTER MODELS (Only call mongoose.model once per name)
 const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const DataPlan = mongoose.model('DataPlan', dataPlanSchema);
 const Contact = mongoose.model('Contact', contactSchema);
-
-let UnmatchedWebhook, WebhookError;
-try {
-  UnmatchedWebhook = mongoose.model('UnmatchedWebhook');
-  WebhookError = mongoose.model('WebhookError');
-} catch {
-  UnmatchedWebhook = mongoose.model('UnmatchedWebhook', unmatchedWebhookSchema);
-  WebhookError = mongoose.model('WebhookError', webhookErrorSchema);
-}
+const UnmatchedWebhook = mongoose.model('UnmatchedWebhook', unmatchedWebhookSchema);
+const WebhookError = mongoose.model('WebhookError', webhookErrorSchema);
 
 // Paystack Configuration
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://allen-data-hub.vercel.app';
 
 // Initialize Paystack API
 const paystack = axios.create({
@@ -2205,6 +2198,32 @@ app.patch('/api/admin/orders/:id/status', adminMiddleware, async (req, res) => {
   }
 });
 
+// Place this exactly above the ERROR HANDLERS section
+app.post('/api/webhooks/portal02', async (req, res) => {
+  const processed = portal02.processWebhookPayload(req.body);
+  
+  if (!processed.success) {
+    console.log('⚠️ Webhook ignored:', processed.error);
+    return res.status(200).send('Event ignored'); 
+  }
+
+  try {
+    // This updates the order to 'delivered' (The Tick) or 'failed'
+    // It also records the history so you can see it in your database
+    await Order.findOneAndUpdate(
+      { $or: [{ vendorOrderId: processed.orderId }, { _id: processed.reference }] },
+      { 
+        status: processed.status, // This will be 'delivered' or 'failed'
+        $push: { webhookHistory: processed } 
+      }
+    );
+    console.log(`✅ SUCCESS: Order ${processed.orderId} status updated to ${processed.status}`);
+  } catch (error) {
+    console.error('❌ Database update failed during webhook:', error);
+  }
+  
+  res.status(200).send('OK');
+});
 // ==================== ERROR HANDLERS ====================
 
 app.use((req, res) => {
@@ -2234,7 +2253,7 @@ app.listen(PORT, () => {
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
   console.log(`🔄 Portal-02 API: ${process.env.PORTAL02_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
   console.log(`📦 Portal-02 Base URL: https://www.portal-02.com/api/v1`);
-  console.log(`🔔 Webhook URL: ${process.env.BACKEND_URL || 'http://localhost:5000'}/api/webhooks/portal02`);
+  console.log(`🔔 Webhook URL: https://allen-data-hub-backend.onrender.com/api/webhooks/portal02`);
   
   setTimeout(() => {
     if (mongoose.connection.readyState === 1) {
