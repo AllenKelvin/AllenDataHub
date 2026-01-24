@@ -135,22 +135,22 @@ connectDB();
 
 // Setup cron jobs for transaction cleanup
 const setupCronJobs = () => {
-  // 1. Import the class
   const TransactionCleaner = require('./services/transactionCleaner');
-  
-  // 2. Create an instance by passing the Order model defined in server.js
   const cleaner = new TransactionCleaner(Order);
   
+  // 43200000 ms = 12 hours
+  const TWELVE_HOURS = 12 * 60 * 60 * 1000; 
+
   setInterval(async () => {
     try {
-      console.log('⏰ Running scheduled transaction cleanup...');
+      console.log('⏰ [Scheduled Task] Running 12-hour transaction cleanup...');
       await cleaner.cleanOldTransactions();
     } catch (error) {
       console.error('❌ Scheduled cleanup failed:', error);
     }
-  }, 3600000); // Runs hourly
+  }, TWELVE_HOURS); 
   
-  console.log('✅ Scheduled transaction cleanup initialized (runs hourly)');
+  console.log('✅ Scheduled transaction cleanup initialized (runs every 12 hours)');
 };
 
 mongoose.connection.once('open', () => {
