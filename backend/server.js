@@ -8,6 +8,7 @@ const portal02 = require('./services/portal02Service'); // Ensure this path is c
 require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 5000; 
 
 // ✅ FIXED: Removed localhost to prevent the vendor from getting confused
 app.use(cors({
