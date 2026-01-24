@@ -135,16 +135,20 @@ connectDB();
 
 // Setup cron jobs for transaction cleanup
 const setupCronJobs = () => {
-  const transactionCleaner = require('./services/transactionCleaner');
+  // 1. Import the class
+  const TransactionCleaner = require('./services/transactionCleaner');
+  
+  // 2. Create an instance by passing the Order model defined in server.js
+  const cleaner = new TransactionCleaner(Order);
   
   setInterval(async () => {
     try {
       console.log('⏰ Running scheduled transaction cleanup...');
-      await transactionCleaner.cleanOldTransactions();
+      await cleaner.cleanOldTransactions();
     } catch (error) {
       console.error('❌ Scheduled cleanup failed:', error);
     }
-  }, 3600000);
+  }, 3600000); // Runs hourly
   
   console.log('✅ Scheduled transaction cleanup initialized (runs hourly)');
 };
