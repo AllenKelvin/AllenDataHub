@@ -24,8 +24,8 @@ body {
 /* 3. Container Padding for Mobile */
 .container, .app-container, #root > div {
   /* Use 5% padding on each side to ensure 90% content width */
-  padding-left: 5% !important; 
-  padding-right: 5% !important;
+  padding-left: 2% !important; 
+  padding-right: 2% !important;
   padding-top: 16px !important;
   padding-bottom: 16px !important;
   max-width: 1400px !important; /* Keeps it from stretching too far on PC */
