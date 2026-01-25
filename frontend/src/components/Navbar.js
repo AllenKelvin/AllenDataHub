@@ -1,178 +1,97 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext'; // ADD THIS
+import { useAuth } from '../context/AuthContext';
 import './Navbar.css';
 
 const Navbar = () => {
   const { cartItems } = useCart();
   const { darkMode, toggleTheme } = useTheme();
-  const { user, logout, trackActivity } = useAuth(); // UPDATE THIS
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const navigate = useNavigate();
-
-  // Track activity when user interacts with navbar
-  const handleNavbarActivity = () => {
-    if (user) {
-      trackActivity?.();
-    }
-  };
-
-  useEffect(() => {
-    // Add activity tracking to navbar interactions
-    const navbarElements = document.querySelectorAll('.navbar a, .navbar button');
-    navbarElements.forEach(element => {
-      element.addEventListener('click', handleNavbarActivity);
-      element.addEventListener('mouseenter', handleNavbarActivity);
-    });
-
-    return () => {
-      navbarElements.forEach(element => {
-        element.removeEventListener('click', handleNavbarActivity);
-        element.removeEventListener('mouseenter', handleNavbarActivity);
-      });
-    };
-  }, [user, trackActivity]);
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-    // No need to reload - AuthContext will handle state update
-  };
+  const dropdownRef = useRef(null);
 
   const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setDropdownOpen(false);
+    navigate('/login');
+  };
+
+  // Helper to get initials (e.g., "Allen Kelvin" -> "AK")
+  const getInitials = (name) => {
+    if (!name) return '👤';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  };
+
   return (
-    <nav className={`navbar ${darkMode ? 'dark' : ''}`} onClick={handleNavbarActivity}>
+    <nav className={`navbar ${darkMode ? 'dark' : ''}`}>
       <div className="navbar-container">
-        {/* Left Side - Brand */}
+        {/* Brand/Logo */}
         <div className="navbar-left">
           <Link to="/" className="navbar-brand">
-            <span className="brand-icon">📊</span>
-            <span className="brand-name">AllenDataHub</span>
+            <span className="brand-icon">📶</span>
+            <span className="brand-text">AllenDataHub</span>
           </Link>
         </div>
 
-        {/* Center - User Greeting */}
-        <div className="navbar-center">
-          {user && (
-            <div className="user-greeting">
-              Welcome, <span className="username">{user.username || user.name || 'User'}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Right Side - Navigation Links */}
+        {/* Right Side Icons */}
         <div className="navbar-right">
-          {/* Theme Toggle */}
-          <button className="theme-toggle-btn" onClick={toggleTheme}>
-            {darkMode ? '☀️ Light' : '🌙 Dark'}
+          {/* Theme Toggle (Optional - kept for convenience) */}
+          <button onClick={toggleTheme} className="header-icon-btn">
+            {darkMode ? '☀️' : '🌙'}
           </button>
 
+          {/* Direct Cart Access */}
+          <Link to="/cart" className="header-icon-btn">
+            <span className="cart-wrapper">
+              🛒
+              {totalItems > 0 && <span className="cart-count-badge">{totalItems}</span>}
+            </span>
+          </Link>
+
+          {/* User Initials / Profile Circle */}
           {user ? (
-            <>
-              {/* Dashboard Link */}
-              <Link to="/client-dashboard" className="nav-link">
-                <span className="nav-icon">📊</span>
-                Dashboard
-              </Link>
-              
-              {/* Cart Link */}
-              <Link to="/cart" className="nav-link cart-link">
-                <span className="nav-icon">🛒</span>
-                Cart
-                {totalItems > 0 && (
-                  <span className="cart-badge">{totalItems}</span>
-                )}
-              </Link>
-
-              {/* Profile Dropdown */}
-              <div className="profile-dropdown">
-                <Link to="/profile" className="nav-link profile-link">
-                  <span className="nav-icon">👤</span>
-                  Profile
-                </Link>
-                <div className="dropdown-menu">
-                  <Link to="/profile" className="dropdown-item">
-                    <span className="dropdown-icon">👤</span>
-                    My Profile
-                  </Link>
-                  <button className="dropdown-item" onClick={handleLogout}>
-                    <span className="dropdown-icon">🚪</span>
-                    Logout
-                  </button>
-                </div>
+            <div className="profile-dropdown-container" ref={dropdownRef}>
+              <div 
+                className="user-avatar-circle" 
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+              >
+                {getInitials(user.name)}
               </div>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="nav-link">
-                <span className="nav-icon">🔐</span>
-                Login
-              </Link>
-              <Link to="/signup" className="nav-link signup-btn">
-                <span className="nav-icon">📝</span>
-                Sign Up
-              </Link>
-            </>
-          )}
 
-          {/* Mobile Menu Toggle */}
-          <button 
-            className="menu-toggle"
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            {menuOpen ? '✕' : '☰'}
-          </button>
+              {dropdownOpen && (
+                <div className="profile-menu-dropdown">
+                  <div className="dropdown-header">
+                    <p className="user-name">{user.name}</p>
+                    <p className="user-email">{user.email}</p>
+                  </div>
+                  <hr />
+                  <Link to="/dashboard" onClick={() => setDropdownOpen(false)}>📊 Dashboard</Link>
+                  <Link to="/profile" onClick={() => setDropdownOpen(false)}>👤 Profile Settings</Link>
+                  <button onClick={handleLogout} className="logout-dropdown-btn">🚪 Logout</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link to="/login" className="login-btn-header">Login</Link>
+          )}
         </div>
       </div>
-
-      {/* Mobile Menu */}
-      {menuOpen && (
-        <div className="mobile-menu" onClick={handleNavbarActivity}>
-          {user ? (
-            <>
-              <Link to="/client-dashboard" className="mobile-link" onClick={() => setMenuOpen(false)}>
-                <span className="mobile-icon">📊</span>
-                Dashboard
-              </Link>
-              <Link to="/cart" className="mobile-link" onClick={() => setMenuOpen(false)}>
-                <span className="mobile-icon">🛒</span>
-                Cart ({totalItems})
-              </Link>
-              <Link to="/profile" className="mobile-link" onClick={() => setMenuOpen(false)}>
-                <span className="mobile-icon">👤</span>
-                Profile
-              </Link>
-              <button className="mobile-link logout-btn" onClick={() => {
-                handleLogout();
-                setMenuOpen(false);
-              }}>
-                <span className="mobile-icon">🚪</span>
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="mobile-link" onClick={() => setMenuOpen(false)}>
-                <span className="mobile-icon">🔐</span>
-                Login
-              </Link>
-              <Link to="/signup" className="mobile-link" onClick={() => setMenuOpen(false)}>
-                <span className="mobile-icon">📝</span>
-                Sign Up
-              </Link>
-            </>
-          )}
-          
-          <div className="mobile-theme-toggle">
-            <button onClick={toggleTheme} className="mobile-theme-btn">
-              {darkMode ? '☀️ Switch to Light Mode' : '🌙 Switch to Dark Mode'}
-            </button>
-          </div>
-        </div>
-      )}
     </nav>
   );
 };

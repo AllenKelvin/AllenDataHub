@@ -23,8 +23,13 @@ body {
 
 /* 3. Container Padding for Mobile */
 .container, .app-container, #root > div {
-  padding: 16px !important; /* Add safe spacing */
-  max-width: 100% !important;
+  /* Use 5% padding on each side to ensure 90% content width */
+  padding-left: 5% !important; 
+  padding-right: 5% !important;
+  padding-top: 16px !important;
+  padding-bottom: 16px !important;
+  max-width: 1400px !important; /* Keeps it from stretching too far on PC */
+  margin: 0 auto !important;     /* Centers everything */
 }
 
 /* 4. Fix Crowded Text */

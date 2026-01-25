@@ -54,9 +54,9 @@ html, body {
   .main-content,
   .dashboard-content,
   .app-content {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: hidden;
+    width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
   
   /* SPECIFIC FIX: Allow transaction slider to scroll */
