@@ -81,7 +81,7 @@ const Navbar = () => {
                     <p className="user-email">{user.email}</p>
                   </div>
                   <hr />
-                  <Link to="/dashboard" onClick={() => setDropdownOpen(false)}>📊 Dashboard</Link>
+                  <Link to="/client-dashboard" onClick={() => setDropdownOpen(false)}>📊 Dashboard</Link>
                   <Link to="/profile" onClick={() => setDropdownOpen(false)}>👤 Profile Settings</Link>
                   <button onClick={handleLogout} className="logout-dropdown-btn">🚪 Logout</button>
                 </div>
