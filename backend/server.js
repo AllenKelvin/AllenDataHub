@@ -1734,7 +1734,7 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   }
 });
 
-// ========== FIXED: Verify Payment with Portal-02 Integration ==========
+// Verify Payment
 app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
@@ -1754,13 +1754,11 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
     console.log(`📦 Found order: ${order._id}, Current status: ${order.status}, Payment status: ${order.paymentStatus}`);
 
     if (data.status === 'success') {
-      // Check if we've already processed this
       if (order.paymentStatus !== 'success') {
         console.log(`✅ First time payment success for order ${order._id}`);
         
-        // Update payment status but keep order as 'placed' initially
         order.paymentStatus = 'success';
-        order.status = 'placed'; // ✅ Start with 'placed'
+        order.status = 'placed';
         order.updatedAt = new Date();
         await order.save();
 
@@ -1771,25 +1769,14 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
         
         try {
           const portal02Service = require('./services/portal02Service');
-          
-          console.log(`📦 Processing ${order.items.length} items...`);
-          
-          // Process each item
           for (const [index, item] of order.items.entries()) {
-            console.log(`   Item ${index + 1}: ${item.network} ${item.size} → ${item.recipientPhone}`);
-            
-            // Create unique reference
             const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
-            console.log(`   Creating reference: ${itemReference}`);
-            
             const result = await portal02Service.purchaseDataBundleWithRetry(
               item.recipientPhone,
               item.size,
               item.network,
               itemReference
             );
-            
-            console.log(`   Portal-02 result: ${result.success ? '✅' : '❌'} ${result.message || result.error}`);
             
             processingResults.push({
               itemIndex: index,
@@ -1803,62 +1790,31 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
               processedAt: new Date()
             });
             
-            if (result.success) {
-              portal02Success = true;
-            }
-            
-            // Small delay between items
-            if (index < order.items.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 300));
-            }
+            if (result.success) portal02Success = true;
+            if (index < order.items.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
           }
           
-          // Update order with processing results
           order.processingResults = processingResults;
-          
-          // Determine status based on results
           let newStatus = 'placed';
           if (processingResults.length > 0) {
             const successfulItems = processingResults.filter(r => r.success);
-            if (successfulItems.length === processingResults.length) {
-              // All items submitted successfully to vendor
-              newStatus = 'processing';
-            } else if (successfulItems.length > 0) {
-              // Some succeeded, some failed
-              newStatus = 'processing';
-            } else {
-              // All failed
-              newStatus = 'failed';
-            }
+            newStatus = (successfulItems.length > 0) ? 'processing' : 'failed';
           }
           
           order.status = newStatus;
           order.updatedAt = new Date();
           await order.save();
           
-          console.log(`📊 Portal-02 processing completed for order ${order._id}. Status: ${newStatus}`);
-          
         } catch (portal02Error) {
           console.error(`❌ Portal-02 processing error: ${portal02Error.message}`);
           order.processingError = portal02Error.message;
           order.status = 'failed';
           await order.save();
-          
-          return res.json({
-            success: false,
-            message: 'Payment successful but failed to process with vendor',
-            orderId: order._id,
-            status: 'failed',
-            amount: data.amount / 100,
-            error: portal02Error.message
-          });
         }
         
         res.json({
           success: true,
-          message: portal02Success ? 
-            'Payment successful! Data processing initiated.' : 
-            'Payment successful but vendor processing failed.',
+          message: portal02Success ? 'Payment successful! Data processing initiated.' : 'Payment successful but vendor processing failed.',
           orderId: order._id,
           status: order.status,
           amount: data.amount / 100,
@@ -1867,343 +1823,77 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
         });
         
       } else {
-        console.log(`⚠️ Payment already processed for order ${order._id}`);
-        res.json({
-          success: true,
-          message: 'Payment already verified',
-          orderId: order._id,
-          status: order.status
-        });
+        res.json({ success: true, message: 'Payment already verified', orderId: order._id, status: order.status });
       }
-      
     } else {
-      console.log(`❌ Payment failed for order ${order._id}`);
       order.paymentStatus = 'failed';
       order.status = 'failed';
-      order.updatedAt = new Date();
       await order.save();
-
-      res.json({
-        success: false,
-        message: 'Payment verification failed',
-        orderId: order._id
-      });
+      res.json({ success: false, message: 'Payment verification failed', orderId: order._id });
     }
   } catch (error) {
     console.error('❌ Payment verification error:', error.message);
-    res.status(500).json({ 
-      error: 'Failed to verify payment',
-      details: error.response?.data?.message || error.message 
-    });
-  }
-});
-
-// Payment verification on return
-app.post('/api/payment/verify-return', authMiddleware, async (req, res) => {
-  try {
-    const { reference } = req.body;
-
-    if (!reference) {
-      return res.status(400).json({ error: 'Payment reference is required' });
-    }
-
-    const response = await paystack.get(`/transaction/verify/${reference}`);
-    const { data } = response.data;
-
-    const order = await Order.findOne({ paymentReference: reference });
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    if (data.status === 'success') {
-      order.paymentStatus = 'success';
-      order.status = 'placed';
-      order.updatedAt = new Date();
-      await order.save();
-
-      console.log(`✅ Payment successful for order ${order._id}`);
-      
-      const portal02Service = require('./services/portal02Service');
-      const processingResults = [];
-      
-      try {
-        console.log(`🚀 Starting Portal-02 processing for order ${order._id}`);
-        
-        for (const [index, item] of order.items.entries()) {
-          console.log(`📦 Processing item ${index + 1}: ${item.network} ${item.size} to ${item.recipientPhone}`);
-          
-          const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
-          
-          const result = await portal02Service.purchaseDataBundleWithRetry(
-            item.recipientPhone,
-            item.size,
-            item.network,
-            itemReference
-          );
-          
-          processingResults.push({
-            itemIndex: index,
-            success: result.success,
-            transactionId: result.transactionId || result.reference,
-            reference: result.reference,
-            message: result.message,
-            error: result.error,
-            status: result.status || 'pending',
-            webhookReceived: false
-          });
-          
-          console.log(`✅ Item ${index + 1} submitted. Transaction ID: ${result.transactionId}`);
-          
-          if (index < order.items.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
-        }
-        
-        order.processingResults = processingResults;
-        
-        let newStatus = 'placed';
-        if (processingResults.length > 0) {
-          const successfulItems = processingResults.filter(r => r.success);
-          if (successfulItems.length === processingResults.length) {
-            newStatus = 'processing';
-          } else if (successfulItems.length > 0) {
-            newStatus = 'processing';
-          } else {
-            newStatus = 'failed';
-          }
-        }
-        
-        order.status = newStatus;
-        order.updatedAt = new Date();
-        await order.save();
-        
-        console.log(`📊 Order ${order._id} submitted to Portal-02 with ${processingResults.length} items. Status: ${newStatus}`);
-        
-        res.json({
-          success: true,
-          message: 'Payment successful! Your order has been submitted for processing.',
-          orderId: order._id,
-          amount: data.amount / 100,
-          status: newStatus,
-          deliveryStatus: 'submitted',
-          portal02Items: processingResults.length,
-          redirectTo: `/clientdashboard?payment=success&order=${order._id}`
-        });
-        
-      } catch (processingError) {
-        console.error('❌ Error submitting to Portal-02:', processingError);
-        
-        order.status = 'processing_error';
-        order.processingError = processingError.message;
-        order.updatedAt = new Date();
-        await order.save();
-
-        res.json({
-          success: true,
-          message: 'Payment successful, but there was an error submitting your order. Please contact support.',
-          orderId: order._id,
-          amount: data.amount / 100,
-          status: 'warning',
-          deliveryStatus: 'submission_failed',
-          redirectTo: `/clientdashboard?payment=success&order=${order._id}&warning=true`
-        });
-      }
-    } else {
-      order.paymentStatus = 'failed';
-      order.status = 'failed';
-      order.updatedAt = new Date();
-      await order.save();
-
-      res.json({
-        success: false,
-        message: 'Payment verification failed',
-        orderId: order._id,
-        status: 'failed',
-        redirectTo: '/clientdashboard?payment=failed'
-      });
-    }
-  } catch (error) {
-    console.error('Payment verification error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to verify payment',
-      status: 'error',
-      redirectTo: '/clientdashboard?payment=error'
-    });
+    res.status(500).json({ error: 'Failed to verify payment', details: error.message });
   }
 });
 
 // ==================== WEBHOOK ROUTES ====================
 
-app.post('/api/webhooks/portal02', async (req, res) => {
-  try {
-    console.log('📥 Portal-02 webhook received at:', new Date().toISOString());
-    console.log('📦 Webhook payload:', JSON.stringify(req.body, null, 2));
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'Webhook received successfully',
-      timestamp: new Date().toISOString()
-    });
-    
-    processPortal02Webhook(req.body).catch(error => {
-      console.error('❌ Error processing webhook asynchronously:', error);
-    });
-    
-  } catch (error) {
-    console.error('❌ Webhook reception error:', error);
-    res.status(200).json({ 
-      success: false, 
-      error: 'Failed to process webhook',
-      timestamp: new Date().toISOString()
-    });
+// ✅ FIXED PAYSTACK WEBHOOK (Replaces basic placeholder from Line 629)
+app.post('/api/payment/webhook', async (req, res) => {
+  const crypto = require('crypto');
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  
+  // 1. Verify the signature
+  const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(req.body)).digest('hex');
+  
+  if (hash !== req.headers['x-paystack-signature']) {
+    console.error('❌ Invalid Paystack signature');
+    return res.sendStatus(400);
   }
-});
 
-// ==================== ADMIN ROUTES ====================
+  const event = req.body;
+  console.log(`💰 Paystack Webhook Received: ${event.event}`);
 
-app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
-  try {
-    const { page = 1, limit = 20, status, showArchived = false } = req.query;
-    const skip = (page - 1) * limit;
+  if (event.event === 'charge.success') {
+    const { reference, metadata } = event.data;
+    const orderId = metadata?.orderId;
 
-    let query = {};
-    if (status && status !== 'all') {
-      query.status = status;
-    }
-    
-    if (!showArchived) {
-      query.isVisibleToUser = true;
-      query.archived = false;
-    }
+    try {
+      const order = await Order.findById(orderId);
+      if (order && order.paymentStatus !== 'success') {
+        // 2. Update Order Status
+        order.paymentStatus = 'success';
+        order.paymentReference = reference;
+        order.status = 'processing';
+        await order.save();
 
-    const orders = await Order.find(query)
-      .populate('userId', 'username email phone')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+        console.log(`✅ Order ${orderId} marked as PAID via Webhook. Processing ${order.items.length} items...`);
 
-    const totalOrders = await Order.countDocuments(query);
-
-    res.json({
-      orders,
-      pagination: {
-        total: totalOrders,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalOrders / limit)
+        // 3. Loop through items to fix multiple-order failure
+        for (const item of order.items) {
+          try {
+            const vendorResult = await portal02.purchaseData({
+              network: item.network,
+              size: item.size,
+              recipientPhone: item.recipientPhone,
+              orderId: order._id.toString()
+            });
+            console.log(`🚀 Vendor request sent for ${item.recipientPhone}:`, vendorResult.message);
+          } catch (vendorError) {
+            console.error(`❌ Vendor failed for ${item.recipientPhone}:`, vendorError.message);
+          }
+        }
       }
-    });
-  } catch (error) {
-    console.error('Admin orders fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
-
-app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [
-      totalOrders,
-      todayOrders,
-      totalRevenueResult,
-      todayRevenueResult,
-      userCount,
-      networkStats
-    ] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ createdAt: { $gte: today } }),
-      Order.aggregate([
-        { $match: { paymentStatus: 'success' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      Order.aggregate([
-        { 
-          $match: { 
-            paymentStatus: 'success',
-            createdAt: { $gte: today }
-          } 
-        },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
-      ]),
-      User.countDocuments(),
-      Order.aggregate([
-        { $unwind: '$items' },
-        { $group: { 
-          _id: '$items.network', 
-          count: { $sum: 1 },
-          revenue: { $sum: '$items.price' }
-        } }
-      ])
-    ]);
-
-    const totalRevenue = totalRevenueResult.length > 0 ? 
-      totalRevenueResult[0].total : 0;
-    const todayRevenue = todayRevenueResult.length > 0 ? 
-      todayRevenueResult[0].total : 0;
-
-    const formattedNetworkStats = networkStats.reduce((acc, stat) => {
-      acc[stat._id] = {
-        orders: stat.count,
-        revenue: stat.revenue
-      };
-      return acc;
-    }, {});
-
-    res.json({
-      today: {
-        totalOrders: todayOrders,
-        totalRevenue: todayRevenue
-      },
-      allTime: {
-        totalOrders,
-        totalRevenue,
-        totalUsers: userCount
-      },
-      networkStats: formattedNetworkStats
-    });
-  } catch (error) {
-    console.error('Admin stats error:', error);
-    res.status(500).json({ error: 'Failed to fetch admin stats' });
-  }
-});
-
-app.patch('/api/admin/orders/:id/status', adminMiddleware, async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
+    } catch (error) {
+      console.error('❌ Database update failed during webhook:', error);
     }
-
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { 
-        status,
-        updatedAt: new Date()
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    res.json({
-      success: true,
-      message: 'Order status updated successfully',
-      order: order
-    });
-  } catch (error) {
-    console.error('Order status update error:', error);
-    res.status(500).json({ error: 'Failed to update order status' });
   }
+  
+  res.status(200).send('OK');
 });
 
-// Place this exactly above the ERROR HANDLERS section
+// ✅ PORTAL-02 WEBHOOK (Updates delivered status)
 app.post('/api/webhooks/portal02', async (req, res) => {
   const processed = portal02.processWebhookPayload(req.body);
   
@@ -2213,12 +1903,10 @@ app.post('/api/webhooks/portal02', async (req, res) => {
   }
 
   try {
-    // This updates the order to 'delivered' (The Tick) or 'failed'
-    // It also records the history so you can see it in your database
     await Order.findOneAndUpdate(
       { $or: [{ vendorOrderId: processed.orderId }, { _id: processed.reference }] },
       { 
-        status: processed.status, // This will be 'delivered' or 'failed'
+        status: processed.status, 
         $push: { webhookHistory: processed } 
       }
     );
@@ -2229,25 +1917,40 @@ app.post('/api/webhooks/portal02', async (req, res) => {
   
   res.status(200).send('OK');
 });
+
+// ==================== ADMIN ROUTES ====================
+
+app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, showArchived = false } = req.query;
+    const skip = (page - 1) * limit;
+
+    let query = {};
+    if (status && status !== 'all') query.status = status;
+    if (!showArchived) { query.isVisibleToUser = true; query.archived = false; }
+
+    const orders = await Order.find(query).populate('userId', 'username email phone').sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean();
+    const totalOrders = await Order.countDocuments(query);
+
+    res.json({ orders, pagination: { total: totalOrders, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(totalOrders / limit) } });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
 // ==================== ERROR HANDLERS ====================
 
 app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Endpoint not found',
-    path: req.path,
-    method: req.method
-  });
+  res.status(404).json({ error: 'Endpoint not found', path: req.path, method: req.method });
 });
 
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
+  res.status(500).json({ error: 'Internal server error', message: err.message });
 });
 
-// Start Server
+// ==================== START SERVER ====================
+
 app.listen(PORT, () => {
   console.log(`\n🚀 AllenDataHub Backend Server Started!`);
   console.log(`📍 Port: ${PORT}`);
