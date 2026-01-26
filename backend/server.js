@@ -1871,19 +1871,20 @@ app.post('/api/payment/webhook', async (req, res) => {
         console.log(`✅ Order ${orderId} marked as PAID via Webhook. Processing ${order.items.length} items...`);
 
         // 3. Loop through items to fix multiple-order failure
-        for (const item of order.items) {
-          try {
-            const vendorResult = await portal02.purchaseData({
-              network: item.network,
-              size: item.size,
-              recipientPhone: item.recipientPhone,
-              orderId: order._id.toString()
-            });
-            console.log(`🚀 Vendor request sent for ${item.recipientPhone}:`, vendorResult.message);
-          } catch (vendorError) {
-            console.error(`❌ Vendor failed for ${item.recipientPhone}:`, vendorError.message);
-          }
-        }
+       // ✅ Corrected code for server.js
+for (const item of order.items) {
+  try {
+    // Calling the function that actually exists in your service file
+    await portal02.purchaseDataBundleWithRetry(
+      item.recipientPhone,    // 1st Arg: phoneNumber
+      item.size,              // 2nd Arg: bundleSize
+      item.network,           // 3rd Arg: network
+      order._id.toString()    // 4th Arg: orderReference
+    );
+  } catch (err) { 
+    console.error(`❌ Vendor failed for ${item.recipientPhone}:`, err.message); 
+  }
+}
       }
     } catch (error) {
       console.error('❌ Database update failed during webhook:', error);
