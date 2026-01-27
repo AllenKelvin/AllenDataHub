@@ -4,7 +4,7 @@ require('dotenv').config();
 
 class FosterConsoleService {
   constructor() {
-    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchershubgh.com/api/v';
+    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchershubgh.com/api';
     this.apiKey = process.env.FOSTER_CONSOLE_API_KEY;
     this.backendUrl = process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com';
     
@@ -170,12 +170,12 @@ class FosterConsoleService {
 
 // Use Hardcoded Full URLs to eliminate 404 Route errors 
 async purchaseIsharePackage(payload) {
-    const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-ishare-package', payload);
+    const response = await this.api.post('https://fgamall.researchershubgh.com/api/buy-ishare-package', payload);
     return response.data;
 }
 
 async purchaseOtherPackage(payload) {
-    const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-other-package', payload);
+    const response = await this.api.post('https://fgamall.researchershubgh.com/api/buy-other-package', payload);
     return response.data;
 }
 
