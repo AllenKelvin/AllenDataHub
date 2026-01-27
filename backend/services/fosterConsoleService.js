@@ -4,7 +4,7 @@ require('dotenv').config();
 
 class FosterConsoleService {
   constructor() {
-    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchshubgh.com/api/v1';
+    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchshubgh.com/api/v';
     this.apiKey = process.env.FOSTER_CONSOLE_API_KEY;
     this.backendUrl = process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com';
     
