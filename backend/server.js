@@ -1756,7 +1756,7 @@ app.post('/api/payment/webhook', async (req, res) => {
             console.log(`🔄 Vendor Response for ${item.recipientPhone}:`, result.success ? '✅ SUCCESS' : '❌ FAILED');
           }
 
-          order.status = 'completed';
+         order.status = 'delivered';
           await order.save();
           console.log(`🏁 Order ${orderId} fully processed.`);
         }
