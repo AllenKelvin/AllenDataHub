@@ -4,7 +4,7 @@ require('dotenv').config();
 
 class FosterConsoleService {
   constructor() {
-    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchershubgh.com/api/v';
+    this.baseURL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchershubgh.com/api';
     this.apiKey = process.env.FOSTER_CONSOLE_API_KEY;
     this.backendUrl = process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com';
     
@@ -211,7 +211,7 @@ class FosterConsoleService {
       };
       
       console.log('📤 Purchasing iShare bundle:', payload);
-      const response = await this.api.post('buy-ishare-package', payload);
+      const response = await this.api.post('/buy-ishare-package', payload);
       
       return response.data;
       
@@ -235,7 +235,7 @@ class FosterConsoleService {
       };
       
       console.log('📤 Purchasing other bundle:', payload);
-      const response = await this.api.post('buy-other-package', payload);
+      const response = await this.api.post('/buy-other-package', payload);
       
       return response.data;
       
