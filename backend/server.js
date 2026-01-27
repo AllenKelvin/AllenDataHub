@@ -4,7 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const portal02 = require('./services/portal02Service'); // Ensure this path is correct!
+const fosterConsoleService = require('./services/fosterConsoleService'); // Changed from portal02Service
 require('dotenv').config();
 
 const app = express();
@@ -167,9 +167,9 @@ const toDouble = (num) => {
 // Helper: Validate volumes against vendor availability
 function validateOrderItems(items) {
   const availableVolumes = {
-    'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
-    'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 100],
-    'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20]
+    'MTN': [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+    'Telecel': [2, 3,5, 10, 15, 20, 25, 30, 40, 50, 100],
+    'AirtelTigo': [15, 20, 25, 30, 40, 50, 60, 100]
   };
 
   for (const item of items) {
@@ -323,11 +323,26 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://allen-data-hub.vercel.app';
 
+// Foster Console Configuration
+const FOSTER_CONSOLE_API_KEY = process.env.FOSTER_CONSOLE_API_KEY;
+const FOSTER_CONSOLE_BASE_URL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchshubgh.com/api/v1';
+
 // Initialize Paystack API
 const paystack = axios.create({
   baseURL: 'https://api.paystack.co',
   headers: {
     'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+    'Content-Type': 'application/json'
+  },
+  timeout: 30000
+});
+
+// Initialize Foster Console API
+const fosterConsole = axios.create({
+  baseURL: FOSTER_CONSOLE_BASE_URL,
+  headers: {
+    'x-api-key': FOSTER_CONSOLE_API_KEY,
+    'Accept': 'application/json',
     'Content-Type': 'application/json'
   },
   timeout: 30000
@@ -415,13 +430,13 @@ const adminMiddleware = async (req, res, next) => {
 
 // ==================== ASYNC WEBHOOK PROCESSING ====================
 
-async function processPortal02Webhook(payload) {
+async function processFosterConsoleWebhook(payload) {
   try {
-    console.log('🔔 Webhook processing started:', payload.event || 'unknown');
+    console.log('🔔 Foster Console Webhook processing started:', payload.event || 'unknown');
     
-    const portal02Service = require('./services/portal02Service');
+    const fosterConsoleService = require('./services/fosterConsoleService');
     
-    const processed = portal02Service.processWebhookPayload(payload);
+    const processed = fosterConsoleService.processWebhookPayload(payload);
     
     if (!processed.success) {
       console.error('❌ Invalid webhook payload:', processed.error);
@@ -508,11 +523,12 @@ async function processPortal02Webhook(payload) {
     
     order.processingResults = updatedResults;
     
-    // Map Portal-02 status to our status
+    // Map Foster Console status to our status
     let ourStatus = order.status;
     switch (status) {
       case 'delivered':
       case 'resolved':
+      case 'success':
         ourStatus = 'delivered';
         break;
       case 'failed':
@@ -530,7 +546,7 @@ async function processPortal02Webhook(payload) {
     
     // Check if all items are delivered
     const allDelivered = updatedResults.every(r => 
-      r.status === 'delivered' || r.status === 'resolved'
+      r.status === 'delivered' || r.status === 'resolved' || r.status === 'success'
     );
     
     if (allDelivered && order.status !== 'delivered') {
@@ -573,7 +589,7 @@ async function processPortal02Webhook(payload) {
     }
     
   } catch (error) {
-    console.error('❌ Error processing Portal-02 webhook:', error);
+    console.error('❌ Error processing Foster Console webhook:', error);
     
     await WebhookError.create({
       error: error.message,
@@ -601,9 +617,9 @@ app.get('/api/health', (req, res) => {
       host: mongoose.connection.host || 'unknown',
       name: mongoose.connection.name || 'unknown'
     },
-    portal02: {
-      configured: !!process.env.PORTAL02_API_KEY,
-      baseUrl: 'https://www.portal-02.com/api/v1'
+    fosterConsole: {
+      configured: !!process.env.FOSTER_CONSOLE_API_KEY,
+      baseUrl: FOSTER_CONSOLE_BASE_URL
     }
   });
 });
@@ -645,38 +661,38 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Test Portal-02 setup
-app.get('/api/test/portal02-setup', authMiddleware, async (req, res) => {
+// Test Foster Console setup
+app.get('/api/test/foster-console-setup', authMiddleware, async (req, res) => {
   try {
-    const portal02Service = require('./services/portal02Service');
+    const fosterConsoleService = require('./services/fosterConsoleService');
     
-    const connection = await portal02Service.testConnection();
+    const connection = await fosterConsoleService.testConnection();
     
     const availableInfo = {
-      MTN: portal02Service.availableVolumes?.MTN || [],
-      Telecel: portal02Service.availableVolumes?.Telecel || [],
-      AirtelTigo: portal02Service.availableVolumes?.AirtelTigo || []
+      MTN: fosterConsoleService.availableVolumes?.MTN || [],
+      Telecel: fosterConsoleService.availableVolumes?.Telecel || [],
+      AirtelTigo: fosterConsoleService.availableVolumes?.AirtelTigo || []
     };
     
-    const offerSlugs = {
-      MTN: portal02Service.offerSlugs?.MTN || 'master_beneficiary_data_bundle',
-      Telecel: portal02Service.offerSlugs?.Telecel || 'telecel_expiry_bundle',
-      AirtelTigo: portal02Service.offerSlugs?.AirtelTigo || 'ishare_data_bundle'
+    const networkIds = {
+      MTN: 3,
+      Telecel: 2,
+      AirtelTigo: 1
     };
     
     res.json({
       success: true,
-      message: 'Portal-02 Setup Verification',
+      message: 'Foster Console Setup Verification',
       connection,
       availableVolumes: availableInfo,
-      offerSlugs,
-      baseUrl: portal02Service.baseURL,
-      apiKeyConfigured: !!process.env.PORTAL02_API_KEY,
-      webhookUrl: portal02Service.backendUrl ? `${portal02Service.backendUrl}/api/webhooks/portal02` : 'Not configured'
+      networkIds,
+      baseUrl: FOSTER_CONSOLE_BASE_URL,
+      apiKeyConfigured: !!process.env.FOSTER_CONSOLE_API_KEY,
+      webhookUrl: `${process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com'}/api/webhooks/foster-console`
     });
     
   } catch (error) {
-    console.error('Portal-02 setup test error:', error);
+    console.error('Foster Console setup test error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -1391,7 +1407,7 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
 
     console.log(`🚀 Manually triggering delivery for order ${order._id}`);
     
-    const portal02Service = require('./services/portal02Service');
+    const fosterConsoleService = require('./services/fosterConsoleService');
     const processingResults = [];
     
     for (const [index, item] of order.items.entries()) {
@@ -1399,7 +1415,7 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
       
       const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
       
-      const result = await portal02Service.purchaseDataBundleWithRetry(
+      const result = await fosterConsoleService.purchaseDataBundle(
         item.recipientPhone,
         item.size,
         item.network,
@@ -1409,7 +1425,7 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
       processingResults.push({
         itemIndex: index,
         success: result.success,
-        transactionId: result.transactionId || result.reference,
+        transactionId: result.transactionId || result.vendorTranxId || result.reference,
         reference: result.reference,
         message: result.message,
         error: result.error,
@@ -1459,8 +1475,8 @@ app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
   }
 });
 
-// Check Portal-02 order status
-app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
+// Check Foster Console order status
+app.get('/api/orders/:id/foster-console-status', authMiddleware, async (req, res) => {
   try {
     const orderId = req.params.id;
     
@@ -1477,13 +1493,13 @@ app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const portal02Service = require('./services/portal02Service');
+    const fosterConsoleService = require('./services/fosterConsoleService');
     const statusResults = [];
     
     for (const result of order.processingResults) {
       if (result.transactionId) {
         try {
-          const statusResult = await portal02Service.checkOrderStatus(result.transactionId);
+          const statusResult = await fosterConsoleService.checkOrderStatus(result.transactionId, result.network);
           statusResults.push({
             transactionId: result.transactionId,
             status: statusResult.status,
@@ -1505,7 +1521,7 @@ app.get('/api/orders/:id/portal02-status', authMiddleware, async (req, res) => {
       success: true,
       orderId: order._id,
       ourStatus: order.status,
-      portal02Statuses: statusResults,
+      fosterConsoleStatuses: statusResults,
       processingResults: order.processingResults,
       webhookHistory: order.webhookHistory || []
     });
@@ -1762,16 +1778,16 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
         order.updatedAt = new Date();
         await order.save();
 
-        console.log(`🚀 STARTING PORTAL-02 PROCESSING FOR ORDER ${order._id}`);
+        console.log(`🚀 STARTING FOSTER CONSOLE PROCESSING FOR ORDER ${order._id}`);
         
-        let portal02Success = false;
+        let fosterConsoleSuccess = false;
         let processingResults = [];
         
         try {
-          const portal02Service = require('./services/portal02Service');
+          const fosterConsoleService = require('./services/fosterConsoleService');
           for (const [index, item] of order.items.entries()) {
             const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
-            const result = await portal02Service.purchaseDataBundleWithRetry(
+            const result = await fosterConsoleService.purchaseDataBundle(
               item.recipientPhone,
               item.size,
               item.network,
@@ -1781,7 +1797,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
             processingResults.push({
               itemIndex: index,
               success: result.success,
-              transactionId: result.transactionId || result.reference,
+              transactionId: result.transactionId || result.vendorTranxId || result.reference,
               reference: result.reference,
               message: result.message,
               error: result.error,
@@ -1790,7 +1806,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
               processedAt: new Date()
             });
             
-            if (result.success) portal02Success = true;
+            if (result.success) fosterConsoleSuccess = true;
             if (index < order.items.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
           }
           
@@ -1805,21 +1821,21 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
           order.updatedAt = new Date();
           await order.save();
           
-        } catch (portal02Error) {
-          console.error(`❌ Portal-02 processing error: ${portal02Error.message}`);
-          order.processingError = portal02Error.message;
+        } catch (fosterConsoleError) {
+          console.error(`❌ Foster Console processing error: ${fosterConsoleError.message}`);
+          order.processingError = fosterConsoleError.message;
           order.status = 'failed';
           await order.save();
         }
         
         res.json({
           success: true,
-          message: portal02Success ? 'Payment successful! Data processing initiated.' : 'Payment successful but vendor processing failed.',
+          message: fosterConsoleSuccess ? 'Payment successful! Data processing initiated.' : 'Payment successful but vendor processing failed.',
           orderId: order._id,
           status: order.status,
           amount: data.amount / 100,
-          portal02Success: portal02Success,
-          portal02Results: processingResults
+          fosterConsoleSuccess: fosterConsoleSuccess,
+          fosterConsoleResults: processingResults
         });
         
       } else {
@@ -1839,7 +1855,7 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
 
 // ==================== WEBHOOK ROUTES ====================
 
-// ✅ FIXED PAYSTACK WEBHOOK (Replaces basic placeholder from Line 629)
+// ✅ FIXED PAYSTACK WEBHOOK
 app.post('/api/payment/webhook', async (req, res) => {
   const crypto = require('crypto');
   const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -1870,21 +1886,20 @@ app.post('/api/payment/webhook', async (req, res) => {
 
         console.log(`✅ Order ${orderId} marked as PAID via Webhook. Processing ${order.items.length} items...`);
 
-        // 3. Loop through items to fix multiple-order failure
-       // ✅ Corrected code for server.js
-for (const item of order.items) {
-  try {
-    // Calling the function that actually exists in your service file
-    await portal02.purchaseDataBundleWithRetry(
-      item.recipientPhone,    // 1st Arg: phoneNumber
-      item.size,              // 2nd Arg: bundleSize
-      item.network,           // 3rd Arg: network
-      order._id.toString()    // 4th Arg: orderReference
-    );
-  } catch (err) { 
-    console.error(`❌ Vendor failed for ${item.recipientPhone}:`, err.message); 
-  }
-}
+        // 3. Process with Foster Console
+        const fosterConsoleService = require('./services/fosterConsoleService');
+        for (const item of order.items) {
+          try {
+            await fosterConsoleService.purchaseDataBundle(
+              item.recipientPhone,
+              item.size,
+              item.network,
+              order._id.toString()
+            );
+          } catch (err) { 
+            console.error(`❌ Vendor failed for ${item.recipientPhone}:`, err.message); 
+          }
+        }
       }
     } catch (error) {
       console.error('❌ Database update failed during webhook:', error);
@@ -1894,29 +1909,17 @@ for (const item of order.items) {
   res.status(200).send('OK');
 });
 
-// ✅ PORTAL-02 WEBHOOK (Updates delivered status)
-app.post('/api/webhooks/portal02', async (req, res) => {
-  const processed = portal02.processWebhookPayload(req.body);
+// ✅ FOSTER CONSOLE WEBHOOK (Updates delivered status)
+app.post('/api/webhooks/foster-console', async (req, res) => {
+  console.log('🔔 Foster Console Webhook Received:', JSON.stringify(req.body, null, 2));
   
-  if (!processed.success) {
-    console.log('⚠️ Webhook ignored:', processed.error);
-    return res.status(200).send('Event ignored'); 
-  }
-
   try {
-    await Order.findOneAndUpdate(
-      { $or: [{ vendorOrderId: processed.orderId }, { _id: processed.reference }] },
-      { 
-        status: processed.status, 
-        $push: { webhookHistory: processed } 
-      }
-    );
-    console.log(`✅ SUCCESS: Order ${processed.orderId} status updated to ${processed.status}`);
+    await processFosterConsoleWebhook(req.body);
+    res.status(200).send('OK');
   } catch (error) {
-    console.error('❌ Database update failed during webhook:', error);
+    console.error('❌ Error processing Foster Console webhook:', error);
+    res.status(500).send('Internal Server Error');
   }
-  
-  res.status(200).send('OK');
 });
 
 // ==================== ADMIN ROUTES ====================
@@ -1936,6 +1939,44 @@ app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
     res.json({ orders, pagination: { total: totalOrders, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(totalOrders / limit) } });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+// Check Foster Console Balance (Admin)
+app.get('/api/admin/foster-console-balance', adminMiddleware, async (req, res) => {
+  try {
+    const fosterConsoleService = require('./services/fosterConsoleService');
+    const balance = await fosterConsoleService.checkBalance();
+    
+    res.json({
+      success: true,
+      balance: balance
+    });
+  } catch (error) {
+    console.error('Foster Console balance check error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Fetch Foster Console Packages (Admin)
+app.get('/api/admin/foster-console-packages', adminMiddleware, async (req, res) => {
+  try {
+    const fosterConsoleService = require('./services/fosterConsoleService');
+    const packages = await fosterConsoleService.fetchDataPackages();
+    
+    res.json({
+      success: true,
+      packages: packages
+    });
+  } catch (error) {
+    console.error('Foster Console packages fetch error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -1960,9 +2001,9 @@ app.listen(PORT, () => {
   console.log(`🔐 JWT: ${JWT_SECRET ? 'Configured' : 'Using default'}`);
   console.log(`🔗 MongoDB URI: ${process.env.MONGODB_URI ? 'Set' : 'NOT SET - Check .env file'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  console.log(`🔄 Portal-02 API: ${process.env.PORTAL02_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
-  console.log(`📦 Portal-02 Base URL: https://www.portal-02.com/api/v1`);
-  console.log(`🔔 Webhook URL: https://allen-data-hub-backend.onrender.com/api/webhooks/portal02`);
+  console.log(`🔄 Foster Console API: ${process.env.FOSTER_CONSOLE_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
+  console.log(`📦 Foster Console Base URL: ${FOSTER_CONSOLE_BASE_URL}`);
+  console.log(`🔔 Webhook URL: ${process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com'}/api/webhooks/foster-console`);
   
   setTimeout(() => {
     if (mongoose.connection.readyState === 1) {
