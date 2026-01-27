@@ -3,7 +3,7 @@ import axios from 'axios';
 const BUILD_TIMESTAMP = "20260122-PAYMENT-FLOW-UPDATE";
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? `${process.env.REACT_APP_API_URL}/api`
-  : 'http://localhost:5000/api';
+  : 'http://allen-data-hub-backend.onrender.com/api';
 
 console.log('🔧 API Configuration:', {
   baseURL: API_BASE_URL,
