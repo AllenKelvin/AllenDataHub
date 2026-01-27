@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useTheme } from '../context/ThemeContext';
@@ -10,6 +10,7 @@ const Navbar = () => {
   const { darkMode, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const dropdownRef = useRef(null);
@@ -34,19 +35,39 @@ const Navbar = () => {
   const handleLogout = () => {
     logout();
     setDropdownOpen(false);
+    setMobileMenuOpen(false);
     navigate('/login');
   };
 
   // Helper to get initials (e.g., "Allen Kelvin" -> "AK")
   const getInitials = (name) => {
     if (!name) return '👤';
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
   };
 
   // Get user's display name
   const getDisplayName = () => {
     if (!user) return '';
     return user.name || user.username || user.email.split('@')[0];
+  };
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Dashboard link based on user role
+  const getDashboardLink = () => {
+    if (!user) return '/login';
+    switch (user.role) {
+      case 'admin': return '/admin-dashboard';
+      case 'agent': return '/agent-dashboard';
+      default: return '/client-dashboard';
+    }
   };
 
   return (
@@ -60,17 +81,16 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* User Greeting - Only show when logged in */}
-        {user && (
-          <div className="navbar-center">
-            <div className="user-greeting">
-              👋 Welcome back, <span className="username">{getDisplayName()}</span>!
-            </div>
-          </div>
-        )}
+        {/* Mobile Menu Toggle */}
+        <button 
+          className="menu-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? '✕' : '☰'}
+        </button>
 
-        {/* Right Side Navigation */}
-        <div className="navbar-right">
+        {/* Desktop Navigation */}
+        <div className="navbar-right desktop-nav">
           {/* Theme Toggle */}
           <button onClick={toggleTheme} className="theme-toggle-btn">
             {darkMode ? '☀️ Light' : '🌙 Dark'}
@@ -92,8 +112,7 @@ const Navbar = () => {
                 className="nav-link profile-link"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               >
-                <span className="nav-icon">👤</span>
-                {getDisplayName()}
+                <span className="user-avatar">{getInitials(getDisplayName())}</span>
               </button>
               
               {dropdownOpen && (
@@ -101,55 +120,39 @@ const Navbar = () => {
                   <div className="dropdown-header">
                     <p className="user-name">{getDisplayName()}</p>
                     <p className="user-email">{user.email}</p>
+                    {user.role === 'agent' && (
+                      <p className="user-balance">Wallet: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
+                    )}
                   </div>
                   
-                  {user.role === 'client' && (
-                    <>
-                      <Link 
-                        to="/client-dashboard" 
-                        className="dropdown-item"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        <span className="dropdown-icon">📊</span>
-                        Dashboard
-                      </Link>
-                      <Link 
-                        to="/profile" 
-                        className="dropdown-item"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        <span className="dropdown-icon">⚙️</span>
-                        Profile Settings
-                      </Link>
-                      <Link 
-                        to="/orders" 
-                        className="dropdown-item"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        <span className="dropdown-icon">📦</span>
-                        My Orders
-                      </Link>
-                      <Link 
-                        to="/transactions" 
-                        className="dropdown-item"
-                        onClick={() => setDropdownOpen(false)}
-                      >
-                        <span className="dropdown-icon">💳</span>
-                        Transactions
-                      </Link>
-                    </>
-                  )}
+                  <Link 
+                    to={getDashboardLink()} 
+                    className="dropdown-item"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    <span className="dropdown-icon">📊</span>
+                    Dashboard
+                  </Link>
                   
-                  {user.role === 'admin' && (
+                  {user.role === 'agent' && (
                     <Link 
-                      to="/admin-dashboard" 
+                      to="/agent-wallet" 
                       className="dropdown-item"
                       onClick={() => setDropdownOpen(false)}
                     >
-                      <span className="dropdown-icon">👑</span>
-                      Admin Dashboard
+                      <span className="dropdown-icon">💰</span>
+                      My Wallet
                     </Link>
                   )}
+                  
+                  <Link 
+                    to="/profile" 
+                    className="dropdown-item"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    <span className="dropdown-icon">⚙️</span>
+                    Profile
+                  </Link>
                   
                   <hr />
                   
@@ -177,6 +180,88 @@ const Navbar = () => {
           )}
         </div>
       </div>
+
+      {/* Mobile Menu */}
+      {mobileMenuOpen && (
+        <div className="mobile-menu">
+          {/* User Info in Mobile */}
+          {user && (
+            <div className="mobile-user-info">
+              <div className="mobile-user-avatar">{getInitials(getDisplayName())}</div>
+              <div className="mobile-user-details">
+                <p className="mobile-user-name">{getDisplayName()}</p>
+                <p className="mobile-user-email">{user.email}</p>
+                {user.role === 'agent' && (
+                  <p className="mobile-user-balance">Balance: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Mobile Links */}
+          <Link to="/" className="mobile-link">
+            <span className="mobile-icon">🏠</span>
+            Home
+          </Link>
+          
+          {user && (
+            <>
+              <Link to={getDashboardLink()} className="mobile-link">
+                <span className="mobile-icon">📊</span>
+                Dashboard
+              </Link>
+              
+              {user.role === 'agent' && (
+                <Link to="/agent-wallet" className="mobile-link">
+                  <span className="mobile-icon">💰</span>
+                  My Wallet
+                </Link>
+              )}
+              
+              {showCart && (
+                <Link to="/cart" className="mobile-link">
+                  <span className="mobile-icon">🛒</span>
+                  Cart
+                  {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
+                </Link>
+              )}
+              
+              <Link to="/profile" className="mobile-link">
+                <span className="mobile-icon">⚙️</span>
+                Profile
+              </Link>
+            </>
+          )}
+
+          {!user && (
+            <>
+              <Link to="/login" className="mobile-link">
+                <span className="mobile-icon">🔐</span>
+                Login
+              </Link>
+              <Link to="/signup" className="mobile-link">
+                <span className="mobile-icon">✨</span>
+                Sign Up
+              </Link>
+            </>
+          )}
+
+          {/* Theme Toggle Mobile */}
+          <div className="mobile-theme-toggle">
+            <button onClick={toggleTheme} className="mobile-theme-btn">
+              {darkMode ? '☀️ Switch to Light Mode' : '🌙 Switch to Dark Mode'}
+            </button>
+          </div>
+
+          {/* Logout Button */}
+          {user && (
+            <button onClick={handleLogout} className="mobile-link logout-btn">
+              <span className="mobile-icon">🚪</span>
+              Logout
+            </button>
+          )}
+        </div>
+      )}
     </nav>
   );
 };

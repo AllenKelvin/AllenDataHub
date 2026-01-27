@@ -95,9 +95,6 @@ const Login = () => {
 
   return (
     <div className={`login-container ${darkMode ? 'dark' : 'light'}`}>
-      <button className="theme-toggle" onClick={toggleTheme}>
-        {darkMode ? '☀️' : '🌙'}
-      </button>
 
       <div className="login-card">
         {/* Session Expired Message */}

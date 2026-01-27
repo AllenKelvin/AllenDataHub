@@ -3,7 +3,7 @@ import axios from 'axios';
 const BUILD_TIMESTAMP = "20260122-PAYMENT-FLOW-UPDATE";
 const API_BASE_URL = process.env.REACT_APP_API_URL 
   ? `${process.env.REACT_APP_API_URL}/api`
-  : 'http://allen-data-hub-backend.onrender.com/api';
+  : 'https://allen-data-hub-backend.onrender.com/api';
 
 console.log('🔧 API Configuration:', {
   baseURL: API_BASE_URL,
@@ -12,6 +12,7 @@ console.log('🔧 API Configuration:', {
   timestamp: BUILD_TIMESTAMP
 });
 
+// Create axios instance with base configuration
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
@@ -21,13 +22,25 @@ const api = axios.create({
   }
 });
 
+// Helper function to get auth headers
+const getAuthHeader = () => {
+  const token = localStorage.getItem('token');
+  return {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  };
+};
+
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    console.log('🔐 API Request to:', config.url, 'Token:', !!token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    console.log('🔐 API Request:', config.method?.toUpperCase(), config.url);
     return config;
   },
   (error) => {
@@ -36,9 +49,10 @@ api.interceptors.request.use(
   }
 );
 
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ API Success:', response.config.url, response.status);
+    console.log('✅ API Success:', response.status, response.config.url);
     return response;
   },
   (error) => {
@@ -73,6 +87,7 @@ api.interceptors.response.use(
   }
 );
 
+// ==================== AUTHENTICATION API ====================
 export const authAPI = {
   register: (userData) => api.post('/auth/register', userData),
   login: (credentials) => api.post('/auth/login', credentials),
@@ -81,11 +96,13 @@ export const authAPI = {
   resetPassword: (token, password) => api.post('/auth/reset-password', { token, password }),
 };
 
+// ==================== PLANS API ====================
 export const plansAPI = {
   getAll: () => api.get('/plans'),
   getByNetwork: (network) => api.get(`/plans/network/${network}`),
 };
 
+// ==================== ORDERS API ====================
 export const ordersAPI = {
   verify: (orderData) => {
     console.log('✅ Verifying order with backend:', orderData);
@@ -108,8 +125,13 @@ export const ordersAPI = {
   
   getRecentTransactions: (limit = 10) => 
     api.get(`/orders/recent?limit=${limit}`),
+  
+  deliver: (id) => api.post(`/orders/${id}/deliver`),
+  
+  getPortal02Status: (id) => api.get(`/orders/${id}/portal02-status`),
 };
 
+// ==================== PAYMENT API ====================
 export const paymentAPI = {
   initialize: (paymentData) => {
     console.log('💰 Initializing payment:', paymentData);
@@ -121,26 +143,33 @@ export const paymentAPI = {
     return api.get(`/payment/verify/${reference}`);
   },
   
-  // ✅ NEW METHOD: For verifying payment when user returns from Paystack
-  verifyReturn: (reference) => {
-    console.log('🔄 Verifying payment return for reference:', reference);
-    return api.post('/payment/verify-return', { reference });
-  },
-  
   checkStatus: (reference) => {
     console.log('📊 Checking payment status:', reference);
     return api.get(`/payment/status/${reference}`);
   }
 };
 
-export const adminAPI = {
-  getAllOrders: () => api.get('/admin/orders'),
-  getStats: () => api.get('/admin/stats'),
-  getUserStats: (userId) => api.get(`/admin/users/${userId}/stats`),
-  updateOrderStatus: (orderId, status) => 
-    api.patch(`/admin/orders/${orderId}/status`, { status }),
+// ==================== WALLET API ====================
+export const walletAPI = {
+  getBalance: () => api.get('/wallet/balance'),
+  
+  deposit: (data) => {
+    console.log('💰 Initializing wallet deposit:', data);
+    return api.post('/wallet/deposit', data);
+  },
+  
+  verifyDeposit: (reference) => {
+    console.log('🔍 Verifying wallet deposit:', reference);
+    return api.get(`/wallet/verify/${reference}`);
+  },
+  
+  getTransactions: (params) => {
+    console.log('📋 Fetching wallet transactions');
+    return api.get('/wallet/transactions', { params });
+  }
 };
 
+// ==================== USER API ====================
 export const userAPI = {
   getProfile: () => {
     console.log('👤 Fetching user profile');
@@ -162,36 +191,77 @@ export const userAPI = {
   getTransactionHistory: (page = 1, limit = 10) => 
     api.get(`/users/transactions?page=${page}&limit=${limit}`),
   
-  getDashboardStats: () => api.get('/users/dashboard-stats'),
+  getDashboardStats: () => {
+    console.log('📊 Fetching dashboard stats');
+    return api.get('/users/dashboard-stats');
+  },
+  
+  getAgentDashboard: () => {
+    console.log('👑 Fetching agent dashboard');
+    return api.get('/agent/dashboard');
+  }
 };
 
+// ==================== AGENT API ====================
+export const agentAPI = {
+  getDashboard: () => {
+    console.log('👑 Fetching agent dashboard');
+    return api.get('/agent/dashboard');
+  }
+};
+
+// ==================== ADMIN API ====================
+export const adminAPI = {
+  getStats: () => {
+    console.log('📊 Fetching admin stats');
+    return api.get('/admin/stats');
+  },
+  
+  getAgents: () => {
+    console.log('👥 Fetching agents list');
+    return api.get('/admin/agents');
+  },
+  
+  verifyAgent: (agentId, approve) => {
+    console.log(`✅ ${approve ? 'Approving' : 'Rejecting'} agent:`, agentId);
+    return api.post('/admin/verify-agent', { agentId, approve });
+  },
+  
+  loadAgentWallet: (agentId, amount) => {
+    console.log('💰 Loading agent wallet:', { agentId, amount });
+    return api.post('/admin/load-wallet', { agentId, amount });
+  },
+  
+  updateAgentPrices: (network, updates) => {
+    console.log('⚙️ Updating agent prices:', { network, updates });
+    return api.post('/admin/update-prices', { network, updates });
+  },
+  
+  getAllOrders: (params) => {
+    console.log('📋 Fetching all orders (admin)');
+    return api.get('/admin/orders', { params });
+  },
+  
+  getUserStats: (userId) => api.get(`/admin/users/${userId}/stats`),
+  
+  updateOrderStatus: (orderId, status) => 
+    api.patch(`/admin/orders/${orderId}/status`, { status }),
+};
+
+// ==================== NETWORKS API (For direct vendor access) ====================
 export const networksAPI = {
-  mtn: {
-    testConnection: () => api.get('/mtn/test'),
-    transferData: (data) => {
-      console.log('📱 MTN Data Transfer:', data);
-      return api.post('/mtn/transfer', data);
-    },
-    checkBalance: () => api.get('/mtn/balance'),
+  testFosterConsole: () => {
+    console.log('🔌 Testing Foster Console connection');
+    return api.get('/test/foster-console-setup');
   },
   
-  telecel: {
-    testConnection: () => api.get('/telecel/test'),
-    transferData: (data) => api.post('/telecel/transfer', data),
-  },
-  
-  airteltigo: {
-    testConnection: () => api.get('/airteltigo/test'),
-    transferData: (data) => api.post('/airteltigo/transfer', data),
-  },
+  testDatabase: () => {
+    console.log('🗄️ Testing database connection');
+    return api.get('/test-db');
+  }
 };
 
-export const toDouble = (num) => {
-  if (num === null || num === undefined) return 0;
-  const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
-  return Math.round(parsed * 100) / 100;
-};
-
+// ==================== TESTING UTILITIES ====================
 export const testConnection = async () => {
   try {
     console.log('🧪 Testing API connection to:', API_BASE_URL);
@@ -206,6 +276,13 @@ export const testConnection = async () => {
       url: API_BASE_URL 
     };
   }
+};
+
+// ==================== HELPER FUNCTIONS ====================
+export const toDouble = (num) => {
+  if (num === null || num === undefined) return 0;
+  const parsed = typeof num === 'string' ? parseFloat(num) : Number(num);
+  return Math.round(parsed * 100) / 100;
 };
 
 export const formatGhanaPhone = (phone) => {
@@ -224,9 +301,88 @@ export const formatGhanaPhone = (phone) => {
 };
 
 export const isValidGhanaNumber = (phone) => {
+  if (!phone) return false;
   const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
   const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
   return ghanaRegex.test(cleanPhone);
+};
+
+export const formatCurrency = (amount) => {
+  return `GH₵${toDouble(amount).toFixed(2)}`;
+};
+
+export const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+export const generateOrderReference = () => {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substr(2, 6).toUpperCase();
+  return `ALLEN-${timestamp}-${random}`;
+};
+
+export const calculateServiceFee = (subtotal) => {
+  const fee = 0.50; // Fixed service fee of GH₵0.50
+  return toDouble(subtotal + fee);
+};
+
+export const getStatusColor = (status) => {
+  const statusMap = {
+    'delivered': '#52c41a',
+    'success': '#52c41a',
+    'processing': '#faad14',
+    'pending': '#faad14',
+    'placed': '#1890ff',
+    'active': '#1890ff',
+    'failed': '#ff4d4f',
+    'cancelled': '#ff4d4f',
+    'rejected': '#ff4d4f'
+  };
+  return statusMap[status?.toLowerCase()] || '#666';
+};
+
+export const getPaymentStatusColor = (status) => {
+  const statusMap = {
+    'success': '#52c41a',
+    'paid': '#52c41a',
+    'pending': '#faad14',
+    'processing': '#faad14',
+    'failed': '#ff4d4f',
+    'refunded': '#666'
+  };
+  return statusMap[status?.toLowerCase()] || '#666';
+};
+
+export const getUserInitials = (name) => {
+  if (!name) return '👤';
+  const parts = name.split(' ');
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+};
+
+export const isAgent = (user) => {
+  return user?.role === 'agent' && user?.status === 'active';
+};
+
+export const isAdmin = (user) => {
+  return user?.role === 'admin';
+};
+
+export const isClient = (user) => {
+  return user?.role === 'client';
+};
+
+export const hasAccessToAgentFeatures = (user) => {
+  return user?.role === 'agent' && user?.status === 'active';
 };
 
 export default api;

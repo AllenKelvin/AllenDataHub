@@ -4,13 +4,13 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const fosterConsoleService = require('./services/fosterConsoleService'); // Changed from portal02Service
+const fosterConsoleService = require('./services/fosterConsoleService');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000; 
+const PORT = process.env.PORT || 5000;
 
-// ✅ FIXED: Removed localhost to prevent the vendor from getting confused
+// CORS Configuration
 app.use(cors({
   origin: ['https://allendatahub.com', 'https://allen-data-hub.vercel.app'],
   credentials: true
@@ -67,7 +67,7 @@ const connectDB = async () => {
   }
 };
 
-// Initialize data plans
+// Initialize data plans with agent pricing
 async function initializeDataPlans() {
   try {
     const existingPlans = await DataPlan.countDocuments();
@@ -75,56 +75,56 @@ async function initializeDataPlans() {
       console.log('📊 Initializing data plans...');
       
       const dataPlans = [
-        // MTN Plans
-        { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
-        { network: 'MTN', size: '2GB', price: 8.50, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '3GB', price: 12.50, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '4GB', price: 16.50, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '5GB', price: 20.60, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
-        { network: 'MTN', size: '6GB', price: 24.70, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '7GB', price: 28.80, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '8GB', price: 33.20, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '10GB', price: 39.70, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '15GB', price: 58.50, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '20GB', price: 77.50, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '25GB', price: 97.10, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '30GB', price: 117.10, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '40GB', price: 155.00, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '50GB', price: 186.00, validity: '30 days', description: 'MTN Non-Expiry' },
-        { network: 'MTN', size: '100GB', price: 364.00, validity: '30 days', description: 'MTN Non-Expiry' },
+        // MTN Plans - Regular and Agent Prices
+        { network: 'MTN', size: '1GB', price: 4.30, agentPrice: 4.10, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
+        { network: 'MTN', size: '2GB', price: 8.50, agentPrice: 8.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '3GB', price: 12.50, agentPrice: 12.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '4GB', price: 16.50, agentPrice: 16.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '5GB', price: 20.60, agentPrice: 20.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
+        { network: 'MTN', size: '6GB', price: 24.70, agentPrice: 24.40, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '7GB', price: 28.80, agentPrice: 28.50, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '8GB', price: 33.20, agentPrice: 32.90, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '10GB', price: 39.70, agentPrice: 39.40, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '15GB', price: 58.50, agentPrice: 58.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '20GB', price: 77.50, agentPrice: 77.20, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '25GB', price: 97.10, agentPrice: 96.80, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '30GB', price: 117.10, agentPrice: 116.80, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '40GB', price: 155.00, agentPrice: 154.70, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '50GB', price: 186.00, agentPrice: 185.70, validity: '30 days', description: 'MTN Non-Expiry' },
+        { network: 'MTN', size: '100GB', price: 364.00, agentPrice: 363.70, validity: '30 days', description: 'MTN Non-Expiry' },
         
         // Telecel Plans
-        { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
-        { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '15GB', price: 53.60, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '20GB', price: 70.60, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '25GB', price: 88.30, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '30GB', price: 107.00, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '40GB', price: 141.00, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '50GB', price: 176.00, validity: '30 days', description: 'Telecel Bundle' },
-        { network: 'Telecel', size: '100GB', price: 348.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '5GB', price: 19.60, agentPrice: 19.30, validity: '30 days', description: 'Telecel Bundle', popular: true },
+        { network: 'Telecel', size: '10GB', price: 37.30, agentPrice: 37.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '15GB', price: 53.60, agentPrice: 53.30, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '20GB', price: 70.60, agentPrice: 70.30, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '25GB', price: 88.30, agentPrice: 88.00, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '30GB', price: 107.00, agentPrice: 106.70, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '40GB', price: 141.00, agentPrice: 140.70, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '50GB', price: 176.00, agentPrice: 175.70, validity: '30 days', description: 'Telecel Bundle' },
+        { network: 'Telecel', size: '100GB', price: 348.00, agentPrice: 347.70, validity: '30 days', description: 'Telecel Bundle' },
         
         // AirtelTigo Plans
-        { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
-        { network: 'AirtelTigo', size: '2GB', price: 7.70, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '3GB', price: 11.70, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '4GB', price: 15.50, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '5GB', price: 19.50, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '6GB', price: 23.70, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '7GB', price: 27.50, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '8GB', price: 31.10, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '9GB', price: 35.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '10GB', price: 39.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '11GB', price: 42.50, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '12GB', price: 47.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '13GB', price: 51.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '14GB', price: 55.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '15GB', price: 60.00, validity: '30 days', description: 'AirtelTigo Bundle' },
-        { network: 'AirtelTigo', size: '20GB', price: 78.00, validity: '30 days', description: 'AirtelTigo Bundle' }
+        { network: 'AirtelTigo', size: '1GB', price: 3.95, agentPrice: 3.75, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
+        { network: 'AirtelTigo', size: '2GB', price: 7.70, agentPrice: 7.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '3GB', price: 11.70, agentPrice: 11.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '4GB', price: 15.50, agentPrice: 15.30, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '5GB', price: 19.50, agentPrice: 19.30, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '6GB', price: 23.70, agentPrice: 23.50, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '7GB', price: 27.50, agentPrice: 27.30, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '8GB', price: 31.10, agentPrice: 30.90, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '9GB', price: 35.00, agentPrice: 34.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '10GB', price: 39.00, agentPrice: 38.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '11GB', price: 42.50, agentPrice: 42.30, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '12GB', price: 47.00, agentPrice: 46.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '13GB', price: 51.00, agentPrice: 50.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '14GB', price: 55.00, agentPrice: 54.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '15GB', price: 60.00, agentPrice: 59.80, validity: '30 days', description: 'AirtelTigo Bundle' },
+        { network: 'AirtelTigo', size: '20GB', price: 78.00, agentPrice: 77.80, validity: '30 days', description: 'AirtelTigo Bundle' }
       ];
       
       await DataPlan.insertMany(dataPlans);
-      console.log(`✅ ${dataPlans.length} data plans initialized`);
+      console.log(`✅ ${dataPlans.length} data plans initialized with agent pricing`);
     }
   } catch (error) {
     console.error('❌ Error initializing data plans:', error);
@@ -138,8 +138,7 @@ const setupCronJobs = () => {
   const TransactionCleaner = require('./services/transactionCleaner');
   const cleaner = new TransactionCleaner(Order);
   
-  // 43200000 ms = 12 hours
-  const TWELVE_HOURS = 12 * 60 * 60 * 1000; 
+  const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 
   setInterval(async () => {
     try {
@@ -148,7 +147,7 @@ const setupCronJobs = () => {
     } catch (error) {
       console.error('❌ Scheduled cleanup failed:', error);
     }
-  }, TWELVE_HOURS); 
+  }, TWELVE_HOURS);
   
   console.log('✅ Scheduled transaction cleanup initialized (runs every 12 hours)');
 };
@@ -157,19 +156,25 @@ mongoose.connection.once('open', () => {
   setupCronJobs();
 });
 
-// Helper function to normalize numbers to Double precision
+// Helper functions
 const toDouble = (num) => {
   if (num === null || num === undefined) return 0;
   const value = typeof num === 'string' ? parseFloat(num) : Number(num);
   return Math.round(value * 100) / 100;
 };
 
-// Helper: Validate volumes against vendor availability
+const isValidGhanaNumber = (phone) => {
+  if (!phone) return false;
+  const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+  const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
+  return ghanaRegex.test(cleanPhone);
+};
+
 function validateOrderItems(items) {
   const availableVolumes = {
-    'MTN': [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 100],
-    'Telecel': [2, 3,5, 10, 15, 20, 25, 30, 40, 50, 100],
-    'AirtelTigo': [15, 20, 25, 30, 40, 50, 60, 100]
+    'MTN': [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+    'Telecel': [5, 10, 15, 20, 25, 30, 40, 50, 60, 100],
+    'AirtelTigo': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20]
   };
 
   for (const item of items) {
@@ -207,35 +212,38 @@ const userSchema = new mongoose.Schema({
   phone: { type: String },
   address: { type: String },
   password: { type: String, required: true },
-  role: { type: String, enum: ['client', 'admin'], default: 'client' },
-  status: { type: String, enum: ['active', 'suspended'], default: 'active' },
+  role: { type: String, enum: ['client', 'admin', 'agent'], default: 'client' },
+  status: { type: String, enum: ['active', 'suspended', 'pending'], default: 'active' },
+  walletBalance: { type: Number, default: 0 },
+  agentCommission: { type: Number, default: 0.05 }, // 5% commission
+  totalSales: { type: Number, default: 0 },
+  totalCommission: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// 1. UPDATED ORDER SCHEMA
 const orderSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   items: [{
     network: { type: String, required: true },
     size: { type: String, required: true },
     price: { type: Number, required: true },
+    agentPrice: { type: Number },
     recipientPhone: { type: String, required: true },
     quantity: { type: Number, default: 1 }
   }],
   totalAmount: { type: Number, required: true },
   customerEmail: { type: String, required: true },
   customerPhone: { type: String, required: true },
-  paymentMethod: { type: String, enum: ['paystack', 'cash', 'mobile_money'], default: 'paystack' },
+  paymentMethod: { type: String, enum: ['paystack', 'cash', 'mobile_money', 'wallet'], default: 'paystack' },
   paymentStatus: { type: String, enum: ['pending', 'success', 'failed'], default: 'pending' },
   paymentReference: { type: String },
-  vendorOrderId: { type: String }, 
+  vendorOrderId: { type: String },
   status: { 
     type: String, 
     enum: ['placed', 'processing', 'delivered', 'failed', 'cancelled'], 
     default: 'placed' 
   },
-  statusReason: { type: String },
   processingResults: [{
     itemIndex: Number,
     success: Boolean,
@@ -244,42 +252,38 @@ const orderSchema = new mongoose.Schema({
     message: String,
     error: String,
     status: String,
-    webhookReceived: Boolean,
-    webhookTimestamp: Date,
-    processedAt: { type: Date, default: Date.now },
-    lastUpdated: Date
+    processedAt: { type: Date, default: Date.now }
   }],
-  webhookHistory: [{
-    event: String,
-    orderId: String,
-    reference: String,
-    status: String,
-    recipient: String,
-    volume: Number,
-    timestamp: Date,
-    receivedAt: { type: Date, default: Date.now }
-  }],
-  processingError: String,
   isVisibleToUser: { type: Boolean, default: true },
   archived: { type: Boolean, default: false },
-  archiveReason: { type: String },
-  archivedAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
-// 2. DATA PLAN SCHEMA
 const dataPlanSchema = new mongoose.Schema({
   network: { type: String, required: true },
   size: { type: String, required: true },
   price: { type: Number, required: true },
+  agentPrice: { type: Number },
   validity: { type: String, required: true },
   description: { type: String },
   popular: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 
-// 3. CONTACT SCHEMA
+const walletTransactionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  amount: { type: Number, required: true },
+  type: { type: String, enum: ['deposit', 'withdrawal', 'purchase', 'commission', 'admin_load'], required: true },
+  description: { type: String },
+  reference: { type: String, unique: true },
+  status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
+  balanceBefore: { type: Number },
+  balanceAfter: { type: Number },
+  adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // For admin loads
+  createdAt: { type: Date, default: Date.now }
+});
+
 const contactSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: { type: String },
@@ -291,43 +295,19 @@ const contactSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// 4. WEBHOOK SCHEMAS
-const unmatchedWebhookSchema = new mongoose.Schema({
-  orderId: String,
-  reference: String,
-  status: String,
-  recipient: String,
-  volume: Number,
-  timestamp: Date,
-  payload: Object,
-  createdAt: { type: Date, default: Date.now }
-});
-
-const webhookErrorSchema = new mongoose.Schema({
-  error: String,
-  payload: Object,
-  stack: String,
-  createdAt: { type: Date, default: Date.now }
-});
-
-// 5. REGISTER MODELS (Only call mongoose.model once per name)
+// Register Models
 const User = mongoose.model('User', userSchema);
 const Order = mongoose.model('Order', orderSchema);
 const DataPlan = mongoose.model('DataPlan', dataPlanSchema);
+const WalletTransaction = mongoose.model('WalletTransaction', walletTransactionSchema);
 const Contact = mongoose.model('Contact', contactSchema);
-const UnmatchedWebhook = mongoose.model('UnmatchedWebhook', unmatchedWebhookSchema);
-const WebhookError = mongoose.model('WebhookError', webhookErrorSchema);
 
-// Paystack Configuration
+// Configuration
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://allen-data-hub.vercel.app';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
 
-// Foster Console Configuration
-const FOSTER_CONSOLE_API_KEY = process.env.FOSTER_CONSOLE_API_KEY;
-const FOSTER_CONSOLE_BASE_URL = process.env.FOSTER_CONSOLE_BASE_URL || 'https://fgamall.researchshubgh.com/api/v1';
-
-// Initialize Paystack API
 const paystack = axios.create({
   baseURL: 'https://api.paystack.co',
   headers: {
@@ -336,28 +316,6 @@ const paystack = axios.create({
   },
   timeout: 30000
 });
-
-// Initialize Foster Console API
-const fosterConsole = axios.create({
-  baseURL: FOSTER_CONSOLE_BASE_URL,
-  headers: {
-    'x-api-key': FOSTER_CONSOLE_API_KEY,
-    'Accept': 'application/json',
-    'Content-Type': 'application/json'
-  },
-  timeout: 30000
-});
-
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key-change-in-production';
-
-// Helper function to validate Ghana phone number
-const isValidGhanaNumber = (phone) => {
-  if (!phone) return false;
-  const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-  const ghanaRegex = /^(020|023|024|025|026|027|028|029|030|050|054|055|056|057|058|059|053)\d{7}$/;
-  return ghanaRegex.test(cleanPhone);
-};
 
 // Auth Middleware
 const authMiddleware = async (req, res, next) => {
@@ -371,15 +329,6 @@ const authMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.userId = decoded.userId;
     
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      console.log(`⚠️ Database state: ${dbState}`);
-      return res.status(503).json({ 
-        error: 'Database temporarily unavailable',
-        status: dbState 
-      });
-    }
-    
     const user = await User.findById(req.userId).select('-password');
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -388,7 +337,6 @@ const authMiddleware = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    console.error('Auth middleware error:', error.message);
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ error: 'Invalid authentication token' });
     }
@@ -399,7 +347,6 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-// Admin Middleware
 const adminMiddleware = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -409,12 +356,6 @@ const adminMiddleware = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      return res.status(503).json({ error: 'Database temporarily unavailable' });
-    }
-    
     const user = await User.findById(decoded.userId);
     
     if (!user || user.role !== 'admin') {
@@ -428,176 +369,31 @@ const adminMiddleware = async (req, res, next) => {
   }
 };
 
-// ==================== ASYNC WEBHOOK PROCESSING ====================
-
-async function processFosterConsoleWebhook(payload) {
+const agentMiddleware = async (req, res, next) => {
   try {
-    console.log('🔔 Foster Console Webhook processing started:', payload.event || 'unknown');
+    const token = req.header('Authorization')?.replace('Bearer ', '');
     
-    const fosterConsoleService = require('./services/fosterConsoleService');
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findById(decoded.userId);
     
-    const processed = fosterConsoleService.processWebhookPayload(payload);
-    
-    if (!processed.success) {
-      console.error('❌ Invalid webhook payload:', processed.error);
-      return;
+    if (!user || user.role !== 'agent') {
+      return res.status(403).json({ error: 'Agent access required' });
     }
     
-    const { orderId, reference, status, recipient, volume, timestamp } = processed;
-    
-    console.log(`🔍 Looking for order with reference: ${reference} or orderId: ${orderId}`);
-    
-    let order = null;
-    
-    order = await Order.findOne({
-      'processingResults.transactionId': { $in: [orderId, reference] }
-    });
-    
-    if (!order) {
-      order = await Order.findOne({
-        'processingResults.reference': { $in: [orderId, reference] }
-      });
+    if (user.status !== 'active') {
+      return res.status(403).json({ error: 'Your agent account is not active. Please contact admin.' });
     }
     
-    if (!order) {
-      order = await Order.findOne({ 'paymentReference': reference });
-    }
-    
-    if (!order) {
-      order = await Order.findOne({
-        $or: [
-          { _id: orderId },
-          { paymentReference: orderId },
-          { 'processingResults.transactionId': orderId },
-          { 'processingResults.reference': orderId }
-        ]
-      });
-    }
-    
-    if (!order) {
-      console.error(`❌ Order not found for reference: ${reference}, orderId: ${orderId}`);
-      
-      await UnmatchedWebhook.create({
-        orderId,
-        reference,
-        status,
-        recipient,
-        volume,
-        timestamp,
-        payload
-      });
-      
-      console.log(`📝 Saved unmatched webhook for investigation`);
-      return;
-    }
-    
-    console.log(`✅ Found order: ${order._id} for webhook ${orderId}`);
-    
-    // Update processing results
-    const updatedResults = order.processingResults.map(result => {
-      if (result.transactionId === orderId || result.transactionId === reference || 
-          result.reference === orderId || result.reference === reference) {
-        return {
-          ...result,
-          status: status,
-          webhookReceived: true,
-          webhookTimestamp: timestamp,
-          lastUpdated: new Date()
-        };
-      }
-      return result;
-    });
-    
-    if (!updatedResults.find(r => r.transactionId === orderId || r.transactionId === reference || 
-                                 r.reference === orderId || r.reference === reference)) {
-      updatedResults.push({
-        itemIndex: 0,
-        transactionId: orderId || reference,
-        reference: reference || orderId,
-        status: status,
-        webhookReceived: true,
-        webhookTimestamp: timestamp,
-        lastUpdated: new Date()
-      });
-    }
-    
-    order.processingResults = updatedResults;
-    
-    // Map Foster Console status to our status
-    let ourStatus = order.status;
-    switch (status) {
-      case 'delivered':
-      case 'resolved':
-      case 'success':
-        ourStatus = 'delivered';
-        break;
-      case 'failed':
-      case 'cancelled':
-      case 'refunded':
-        ourStatus = 'failed';
-        break;
-      case 'processing':
-        ourStatus = 'processing';
-        break;
-      case 'pending':
-        ourStatus = 'processing';
-        break;
-    }
-    
-    // Check if all items are delivered
-    const allDelivered = updatedResults.every(r => 
-      r.status === 'delivered' || r.status === 'resolved' || r.status === 'success'
-    );
-    
-    if (allDelivered && order.status !== 'delivered') {
-      ourStatus = 'delivered';
-      console.log(`🎉 All items delivered for order ${order._id}`);
-    }
-    
-    // Update order status
-    order.status = ourStatus;
-    order.updatedAt = new Date();
-    
-    if (!order.webhookHistory) {
-      order.webhookHistory = [];
-    }
-    
-    order.webhookHistory.push({
-      event: 'order.status.updated',
-      orderId,
-      reference,
-      status,
-      recipient,
-      volume,
-      timestamp,
-      receivedAt: new Date()
-    });
-    
-    await order.save();
-    
-    console.log(`✅ Order ${order._id} updated to status: ${ourStatus} via webhook`);
-    
-    if (status === 'delivered' || status === 'failed' || status === 'cancelled') {
-      try {
-        const user = await User.findById(order.userId);
-        if (user) {
-          console.log(`📧 Notification: Order ${order._id} status changed to ${status} for user ${user.email}`);
-        }
-      } catch (notifyError) {
-        console.error('❌ Error sending notification:', notifyError);
-      }
-    }
-    
+    req.user = user;
+    next();
   } catch (error) {
-    console.error('❌ Error processing Foster Console webhook:', error);
-    
-    await WebhookError.create({
-      error: error.message,
-      payload,
-      stack: error.stack
-    });
+    res.status(401).json({ error: 'Invalid authentication token' });
   }
-}
+};
 
 // ==================== ROUTES ====================
 
@@ -610,16 +406,13 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     service: 'AllenDataHub API',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
     database: {
       state: states[dbState] || 'unknown',
-      readyState: dbState,
-      host: mongoose.connection.host || 'unknown',
-      name: mongoose.connection.name || 'unknown'
+      readyState: dbState
     },
     fosterConsole: {
       configured: !!process.env.FOSTER_CONSOLE_API_KEY,
-      baseUrl: FOSTER_CONSOLE_BASE_URL
+      baseUrl: process.env.FOSTER_CONSOLE_BASE_URL || 'Not configured'
     }
   });
 });
@@ -664,29 +457,13 @@ app.get('/api/test-db', async (req, res) => {
 // Test Foster Console setup
 app.get('/api/test/foster-console-setup', authMiddleware, async (req, res) => {
   try {
-    const fosterConsoleService = require('./services/fosterConsoleService');
-    
     const connection = await fosterConsoleService.testConnection();
-    
-    const availableInfo = {
-      MTN: fosterConsoleService.availableVolumes?.MTN || [],
-      Telecel: fosterConsoleService.availableVolumes?.Telecel || [],
-      AirtelTigo: fosterConsoleService.availableVolumes?.AirtelTigo || []
-    };
-    
-    const networkIds = {
-      MTN: 3,
-      Telecel: 2,
-      AirtelTigo: 1
-    };
     
     res.json({
       success: true,
       message: 'Foster Console Setup Verification',
       connection,
-      availableVolumes: availableInfo,
-      networkIds,
-      baseUrl: FOSTER_CONSOLE_BASE_URL,
+      baseUrl: process.env.FOSTER_CONSOLE_BASE_URL,
       apiKeyConfigured: !!process.env.FOSTER_CONSOLE_API_KEY,
       webhookUrl: `${process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com'}/api/webhooks/foster-console`
     });
@@ -700,21 +477,15 @@ app.get('/api/test/foster-console-setup', authMiddleware, async (req, res) => {
   }
 });
 
-// User Registration
+// ==================== AUTHENTICATION ROUTES ====================
+
+// User Registration (with agent approval system)
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, email, password, phone } = req.body;
+    const { username, email, password, phone, role = 'client', referralCode } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' });
-    }
-
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      return res.status(503).json({ 
-        error: 'Database temporarily unavailable. Please try again.',
-        dbState: dbState
-      });
     }
 
     const existingUser = await User.findOne({ 
@@ -727,12 +498,30 @@ app.post('/api/auth/register', async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Validate role and set status
+    const validRoles = ['client', 'agent', 'admin'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role specified' });
+    }
+
+    // Determine user status based on role
+    let userStatus = 'active';
+    if (role === 'agent') {
+      userStatus = 'pending'; // Agents need admin approval
+    } else if (role === 'admin' && !email.includes('admin')) {
+      // Only allow admin registration from admin emails
+      return res.status(400).json({ error: 'Admin registration requires admin email' });
+    }
+
     const user = new User({
       username,
       email,
       phone,
       password: hashedPassword,
-      role: email.includes('admin') ? 'admin' : 'client'
+      role: role,
+      status: userStatus,
+      walletBalance: 0,
+      agentCommission: role === 'agent' ? 0.05 : 0
     });
 
     await user.save();
@@ -744,6 +533,8 @@ app.post('/api/auth/register', async (req, res) => {
 
     res.status(201).json({
       message: 'User created successfully',
+      requiresVerification: role === 'agent',
+      verificationMessage: role === 'agent' ? 'Your agent account requires admin approval. You will be notified once approved.' : null,
       token,
       user: {
         id: user._id,
@@ -751,7 +542,8 @@ app.post('/api/auth/register', async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        status: user.status
+        status: user.status,
+        walletBalance: user.walletBalance
       }
     });
   } catch (error) {
@@ -772,14 +564,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      return res.status(503).json({ 
-        error: 'Database temporarily unavailable. Please try again.',
-        dbState: dbState
-      });
-    }
-
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ error: 'Invalid credentials' });
@@ -790,8 +574,15 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    if (user.status !== 'active') {
-      return res.status(403).json({ error: 'Account is suspended' });
+    if (user.status === 'suspended') {
+      return res.status(403).json({ error: 'Account is suspended. Contact admin.' });
+    }
+
+    // For agents, check if they're approved
+    if (user.role === 'agent' && user.status === 'pending') {
+      return res.status(403).json({ 
+        error: 'Agent account pending approval. Please wait for admin verification.' 
+      });
     }
 
     const token = jwt.sign({ 
@@ -809,6 +600,10 @@ app.post('/api/auth/login', async (req, res) => {
         phone: user.phone,
         role: user.role,
         status: user.status,
+        walletBalance: user.walletBalance,
+        agentCommission: user.agentCommission,
+        totalSales: user.totalSales,
+        totalCommission: user.totalCommission,
         createdAt: user.createdAt
       }
     });
@@ -858,71 +653,10 @@ app.put('/api/users/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// Change Password
-app.post('/api/users/change-password', authMiddleware, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
+// ==================== DATA PLANS ROUTES ====================
 
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Current and new password are required' });
-    }
-
-    const user = await User.findById(req.userId);
-    
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Current password is incorrect' });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.updatedAt = new Date();
-    await user.save();
-
-    res.json({
-      success: true,
-      message: 'Password changed successfully'
-    });
-  } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({ error: 'Failed to change password' });
-  }
-});
-
-// Contact Support
-app.post('/api/users/contact', authMiddleware, async (req, res) => {
-  try {
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    const contact = new Contact({
-      userId: req.userId,
-      name: req.user.username,
-      email: req.user.email,
-      phone: req.user.phone,
-      message: message
-    });
-
-    await contact.save();
-
-    console.log(`📧 New contact message from ${req.user.email}: ${message}`);
-
-    res.json({
-      success: true,
-      message: 'Your message has been sent successfully',
-      contactId: contact._id
-    });
-  } catch (error) {
-    console.error('Contact error:', error);
-    res.status(500).json({ error: 'Failed to send message' });
-  }
-});
-
-// Get Data Plans
-app.get('/api/plans', async (req, res) => {
+// Get Data Plans (with agent pricing)
+app.get('/api/plans', authMiddleware, async (req, res) => {
   try {
     const { network } = req.query;
     let query = {};
@@ -931,68 +665,32 @@ app.get('/api/plans', async (req, res) => {
       query.network = network;
     }
 
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      console.log('⚠️ MongoDB not connected, returning fallback plans');
-      return getFallbackPlans(network, res);
-    }
-
     const plans = await DataPlan.find(query).sort({ price: 1 });
     
-    if (plans.length === 0) {
-      await initializeDataPlans();
-      const updatedPlans = await DataPlan.find(query).sort({ price: 1 });
-      return res.json(updatedPlans);
-    }
+    // Return agent price if user is agent
+    const plansWithPricing = plans.map(plan => {
+      const planObj = plan.toObject();
+      if (req.user.role === 'agent' && plan.agentPrice) {
+        planObj.displayPrice = plan.agentPrice;
+        planObj.isAgentPrice = true;
+        planObj.regularPrice = plan.price; // Show regular price for comparison
+      } else {
+        planObj.displayPrice = plan.price;
+        planObj.isAgentPrice = false;
+      }
+      return planObj;
+    });
 
-    res.json(plans);
+    res.json(plansWithPricing);
   } catch (error) {
     console.error('Plans fetch error:', error);
-    getFallbackPlans(req.query.network, res);
+    res.status(500).json({ error: 'Failed to fetch plans' });
   }
 });
 
-// Helper function for fallback plans
-function getFallbackPlans(network, res) {
-  const fallbackPlans = [
-    { network: 'MTN', size: '1GB', price: 4.30, validity: '30 days', description: 'MTN Non-Expiry', popular: true },
-    { network: 'MTN', size: '5GB', price: 20.60, validity: '30 days', description: 'MTN Non-Expiry' },
-    { network: 'MTN', size: '10GB', price: 39.70, validity: '30 days', description: 'MTN Non-Expiry' },
-    { network: 'Telecel', size: '5GB', price: 19.60, validity: '30 days', description: 'Telecel Bundle', popular: true },
-    { network: 'Telecel', size: '10GB', price: 37.30, validity: '30 days', description: 'Telecel Bundle' },
-    { network: 'AirtelTigo', size: '1GB', price: 3.95, validity: '30 days', description: 'AirtelTigo Bundle', popular: true },
-    { network: 'AirtelTigo', size: '5GB', price: 19.50, validity: '30 days', description: 'AirtelTigo Bundle' }
-  ];
+// ==================== ORDER ROUTES ====================
 
-  let filteredPlans = fallbackPlans;
-  if (network && network !== 'All') {
-    filteredPlans = fallbackPlans.filter(plan => plan.network === network);
-  }
-
-  res.json(filteredPlans);
-}
-
-// Get Plans by Network
-app.get('/api/plans/network/:network', async (req, res) => {
-  try {
-    const { network } = req.params;
-    
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      console.log('⚠️ MongoDB not connected, returning fallback network plans');
-      getFallbackPlans(network, res);
-      return;
-    }
-    
-    const plans = await DataPlan.find({ network }).sort({ price: 1 });
-    res.json(plans);
-  } catch (error) {
-    console.error('Network plans fetch error:', error);
-    getFallbackPlans(req.params.network, res);
-  }
-});
-
-// ORDER VERIFICATION
+// Order Verification
 app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   try {
     const { items, totalAmount, customerEmail, customerPhone } = req.body;
@@ -1051,7 +749,7 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
 
     let calculatedTotal = 0;
     for (const item of items) {
-      const itemPrice = parseFloat(item.price) || 0;
+      const itemPrice = req.user.role === 'agent' && item.agentPrice ? item.agentPrice : parseFloat(item.price) || 0;
       const itemQuantity = parseInt(item.quantity) || 1;
       calculatedTotal += itemPrice * itemQuantity;
     }
@@ -1099,132 +797,149 @@ app.post('/api/orders/verify', authMiddleware, async (req, res) => {
   }
 });
 
-// Create Order
+// Create Order (with wallet payment support)
 app.post('/api/orders', authMiddleware, async (req, res) => {
   try {
-    console.log('📦 Order Creation Request Body:', JSON.stringify(req.body, null, 2));
-    
     const { items, totalAmount, customerEmail, customerPhone, paymentMethod } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      console.log('❌ Validation failed: No items in order');
       return res.status(400).json({ 
         success: false,
         error: 'Order must contain at least one item' 
       });
     }
 
-    const volumeValidation = validateOrderItems(items);
-    if (!volumeValidation.valid) {
-      return res.status(400).json({
-        success: false,
-        error: volumeValidation.error
-      });
-    }
-
-    for (const item of items) {
-      if (!item.network || !item.size || item.price === undefined || !item.recipientPhone) {
-        console.log('❌ Invalid item:', item);
+    // Validate wallet payment
+    if (paymentMethod === 'wallet') {
+      if (req.user.walletBalance < totalAmount) {
         return res.status(400).json({
           success: false,
-          error: 'Each item must have network, size, price, and recipientPhone'
+          error: `Insufficient wallet balance. You have GH₵${req.user.walletBalance.toFixed(2)} but need GH₵${totalAmount}`
         });
       }
     }
 
-    if (!totalAmount || isNaN(totalAmount) || totalAmount <= 0) {
-      console.log('❌ Validation failed: Invalid total amount', totalAmount);
-      return res.status(400).json({ 
-        success: false,
-        error: 'Invalid order total' 
-      });
-    }
-
-    if (!customerEmail || !customerPhone) {
-      console.log('❌ Validation failed: Missing customer info', { customerEmail, customerPhone });
-      return res.status(400).json({ 
-        success: false,
-        error: 'Customer email and phone are required' 
-      });
-    }
-
-    const dbState = mongoose.connection.readyState;
-    if (dbState !== 1) {
-      console.log('❌ Database not connected');
-      return res.status(503).json({ 
-        success: false,
-        error: 'Database temporarily unavailable. Please try again.' 
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      console.log('❌ Invalid user ID:', req.userId);
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid user ID format'
-      });
-    }
-
-    const preparedItems = items.map(item => ({
-      network: item.network,
-      size: item.size,
-      price: parseFloat(item.price) || 0,
-      recipientPhone: item.recipientPhone,
-      quantity: parseInt(item.quantity) || 1
-    }));
-
-    console.log('💾 Prepared items:', preparedItems);
+    const preparedItems = items.map(item => {
+      const price = req.user.role === 'agent' && item.agentPrice ? item.agentPrice : parseFloat(item.price) || 0;
+      return {
+        network: item.network,
+        size: item.size,
+        price: price,
+        agentPrice: req.user.role === 'agent' && item.agentPrice ? item.agentPrice : undefined,
+        recipientPhone: item.recipientPhone,
+        quantity: parseInt(item.quantity) || 1
+      };
+    });
 
     const order = new Order({
-      userId: new mongoose.Types.ObjectId(req.userId),
+      userId: req.userId,
       items: preparedItems,
       totalAmount: parseFloat(totalAmount) || 0,
       customerEmail: customerEmail,
       customerPhone: customerPhone,
       paymentMethod: paymentMethod || 'paystack',
-      paymentStatus: 'pending',
-      status: 'placed',
+      paymentStatus: paymentMethod === 'wallet' ? 'success' : 'pending',
+      status: paymentMethod === 'wallet' ? 'placed' : 'placed',
       isVisibleToUser: true,
       archived: false
     });
 
     await order.save();
-    console.log('✅ Order saved successfully. ID:', order._id);
+
+    // Process wallet payment immediately if using wallet
+    if (paymentMethod === 'wallet') {
+      const user = await User.findById(req.userId);
+      const balanceBefore = user.walletBalance;
+      user.walletBalance -= totalAmount;
+      user.totalSales = (user.totalSales || 0) + totalAmount;
+      
+      if (user.role === 'agent') {
+        const commission = totalAmount * (user.agentCommission || 0.05);
+        user.totalCommission = (user.totalCommission || 0) + commission;
+        user.walletBalance += commission; // Add commission to wallet
+        
+        // Record commission transaction
+        await WalletTransaction.create({
+          userId: req.userId,
+          amount: commission,
+          type: 'commission',
+          description: `Commission for order #${order._id}`,
+          reference: `COMM-${order._id}-${Date.now()}`,
+          status: 'completed',
+          balanceBefore: balanceBefore - totalAmount,
+          balanceAfter: user.walletBalance
+        });
+      }
+      
+      await user.save();
+
+      // Record purchase transaction
+      await WalletTransaction.create({
+        userId: req.userId,
+        amount: -totalAmount,
+        type: 'purchase',
+        description: `Purchase order #${order._id}`,
+        reference: `WALLET-${order._id}-${Date.now()}`,
+        status: 'completed',
+        balanceBefore: balanceBefore,
+        balanceAfter: user.walletBalance + totalAmount // Balance before commission
+      });
+
+      // Process with vendor immediately
+      try {
+        const processingResults = [];
+        for (const [index, item] of order.items.entries()) {
+          const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
+          const result = await fosterConsoleService.purchaseDataBundle(
+            item.recipientPhone,
+            item.size,
+            item.network,
+            itemReference
+          );
+          
+          processingResults.push({
+            itemIndex: index,
+            success: result.success,
+            transactionId: result.transactionId,
+            reference: result.reference,
+            message: result.message,
+            error: result.error,
+            status: result.status || 'pending'
+          });
+          
+          if (index < order.items.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        
+        order.processingResults = processingResults;
+        const successfulItems = processingResults.filter(r => r.success);
+        order.status = successfulItems.length > 0 ? 'processing' : 'failed';
+        await order.save();
+        
+        console.log(`✅ Wallet order ${order._id} processed successfully`);
+      } catch (vendorError) {
+        console.error('❌ Vendor processing error:', vendorError);
+        order.status = 'failed';
+        order.processingError = vendorError.message;
+        await order.save();
+      }
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Order created successfully',
+      message: paymentMethod === 'wallet' ? 'Order placed successfully using wallet balance' : 'Order created successfully',
       orderId: order._id,
       order: {
         _id: order._id,
         items: order.items,
         totalAmount: order.totalAmount,
         status: order.status,
-        customerEmail: order.customerEmail,
-        customerPhone: order.customerPhone,
-        createdAt: order.createdAt
+        paymentStatus: order.paymentStatus,
+        paymentMethod: order.paymentMethod
       }
     });
 
   } catch (error) {
     console.error('❌ Order creation error:', error.message);
-    
-    if (error.name === 'ValidationError') {
-      const errors = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: errors
-      });
-    }
-    
-    if (error.name === 'CastError' && error.kind === 'ObjectId') {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid ID format'
-      });
-    }
-    
     res.status(500).json({ 
       success: false,
       error: 'Failed to create order',
@@ -1239,12 +954,8 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
     const { page = 1, limit = 10, showAll = false } = req.query;
     const skip = (page - 1) * limit;
 
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
     const query = { 
-      userId: new mongoose.Types.ObjectId(req.userId) 
+      userId: req.userId 
     };
     
     if (!showAll) {
@@ -1275,58 +986,12 @@ app.get('/api/orders/my-orders', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Recent Transactions
-app.get('/api/orders/recent', authMiddleware, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-    
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const orders = await Order.find({ 
-      userId: new mongoose.Types.ObjectId(req.userId),
-      isVisibleToUser: true,
-      archived: false
-    })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean();
-
-    const recentTransactions = orders.map(order => ({
-      id: order._id,
-      package: order.items[0]?.network + '-' + order.items[0]?.size,
-      description: order.items[0]?.description || `${order.items[0]?.network} Data Bundle`,
-      amount: order.totalAmount,
-      beneficiary: order.items[0]?.recipientPhone || order.customerPhone,
-      paymentSource: order.paymentMethod || 'Paystack',
-      paymentStatus: order.paymentStatus || 'pending',
-      deliveryStatus: order.status || 'placed',
-      date: order.createdAt,
-      status: order.status || 'placed'
-    }));
-
-    res.json(recentTransactions);
-  } catch (error) {
-    console.error('Recent transactions error:', error);
-    res.status(500).json({ error: 'Failed to fetch recent transactions' });
-  }
-});
-
 // Get Single Order
 app.get('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid order ID format' });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
     const order = await Order.findOne({
-      _id: new mongoose.Types.ObjectId(req.params.id),
-      userId: new mongoose.Types.ObjectId(req.userId)
+      _id: req.params.id,
+      userId: req.userId
     });
 
     if (!order) {
@@ -1343,17 +1008,9 @@ app.get('/api/orders/:id', authMiddleware, async (req, res) => {
 // Cancel Order
 app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid order ID format' });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
     const order = await Order.findOne({
-      _id: new mongoose.Types.ObjectId(req.params.id),
-      userId: new mongoose.Types.ObjectId(req.userId)
+      _id: req.params.id,
+      userId: req.userId
     });
 
     if (!order) {
@@ -1362,6 +1019,23 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
 
     if (order.status === 'delivered') {
       return res.status(400).json({ error: 'Cannot cancel delivered order' });
+    }
+
+    // Refund wallet if payment was made with wallet
+    if (order.paymentMethod === 'wallet' && order.paymentStatus === 'success') {
+      const user = await User.findById(req.userId);
+      user.walletBalance += order.totalAmount;
+      await user.save();
+      
+      // Record refund transaction
+      await WalletTransaction.create({
+        userId: req.userId,
+        amount: order.totalAmount,
+        type: 'deposit',
+        description: `Refund for cancelled order #${order._id}`,
+        reference: `REFUND-${order._id}-${Date.now()}`,
+        status: 'completed'
+      });
     }
 
     order.status = 'cancelled';
@@ -1379,181 +1053,403 @@ app.delete('/api/orders/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Manually trigger data delivery
-app.post('/api/orders/:id/deliver', authMiddleware, async (req, res) => {
+// ==================== WALLET ROUTES ====================
+
+// Get wallet balance
+app.get('/api/wallet/balance', authMiddleware, async (req, res) => {
   try {
-    const orderId = req.params.id;
-    
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ error: 'Invalid order ID format' });
+    const user = await User.findById(req.userId).select('walletBalance username email role totalSales totalCommission');
+    res.json({
+      success: true,
+      balance: user.walletBalance,
+      user: {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        totalSales: user.totalSales,
+        totalCommission: user.totalCommission
+      }
+    });
+  } catch (error) {
+    console.error('Wallet balance error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch wallet balance' });
+  }
+});
+
+// Deposit to wallet (Paystack)
+app.post('/api/wallet/deposit', authMiddleware, async (req, res) => {
+  try {
+    const { amount, email } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    const order = await Order.findOne({
-      _id: new mongoose.Types.ObjectId(orderId),
-      userId: new mongoose.Types.ObjectId(req.userId)
+    if (!PAYSTACK_SECRET_KEY) {
+      return res.status(503).json({ error: 'Payment service not configured' });
+    }
+
+    const amountInKobo = Math.round(amount * 100);
+    const reference = `WALLET-${req.userId}-${Date.now()}`;
+
+    const response = await paystack.post('/transaction/initialize', {
+      email: email || req.user.email,
+      amount: amountInKobo,
+      reference: reference,
+      callback_url: `${FRONTEND_URL}/wallet-return`,
+      metadata: {
+        userId: req.userId,
+        type: 'wallet_deposit',
+        amount: amount
+      }
     });
 
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    const { data } = response.data;
 
-    if (order.paymentStatus !== 'success') {
-      return res.status(400).json({ error: 'Order must be paid to deliver data' });
-    }
+    // Create pending wallet transaction
+    await WalletTransaction.create({
+      userId: req.userId,
+      amount: amount,
+      type: 'deposit',
+      description: 'Wallet deposit',
+      reference: data.reference,
+      status: 'pending'
+    });
 
-    if (order.status === 'delivered') {
-      return res.status(400).json({ error: 'Order already delivered' });
-    }
+    res.json({
+      success: true,
+      paymentUrl: data.authorization_url,
+      reference: data.reference,
+      amount: amount
+    });
+  } catch (error) {
+    console.error('Wallet deposit error:', error);
+    res.status(500).json({ 
+      error: 'Failed to initialize deposit',
+      details: error.response?.data?.message || error.message 
+    });
+  }
+});
 
-    console.log(`🚀 Manually triggering delivery for order ${order._id}`);
-    
-    const fosterConsoleService = require('./services/fosterConsoleService');
-    const processingResults = [];
-    
-    for (const [index, item] of order.items.entries()) {
-      console.log(`📦 Delivering item ${index + 1}: ${item.network} ${item.size} to ${item.recipientPhone}`);
+// Verify wallet deposit
+app.get('/api/wallet/verify/:reference', authMiddleware, async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    const response = await paystack.get(`/transaction/verify/${reference}`);
+    const { data } = response.data;
+
+    if (data.status === 'success') {
+      // Find and update wallet transaction
+      const transaction = await WalletTransaction.findOne({ reference });
       
-      const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
-      
-      const result = await fosterConsoleService.purchaseDataBundle(
-        item.recipientPhone,
-        item.size,
-        item.network,
-        itemReference
+      if (transaction && transaction.status === 'pending') {
+        const user = await User.findById(req.userId);
+        const balanceBefore = user.walletBalance;
+        user.walletBalance += data.amount / 100;
+        await user.save();
+
+        transaction.status = 'completed';
+        transaction.balanceBefore = balanceBefore;
+        transaction.balanceAfter = user.walletBalance;
+        await transaction.save();
+
+        res.json({
+          success: true,
+          message: 'Deposit successful',
+          amount: data.amount / 100,
+          newBalance: user.walletBalance
+        });
+      } else {
+        res.json({ success: true, message: 'Deposit already processed' });
+      }
+    } else {
+      // Update transaction status to failed
+      await WalletTransaction.findOneAndUpdate(
+        { reference },
+        { status: 'failed' }
       );
       
-      processingResults.push({
-        itemIndex: index,
-        success: result.success,
-        transactionId: result.transactionId || result.vendorTranxId || result.reference,
-        reference: result.reference,
-        message: result.message,
-        error: result.error,
-        status: result.status || 'pending',
-        webhookReceived: false
+      res.json({ success: false, message: 'Deposit verification failed' });
+    }
+  } catch (error) {
+    console.error('Wallet verify error:', error);
+    res.status(500).json({ error: 'Failed to verify deposit' });
+  }
+});
+
+// Get wallet transactions
+app.get('/api/wallet/transactions', authMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    const transactions = await WalletTransaction.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await WalletTransaction.countDocuments({ userId: req.userId });
+
+    res.json({
+      transactions,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Wallet transactions error:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// ==================== AGENT ROUTES ====================
+
+// Agent dashboard stats
+app.get('/api/agent/dashboard', agentMiddleware, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Agent orders
+    const agentOrders = await Order.find({ 
+      userId: req.userId,
+      paymentStatus: 'success'
+    });
+
+    const totalOrders = agentOrders.length;
+    const todayOrders = agentOrders.filter(order => order.createdAt >= today).length;
+    
+    const totalSales = agentOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const totalCommission = totalSales * req.user.agentCommission;
+    
+    const successfulOrders = agentOrders.filter(order => order.status === 'delivered').length;
+    const successRate = totalOrders > 0 ? (successfulOrders / totalOrders) * 100 : 0;
+
+    // Today's sales
+    const todaySales = agentOrders
+      .filter(order => order.createdAt >= today)
+      .reduce((sum, order) => sum + order.totalAmount, 0);
+
+    res.json({
+      success: true,
+      stats: {
+        walletBalance: req.user.walletBalance,
+        totalOrders,
+        todayOrders,
+        totalSales: parseFloat(totalSales.toFixed(2)),
+        todaySales: parseFloat(todaySales.toFixed(2)),
+        totalCommission: parseFloat(totalCommission.toFixed(2)),
+        successRate: parseFloat(successRate.toFixed(1)),
+        agentCommission: req.user.agentCommission * 100 // Convert to percentage
+      },
+      recentOrders: agentOrders.slice(0, 5).map(order => ({
+        id: order._id,
+        items: order.items.map(item => `${item.network} ${item.size}`).join(', '),
+        amount: order.totalAmount,
+        status: order.status,
+        date: order.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Agent dashboard error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch agent dashboard' });
+  }
+});
+
+// ==================== ADMIN ROUTES ====================
+
+// Admin dashboard stats
+app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
+  try {
+    const totalAgents = await User.countDocuments({ role: 'agent' });
+    const activeAgents = await User.countDocuments({ role: 'agent', status: 'active' });
+    const pendingAgents = await User.countDocuments({ role: 'agent', status: 'pending' });
+    
+    const agents = await User.find({ role: 'agent' });
+    const totalWalletBalance = agents.reduce((sum, agent) => sum + (agent.walletBalance || 0), 0);
+    
+    const agentOrders = await Order.find({ 
+      'userId': { $in: agents.map(a => a._id) },
+      paymentStatus: 'success'
+    });
+    
+    const totalSales = agentOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const totalCommission = agents.reduce((sum, agent) => sum + (agent.totalCommission || 0), 0);
+    
+    // Client stats
+    const totalClients = await User.countDocuments({ role: 'client' });
+    const clientOrders = await Order.find({ 
+      'userId': { $in: await User.find({ role: 'client' }).distinct('_id') },
+      paymentStatus: 'success'
+    });
+    const clientSales = clientOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+    
+    res.json({
+      success: true,
+      stats: {
+        totalAgents,
+        activeAgents,
+        pendingAgents,
+        totalClients,
+        totalSales: parseFloat(totalSales.toFixed(2)),
+        clientSales: parseFloat(clientSales.toFixed(2)),
+        totalCommission: parseFloat(totalCommission.toFixed(2)),
+        totalWalletBalance: parseFloat(totalWalletBalance.toFixed(2))
+      }
+    });
+  } catch (error) {
+    console.error('Admin stats error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch admin stats' });
+  }
+});
+
+// Get all agents
+app.get('/api/admin/agents', adminMiddleware, async (req, res) => {
+  try {
+    const agents = await User.find({ role: 'agent' })
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    // Calculate agent stats
+    const agentsWithStats = await Promise.all(agents.map(async (agent) => {
+      const orders = await Order.find({ 
+        userId: agent._id,
+        paymentStatus: 'success'
       });
       
-      if (index < order.items.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
-    }
-    
-    const successfulItems = processingResults.filter(r => r.success);
-    const failedItems = processingResults.filter(r => !r.success);
-    
-    let newStatus = 'processing';
-    if (successfulItems.length === order.items.length) {
-      newStatus = 'delivered';
-    } else if (successfulItems.length > 0) {
-      newStatus = 'partially_delivered';
-    } else {
-      newStatus = 'failed';
-    }
-    
-    order.status = newStatus;
-    order.processingResults = processingResults;
-    order.updatedAt = new Date();
-    await order.save();
-    
-    console.log(`📊 Order ${order._id} delivery completed with status: ${newStatus}`);
+      const totalSales = orders.reduce((sum, order) => sum + order.totalAmount, 0);
+      const totalCommission = totalSales * (agent.agentCommission || 0.05);
+      
+      return {
+        ...agent,
+        totalSales: parseFloat(totalSales.toFixed(2)),
+        totalCommission: parseFloat(totalCommission.toFixed(2))
+      };
+    }));
     
     res.json({
       success: true,
-      message: `Delivery completed: ${successfulItems.length} succeeded, ${failedItems.length} failed`,
-      status: newStatus,
-      results: processingResults,
-      order: order
+      agents: agentsWithStats
     });
-    
   } catch (error) {
-    console.error('Manual delivery error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message,
-      message: 'Failed to deliver data'
-    });
+    console.error('Agents fetch error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch agents' });
   }
 });
 
-// Check Foster Console order status
-app.get('/api/orders/:id/foster-console-status', authMiddleware, async (req, res) => {
+// Verify/approve agent
+app.post('/api/admin/verify-agent', adminMiddleware, async (req, res) => {
   try {
-    const orderId = req.params.id;
+    const { agentId, approve } = req.body;
     
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ error: 'Invalid order ID format' });
+    const agent = await User.findById(agentId);
+    if (!agent || agent.role !== 'agent') {
+      return res.status(404).json({ success: false, error: 'Agent not found' });
     }
-
-    const order = await Order.findOne({
-      _id: new mongoose.Types.ObjectId(orderId),
-      userId: new mongoose.Types.ObjectId(req.userId)
+    
+    agent.status = approve ? 'active' : 'suspended';
+    agent.updatedAt = new Date();
+    await agent.save();
+    
+    res.json({
+      success: true,
+      message: `Agent ${approve ? 'approved and activated' : 'suspended'} successfully`
     });
+  } catch (error) {
+    console.error('Verify agent error:', error);
+    res.status(500).json({ success: false, error: 'Failed to verify agent' });
+  }
+});
 
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const fosterConsoleService = require('./services/fosterConsoleService');
-    const statusResults = [];
+// Load agent wallet (admin)
+app.post('/api/admin/load-wallet', adminMiddleware, async (req, res) => {
+  try {
+    const { agentId, amount } = req.body;
     
-    for (const result of order.processingResults) {
-      if (result.transactionId) {
-        try {
-          const statusResult = await fosterConsoleService.checkOrderStatus(result.transactionId, result.network);
-          statusResults.push({
-            transactionId: result.transactionId,
-            status: statusResult.status,
-            details: statusResult.order,
-            success: statusResult.success
-          });
-        } catch (error) {
-          statusResults.push({
-            transactionId: result.transactionId,
-            status: 'check_failed',
-            error: error.message,
-            success: false
-          });
-        }
-      }
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid amount' });
+    }
+    
+    const agent = await User.findById(agentId);
+    if (!agent || agent.role !== 'agent') {
+      return res.status(404).json({ success: false, error: 'Agent not found' });
+    }
+    
+    const balanceBefore = agent.walletBalance;
+    agent.walletBalance += amount;
+    await agent.save();
+    
+    // Record transaction
+    await WalletTransaction.create({
+      userId: agentId,
+      amount: amount,
+      type: 'admin_load',
+      description: 'Admin wallet load',
+      reference: `ADMIN-${Date.now()}`,
+      status: 'completed',
+      balanceBefore,
+      balanceAfter: agent.walletBalance,
+      adminId: req.userId
+    });
+    
+    res.json({
+      success: true,
+      message: `Successfully loaded GH₵${amount} to agent wallet`,
+      newBalance: agent.walletBalance
+    });
+  } catch (error) {
+    console.error('Load wallet error:', error);
+    res.status(500).json({ success: false, error: 'Failed to load wallet' });
+  }
+});
+
+// Update agent prices
+app.post('/api/admin/update-prices', adminMiddleware, async (req, res) => {
+  try {
+    const { network, updates } = req.body;
+    
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({ success: false, error: 'Invalid price updates' });
+    }
+    
+    // Update agent prices in database
+    for (const [planId, newPrice] of Object.entries(updates)) {
+      await DataPlan.findByIdAndUpdate(planId, {
+        agentPrice: newPrice,
+        updatedAt: new Date()
+      });
     }
     
     res.json({
       success: true,
-      orderId: order._id,
-      ourStatus: order.status,
-      fosterConsoleStatuses: statusResults,
-      processingResults: order.processingResults,
-      webhookHistory: order.webhookHistory || []
+      message: 'Agent prices updated successfully'
     });
-    
   } catch (error) {
-    console.error('Order status check error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message
-    });
+    console.error('Update prices error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update prices' });
   }
 });
 
-// Get User Dashboard Stats
+// ==================== DASHBOARD STATS ROUTES ====================
+
+// Get user dashboard stats
 app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const userId = new mongoose.Types.ObjectId(req.userId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const userOrders = await Order.find({ 
-      userId: userId,
+      userId: req.userId,
       isVisibleToUser: true,
       archived: false
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-    
+    });
+
     const totalOrders = userOrders.length;
     const todayOrders = userOrders.filter(order => order.createdAt >= today).length;
     
@@ -1590,15 +1486,6 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
     const successfulOrders = userOrders.filter(order => order.paymentStatus === 'success');
     const averageOrderValue = successfulOrders.length > 0 ? totalSpent / successfulOrders.length : 0;
     
-    const recentOrders = userOrders.slice(0, 5).map(order => ({
-      id: order._id,
-      package: order.items[0]?.network + '-' + order.items[0]?.size,
-      amount: order.totalAmount,
-      status: order.status,
-      paymentStatus: order.paymentStatus,
-      date: order.createdAt
-    }));
-    
     res.json({
       stats: {
         totalOrders,
@@ -1613,8 +1500,7 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
           `${(totalDataVolume * 1024).toFixed(0)} MB`,
         orderSuccessRate: totalOrders > 0 ? 
           parseFloat(((deliveredOrders / totalOrders) * 100).toFixed(1)) : 0
-      },
-      recentOrders
+      }
     });
     
   } catch (error) {
@@ -1636,68 +1522,12 @@ app.get('/api/users/dashboard-stats', authMiddleware, async (req, res) => {
   }
 });
 
-// Get Transaction History
-app.get('/api/users/transactions', authMiddleware, async (req, res) => {
-  try {
-    const { page = 1, limit = 10, showAll = false } = req.query;
-    const skip = (page - 1) * limit;
-
-    if (!mongoose.Types.ObjectId.isValid(req.userId)) {
-      return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-
-    const query = { 
-      userId: new mongoose.Types.ObjectId(req.userId) 
-    };
-    
-    if (!showAll) {
-      query.isVisibleToUser = true;
-      query.archived = false;
-    }
-
-    const orders = await Order.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    const totalOrders = await Order.countDocuments(query);
-
-    const transactions = orders.map(order => ({
-      id: order._id,
-      package: order.items.map(item => `${item.network} ${item.size}`).join(', '),
-      description: order.items[0]?.description || 'Data Bundle',
-      amount: order.totalAmount,
-      beneficiary: order.items.map(item => item.recipientPhone).join(', '),
-      paymentSource: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      deliveryStatus: order.status,
-      date: order.createdAt,
-      status: order.status
-    }));
-
-    res.json({
-      transactions,
-      pagination: {
-        total: totalOrders,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(totalOrders / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Transactions history error:', error);
-    res.status(500).json({ error: 'Failed to fetch transaction history' });
-  }
-});
-
 // ==================== PAYMENT ROUTES ====================
 
 // Initialize Payment
 app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
   try {
     const { orderId, email, amount, redirectUrl } = req.body;
-    console.log('💰 Payment initialization request:', { orderId, email, amount, redirectUrl });
 
     if (!orderId || !email || !amount) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -1710,8 +1540,7 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
     const validatedAmount = parseFloat(amount);
     const amountInKobo = Math.round(validatedAmount * 100);
 
-    const reference = `ALLEN-${orderId}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-
+    const reference = `ALLEN-${orderId}-${Date.now()}`;
     const callbackUrl = redirectUrl || `${FRONTEND_URL}/payment-return`;
 
     const response = await paystack.post('/transaction/initialize', {
@@ -1722,8 +1551,7 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
       metadata: {
         orderId,
         userId: req.userId,
-        trxAmount: validatedAmount,
-        timestamp: new Date().toISOString()
+        type: 'order_payment'
       }
     });
 
@@ -1754,37 +1582,48 @@ app.post('/api/payment/initialize', authMiddleware, async (req, res) => {
 app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
   try {
     const { reference } = req.params;
-    console.log(`🔍 Payment verification called for ref: ${reference}`);
 
-    // Verify with Paystack
     const response = await paystack.get(`/transaction/verify/${reference}`);
     const { data } = response.data;
-    console.log(`📊 Paystack verification result: ${data.status}`);
 
     const order = await Order.findOne({ paymentReference: reference });
     if (!order) {
-      console.log(`❌ Order not found for reference: ${reference}`);
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    console.log(`📦 Found order: ${order._id}, Current status: ${order.status}, Payment status: ${order.paymentStatus}`);
-
     if (data.status === 'success') {
       if (order.paymentStatus !== 'success') {
-        console.log(`✅ First time payment success for order ${order._id}`);
-        
         order.paymentStatus = 'success';
         order.status = 'placed';
         order.updatedAt = new Date();
         await order.save();
 
-        console.log(`🚀 STARTING FOSTER CONSOLE PROCESSING FOR ORDER ${order._id}`);
-        
-        let fosterConsoleSuccess = false;
-        let processingResults = [];
-        
+        // Update user sales if agent
+        if (order.userId.toString() === req.userId && req.user.role === 'agent') {
+          const user = await User.findById(req.userId);
+          user.totalSales = (user.totalSales || 0) + order.totalAmount;
+          const commission = order.totalAmount * (user.agentCommission || 0.05);
+          user.totalCommission = (user.totalCommission || 0) + commission;
+          user.walletBalance += commission; // Add commission to wallet
+          
+          // Record commission transaction
+          await WalletTransaction.create({
+            userId: req.userId,
+            amount: commission,
+            type: 'commission',
+            description: `Commission for order #${order._id}`,
+            reference: `COMM-${order._id}-${Date.now()}`,
+            status: 'completed',
+            balanceBefore: user.walletBalance - commission,
+            balanceAfter: user.walletBalance
+          });
+          
+          await user.save();
+        }
+
+        // Process with vendor
         try {
-          const fosterConsoleService = require('./services/fosterConsoleService');
+          const processingResults = [];
           for (const [index, item] of order.items.entries()) {
             const itemReference = `ALLEN-${order._id}-${index}-${Date.now()}`;
             const result = await fosterConsoleService.purchaseDataBundle(
@@ -1797,70 +1636,62 @@ app.get('/api/payment/verify/:reference', authMiddleware, async (req, res) => {
             processingResults.push({
               itemIndex: index,
               success: result.success,
-              transactionId: result.transactionId || result.vendorTranxId || result.reference,
+              transactionId: result.transactionId,
               reference: result.reference,
               message: result.message,
               error: result.error,
-              status: result.status || 'pending',
-              webhookReceived: false,
-              processedAt: new Date()
+              status: result.status || 'pending'
             });
             
-            if (result.success) fosterConsoleSuccess = true;
             if (index < order.items.length - 1) await new Promise(resolve => setTimeout(resolve, 300));
           }
           
           order.processingResults = processingResults;
-          let newStatus = 'placed';
-          if (processingResults.length > 0) {
-            const successfulItems = processingResults.filter(r => r.success);
-            newStatus = (successfulItems.length > 0) ? 'processing' : 'failed';
-          }
-          
-          order.status = newStatus;
-          order.updatedAt = new Date();
+          const successfulItems = processingResults.filter(r => r.success);
+          order.status = successfulItems.length > 0 ? 'processing' : 'failed';
           await order.save();
           
-        } catch (fosterConsoleError) {
-          console.error(`❌ Foster Console processing error: ${fosterConsoleError.message}`);
-          order.processingError = fosterConsoleError.message;
+        } catch (vendorError) {
+          console.error('❌ Vendor processing error:', vendorError);
           order.status = 'failed';
+          order.processingError = vendorError.message;
           await order.save();
         }
-        
+
         res.json({
           success: true,
-          message: fosterConsoleSuccess ? 'Payment successful! Data processing initiated.' : 'Payment successful but vendor processing failed.',
+          message: 'Payment successful! Order processing started.',
           orderId: order._id,
           status: order.status,
-          amount: data.amount / 100,
-          fosterConsoleSuccess: fosterConsoleSuccess,
-          fosterConsoleResults: processingResults
+          commissionAdded: req.user.role === 'agent'
         });
-        
       } else {
-        res.json({ success: true, message: 'Payment already verified', orderId: order._id, status: order.status });
+        res.json({ success: true, message: 'Payment already verified' });
       }
     } else {
       order.paymentStatus = 'failed';
       order.status = 'failed';
       await order.save();
-      res.json({ success: false, message: 'Payment verification failed', orderId: order._id });
+      res.json({ success: false, message: 'Payment verification failed' });
     }
   } catch (error) {
-    console.error('❌ Payment verification error:', error.message);
-    res.status(500).json({ error: 'Failed to verify payment', details: error.message });
+    console.error('Payment verification error:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
   }
 });
 
 // ==================== WEBHOOK ROUTES ====================
 
-// ✅ FIXED PAYSTACK WEBHOOK
+// Paystack webhook
 app.post('/api/payment/webhook', async (req, res) => {
   const crypto = require('crypto');
   const secret = process.env.PAYSTACK_SECRET_KEY;
   
-  // 1. Verify the signature
+  if (!secret) {
+    console.error('❌ Paystack secret key not configured');
+    return res.sendStatus(400);
+  }
+
   const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(req.body)).digest('hex');
   
   if (hash !== req.headers['x-paystack-signature']) {
@@ -1873,48 +1704,94 @@ app.post('/api/payment/webhook', async (req, res) => {
 
   if (event.event === 'charge.success') {
     const { reference, metadata } = event.data;
-    const orderId = metadata?.orderId;
-
+    
     try {
-      const order = await Order.findById(orderId);
-      if (order && order.paymentStatus !== 'success') {
-        // 2. Update Order Status
-        order.paymentStatus = 'success';
-        order.paymentReference = reference;
-        order.status = 'processing';
-        await order.save();
+      // Handle wallet deposit
+      if (metadata?.type === 'wallet_deposit') {
+        const transaction = await WalletTransaction.findOne({ reference });
+        
+        if (transaction && transaction.status === 'pending') {
+          const user = await User.findById(metadata.userId);
+          if (user) {
+            const balanceBefore = user.walletBalance;
+            user.walletBalance += event.data.amount / 100;
+            await user.save();
 
-        console.log(`✅ Order ${orderId} marked as PAID via Webhook. Processing ${order.items.length} items...`);
-
-        // 3. Process with Foster Console
-        const fosterConsoleService = require('./services/fosterConsoleService');
-        for (const item of order.items) {
-          try {
-            await fosterConsoleService.purchaseDataBundle(
-              item.recipientPhone,
-              item.size,
-              item.network,
-              order._id.toString()
-            );
-          } catch (err) { 
-            console.error(`❌ Vendor failed for ${item.recipientPhone}:`, err.message); 
+            transaction.status = 'completed';
+            transaction.balanceBefore = balanceBefore;
+            transaction.balanceAfter = user.walletBalance;
+            await transaction.save();
+            
+            console.log(`✅ Wallet deposit completed for user ${user.email}`);
           }
         }
       }
+      // Handle order payment
+      else if (metadata?.type === 'order_payment') {
+        const order = await Order.findById(metadata.orderId);
+        if (order && order.paymentStatus !== 'success') {
+          order.paymentStatus = 'success';
+          order.status = 'placed';
+          order.updatedAt = new Date();
+          await order.save();
+          
+          console.log(`✅ Order ${order._id} marked as paid via webhook`);
+        }
+      }
     } catch (error) {
-      console.error('❌ Database update failed during webhook:', error);
+      console.error('❌ Webhook processing error:', error);
     }
   }
   
   res.status(200).send('OK');
 });
 
-// ✅ FOSTER CONSOLE WEBHOOK (Updates delivered status)
+// Foster Console webhook
 app.post('/api/webhooks/foster-console', async (req, res) => {
   console.log('🔔 Foster Console Webhook Received:', JSON.stringify(req.body, null, 2));
   
   try {
-    await processFosterConsoleWebhook(req.body);
+    const processed = fosterConsoleService.processWebhookPayload(req.body);
+    
+    if (processed.success) {
+      const { orderId, reference, status } = processed;
+      
+      // Find order by reference or transaction ID
+      const order = await Order.findOne({
+        $or: [
+          { 'processingResults.transactionId': orderId },
+          { 'processingResults.reference': reference },
+          { paymentReference: reference },
+          { _id: orderId }
+        ]
+      });
+      
+      if (order) {
+        // Update order status
+        order.status = status;
+        order.updatedAt = new Date();
+        
+        // Update processing results
+        if (order.processingResults && order.processingResults.length > 0) {
+          order.processingResults = order.processingResults.map(result => {
+            if (result.transactionId === orderId || result.reference === reference) {
+              return {
+                ...result,
+                status: status,
+                lastUpdated: new Date()
+              };
+            }
+            return result;
+          });
+        }
+        
+        await order.save();
+        console.log(`✅ Order ${order._id} status updated to ${status} via Foster Console webhook`);
+      } else {
+        console.log(`⚠️ Order not found for reference: ${reference}`);
+      }
+    }
+    
     res.status(200).send('OK');
   } catch (error) {
     console.error('❌ Error processing Foster Console webhook:', error);
@@ -1922,61 +1799,37 @@ app.post('/api/webhooks/foster-console', async (req, res) => {
   }
 });
 
-// ==================== ADMIN ROUTES ====================
+// ==================== CONTACT ROUTES ====================
 
-app.get('/api/admin/orders', adminMiddleware, async (req, res) => {
+// Contact Support
+app.post('/api/users/contact', authMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, showArchived = false } = req.query;
-    const skip = (page - 1) * limit;
+    const { message } = req.body;
 
-    let query = {};
-    if (status && status !== 'all') query.status = status;
-    if (!showArchived) { query.isVisibleToUser = true; query.archived = false; }
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
 
-    const orders = await Order.find(query).populate('userId', 'username email phone').sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)).lean();
-    const totalOrders = await Order.countDocuments(query);
+    const contact = new Contact({
+      userId: req.userId,
+      name: req.user.username,
+      email: req.user.email,
+      phone: req.user.phone,
+      message: message
+    });
 
-    res.json({ orders, pagination: { total: totalOrders, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(totalOrders / limit) } });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch orders' });
-  }
-});
+    await contact.save();
 
-// Check Foster Console Balance (Admin)
-app.get('/api/admin/foster-console-balance', adminMiddleware, async (req, res) => {
-  try {
-    const fosterConsoleService = require('./services/fosterConsoleService');
-    const balance = await fosterConsoleService.checkBalance();
-    
+    console.log(`📧 New contact message from ${req.user.email}: ${message}`);
+
     res.json({
       success: true,
-      balance: balance
+      message: 'Your message has been sent successfully',
+      contactId: contact._id
     });
   } catch (error) {
-    console.error('Foster Console balance check error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Fetch Foster Console Packages (Admin)
-app.get('/api/admin/foster-console-packages', adminMiddleware, async (req, res) => {
-  try {
-    const fosterConsoleService = require('./services/fosterConsoleService');
-    const packages = await fosterConsoleService.fetchDataPackages();
-    
-    res.json({
-      success: true,
-      packages: packages
-    });
-  } catch (error) {
-    console.error('Foster Console packages fetch error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message
-    });
+    console.error('Contact error:', error);
+    res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
@@ -2002,8 +1855,9 @@ app.listen(PORT, () => {
   console.log(`🔗 MongoDB URI: ${process.env.MONGODB_URI ? 'Set' : 'NOT SET - Check .env file'}`);
   console.log(`📊 Database Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
   console.log(`🔄 Foster Console API: ${process.env.FOSTER_CONSOLE_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
-  console.log(`📦 Foster Console Base URL: ${FOSTER_CONSOLE_BASE_URL}`);
-  console.log(`🔔 Webhook URL: ${process.env.BACKEND_URL || 'https://allen-data-hub-backend.onrender.com'}/api/webhooks/foster-console`);
+  console.log(`👑 Agent System: ENABLED`);
+  console.log(`👑 Admin Dashboard: ENABLED`);
+  console.log(`💰 Wallet System: ENABLED`);
   
   setTimeout(() => {
     if (mongoose.connection.readyState === 1) {
