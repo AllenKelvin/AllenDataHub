@@ -1692,29 +1692,30 @@ app.post('/api/payment/webhook', async (req, res) => {
     return res.sendStatus(400);
   }
 
+  // 1. Verify Paystack Signature
   const hash = crypto.createHmac('sha512', secret).update(JSON.stringify(req.body)).digest('hex');
-  
   if (hash !== req.headers['x-paystack-signature']) {
     console.error('❌ Invalid Paystack signature');
     return res.sendStatus(400);
   }
 
-  const event = req.body;
-  console.log(`💰 Paystack Webhook Received: ${event.event}`);
+  const { event, data } = req.body;
+  const { reference, metadata } = data;
+  console.log(`💰 Paystack Webhook Received: ${event}`);
 
-  if (event.event === 'charge.success') {
-    const { reference, metadata } = event.data;
-    
+  if (event === 'charge.success') {
     try {
-      // Handle wallet deposit
+      // CASE A: WALLET DEPOSIT
       if (metadata?.type === 'wallet_deposit') {
-        const transaction = await WalletTransaction.findOne({ reference });
+        const WalletTransaction = mongoose.model('WalletTransaction');
+        const User = mongoose.model('User');
         
+        const transaction = await WalletTransaction.findOne({ reference });
         if (transaction && transaction.status === 'pending') {
           const user = await User.findById(metadata.userId);
           if (user) {
             const balanceBefore = user.walletBalance;
-            user.walletBalance += event.data.amount / 100;
+            user.walletBalance += data.amount / 100;
             await user.save();
 
             transaction.status = 'completed';
@@ -1726,26 +1727,48 @@ app.post('/api/payment/webhook', async (req, res) => {
           }
         }
       }
-      // Handle order payment
-      else if (metadata?.type === 'order_payment') {
-        const order = await Order.findById(metadata.orderId);
+
+      // CASE B: DIRECT ORDER PAYMENT (Calls Vendor API)
+      else if (metadata?.type === 'order_payment' || metadata?.orderId) {
+        const orderId = metadata.orderId;
+        const Order = mongoose.model('Order');
+        const order = await Order.findById(orderId);
+
         if (order && order.paymentStatus !== 'success') {
+          console.log(`✅ Order ${orderId} confirmed paid. Triggering fulfillment...`);
+          
           order.paymentStatus = 'success';
-          order.status = 'placed';
+          order.status = 'processing';
           order.updatedAt = new Date();
           await order.save();
-          
-          console.log(`✅ Order ${order._id} marked as paid via webhook`);
+
+          // LOOP THROUGH ITEMS AND SEND DATA VIA FOSTER SERVICE
+          for (const item of order.items) {
+            console.log(`📡 Sending ${item.size} to ${item.recipientPhone} (${item.network})...`);
+            
+            const result = await fosterConsoleService.purchaseDataBundle(
+              item.recipientPhone,
+              item.size,
+              item.network,
+              order._id.toString()
+            );
+
+            console.log(`🔄 Vendor Response for ${item.recipientPhone}:`, result.success ? '✅ SUCCESS' : '❌ FAILED');
+          }
+
+          order.status = 'completed';
+          await order.save();
+          console.log(`🏁 Order ${orderId} fully processed.`);
         }
       }
     } catch (error) {
       console.error('❌ Webhook processing error:', error);
+      // We still send 200 to Paystack so they stop retrying, even if our internal logic fails
     }
   }
   
   res.status(200).send('OK');
 });
-
 // Foster Console webhook
 app.post('/api/webhooks/foster-console', async (req, res) => {
   console.log('🔔 Foster Console Webhook Received:', JSON.stringify(req.body, null, 2));
