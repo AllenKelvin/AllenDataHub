@@ -211,7 +211,7 @@ class FosterConsoleService {
       };
       
       console.log('📤 Purchasing iShare bundle:', payload);
-      const response = await this.api.post('buy-ishare-package', payload);
+     const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-ishare-package', payload);
       
       return response.data;
       
@@ -235,7 +235,8 @@ class FosterConsoleService {
       };
       
       console.log('📤 Purchasing other bundle:', payload);
-      const response = await this.api.post('buy-other-package', payload);
+      // Use the full URL string to avoid any joining errors
+const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-other-package', payload);
       
       return response.data;
       
