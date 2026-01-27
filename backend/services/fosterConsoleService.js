@@ -179,7 +179,23 @@ async purchaseOtherPackage(payload) {
     return response.data;
 }
 
-  // Check order status
+// Helper function to convert size strings to MB for the vendor
+  parseSizeToMb(size) {
+    if (!size) return 0;
+    
+    // Extracts the number from strings like "1GB" or "500MB"
+    const volumeMatch = size.match(/(\d+)/);
+    const volume = volumeMatch ? parseInt(volumeMatch[1]) : 0;
+    
+    // If the string contains "GB", multiply by 1000 as per Foster requirements [cite: 40, 69]
+    if (size.toUpperCase().includes('GB')) {
+      return volume * 1000;
+    }
+    
+    return volume;
+  }
+
+ // Check order status
   async checkOrderStatus(transactionId, network) {
     try {
       console.log(`🔍 Checking status for transaction: ${transactionId}`);
