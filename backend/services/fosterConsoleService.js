@@ -142,113 +142,42 @@ class FosterConsoleService {
   }
 
   // Purchase data bundle (main function)
-  async purchaseDataBundle(phoneNumber, bundleSize, network, orderReference) {
+  async purchaseDataBundle(phone, size, network, reference) {
     try {
-      console.log(`🛒 Purchasing ${bundleSize} for ${network} to ${phoneNumber}`);
-      
-      // Validate inputs
-      if (!phoneNumber || !bundleSize || !network) {
-        throw new Error('Missing required parameters: phoneNumber, bundleSize, network');
-      }
+        const volumeInMb = this.parseSizeToMb(size);
+        const networkUpper = network.toUpperCase();
 
-      if (!this.networkIds[network]) {
-        throw new Error(`Unsupported network: ${network}`);
-      }
-
-      // Extract volume from bundleSize (e.g., "1GB" -> 1)
-      const volumeMatch = bundleSize.match(/(\d+)/);
-      const volume = volumeMatch ? parseInt(volumeMatch[1]) : 0;
-      
-      if (volume === 0) {
-        throw new Error(`Invalid bundle size format: ${bundleSize}`);
-      }
-
-      // Check if volume is available for this network
-      const available = this.availableVolumes[network];
-      if (!available || !available.includes(volume)) {
-        throw new Error(`${volume}GB is not available for ${network}. Available: ${available ? available.join(', ') : 'none'}`);
-      }
-
-      // Convert GB to MB for Foster Console API (1GB = 1000MB in their system)
-      const sharedBundle = volume * 1000; // Convert GB to MB
-
-      let result;
-      
-      // Different endpoint for AirtelTigo (iShare) vs other networks
-      if (network === 'AirtelTigo') {
-        result = await this.purchaseIshareBundle(phoneNumber, sharedBundle, orderReference);
-      } else {
-        result = await this.purchaseOtherBundle(phoneNumber, this.networkIds[network], sharedBundle);
-      }
-      
-      return {
-        success: result.success || result.response_code === '200',
-        transactionId: result.vendorTranxId || result.transaction_code,
-        reference: orderReference,
-        message: result.response_msg || result.message,
-        status: 'pending',
-        rawResponse: result
-      };
-      
+        // 1. ROUTING LOGIC: MTN always goes to iShare 
+        // AirtelTigo (AT) and Telecel go to Other [cite: 58, 59, 83]
+        if (networkUpper === 'MTN') {
+            return await this.purchaseIsharePackage({
+                recipient_msisdn: phone,
+                shared_bundle: volumeInMb,
+                order_reference: reference // Foster uses reference for iShare [cite: 70]
+            });
+        } else {
+            const networkId = networkUpper === 'AIRTELTIGO' || networkUpper === 'AT' ? 1 : 2; // 
+            return await this.purchaseOtherPackage({
+                recipient_msisdn: phone,
+                network_id: networkId, // [cite: 88]
+                shared_bundle: volumeInMb // [cite: 89]
+            });
+        }
     } catch (error) {
-      console.error('❌ Purchase failed:', error.message);
-      return {
-        success: false,
-        error: error.message,
-        reference: orderReference,
-        status: 'failed'
-      };
+        throw error;
     }
-  }
+}
 
-  // Purchase iShare bundle (AirtelTigo)
-  async purchaseIshareBundle(phoneNumber, sharedBundle, orderReference) {
-    try {
-      const payload = {
-        recipient_msisdn: phoneNumber,
-        shared_bundle: sharedBundle,
-        order_reference: orderReference || `ISHARE-${Date.now()}`
-      };
-      
-      console.log('📤 Purchasing iShare bundle:', payload);
-     const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-ishare-package', payload);
-      
-      return response.data;
-      
-    } catch (error) {
-      console.error('❌ iShare purchase failed:', error.message);
-      if (error.response) {
-        console.error('Response:', error.response.data);
-        throw new Error(error.response.data.response_msg || error.message);
-      }
-      throw error;
-    }
-  }
+// Use Hardcoded Full URLs to eliminate 404 Route errors 
+async purchaseIsharePackage(payload) {
+    const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-ishare-package', payload);
+    return response.data;
+}
 
-  // Purchase other network bundle (MTN, Telecel)
-  async purchaseOtherBundle(phoneNumber, networkId, sharedBundle) {
-    try {
-      const payload = {
-        recipient_msisdn: phoneNumber,
-        network_id: networkId,
-        shared_bundle: sharedBundle
-      };
-      
-      console.log('📤 Purchasing other bundle:', payload);
-      // Use the full URL string to avoid any joining errors
-const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-other-package', payload);
-      
-      return response.data;
-      
-    } catch (error) {
-      console.error('❌ Other network purchase failed:', error.message);
-      if (error.response) {
-        console.error('Response:', error.response.data);
-        throw new Error(error.response.data.message || error.message);
-      }
-      throw error;
-    }
-  }
+async purchaseOtherPackage(payload) {
+    const response = await this.api.post('https://fgamall.researchershubgh.com/api/v/buy-other-package', payload);
+    return response.data;
+}
 
   // Check order status
   async checkOrderStatus(transactionId, network) {
