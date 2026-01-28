@@ -14,8 +14,8 @@ const Login = () => {
   const [monkeyEyesClosed, setMonkeyEyesClosed] = useState(false);
   const [showSessionExpired, setShowSessionExpired] = useState(false);
   
-  const { darkMode, toggleTheme } = useTheme();
-  const { login } = useAuth(); 
+  const { darkMode } = useTheme();
+  const { login, isAuthenticated } = useAuth(); 
   const navigate = useNavigate();
 
   // Check for session expired parameter
@@ -34,58 +34,113 @@ const Login = () => {
     }
   }, [showPassword]);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      if (user?.role === 'admin') {
+        navigate('/admin-dashboard', { replace: true });
+      } else {
+        navigate('/client-dashboard', { replace: true });
+      }
+    }
+  }, [isAuthenticated, navigate]);
+
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     if (error) setError('');
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setLoading(true);
-  setError('');
-  
-  if (!formData.email || !formData.password) {
-    setError('Please fill in all fields');
-    setLoading(false);
-    return;
-  }
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    if (!formData.email || !formData.password) {
+      setError('Please fill in all fields');
+      setLoading(false);
+      return;
+    }
 
-  try {
-    const response = await authAPI.login(formData);
-    
-    // Use the auth context login
-    const loginResult = login(response.data.user, response.data.token);
-    
-    // Store remember me preference
-    if (rememberMe) {
-      localStorage.setItem('rememberMe', 'true');
-      localStorage.setItem('userEmail', formData.email);
-    } else {
-      localStorage.removeItem('rememberMe');
-      localStorage.removeItem('userEmail');
-    }
-    
-    // DEBUG: Check what we got back
-    console.log('Login result:', loginResult);
-    console.log('User role:', response.data.user.role);
-    
-    // Redirect based on user role
-    if (response.data.user.role === 'admin') {
-      console.log('Redirecting to admin dashboard...');
-      navigate('/admin-dashboard', { replace: true });
-    } else {
-      console.log('Redirecting to client dashboard...');
-      navigate('/client-dashboard', { replace: true });
-    }
+    try {
+      // Call the API to authenticate
+      const response = await authAPI.login(formData);
+      console.log('Login API response:', response.data);
       
+      if (!response.data || !response.data.user) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Extract user data and token from response
+      const { user, token } = response.data;
+      
+      // Store remember me preference BEFORE calling login
+      if (rememberMe) {
+        localStorage.setItem('rememberMe', 'true');
+        localStorage.setItem('userEmail', formData.email);
+      } else {
+        localStorage.removeItem('rememberMe');
+        localStorage.removeItem('userEmail');
+      }
+
+      // Call the auth context login function
+      console.log('Calling auth context login with:', { user, token });
+      login(user, token);
+      
+      // Wait a moment for the auth state to update
+      setTimeout(() => {
+        // Check localStorage to confirm login was successful
+        const storedUser = localStorage.getItem('user');
+        const storedToken = localStorage.getItem('token');
+        
+        console.log('After login - localStorage user:', storedUser);
+        console.log('After login - localStorage token:', storedToken);
+        
+        if (storedUser && storedToken) {
+          // Redirect based on user role
+          const userData = JSON.parse(storedUser);
+          console.log('Redirecting user with role:', userData.role);
+          
+          if (userData.role === 'admin') {
+            navigate('/admin-dashboard', { replace: true });
+          } else if (userData.role === 'agent') {
+            navigate('/agent-dashboard', { replace: true });
+          } else {
+            navigate('/client-dashboard', { replace: true });
+          }
+        } else {
+          setError('Login failed. Unable to store session.');
+        }
+      }, 100);
+        
     } catch (err) {
-      const errorMessage = err.response?.data?.error || 
-                          err.response?.data?.message || 
-                          'Login failed. Please check your credentials and try again.';
-      setError(errorMessage);
-      setMonkeyEyesClosed(true); // Monkey closes eyes on error
+      console.error('Login error details:', err);
+      console.error('Error response:', err.response?.data);
       
-      // Reset monkey eyes after 2 seconds
+      // Handle specific error cases
+      let errorMessage = 'Login failed. Please check your credentials and try again.';
+      
+      if (err.response) {
+        if (err.response.status === 401) {
+          errorMessage = 'Invalid email or password';
+        } else if (err.response.status === 403) {
+          errorMessage = 'Account is not active or verified';
+        } else if (err.response.status === 404) {
+          errorMessage = 'User not found';
+        } else if (err.response.data?.error) {
+          errorMessage = err.response.data.error;
+        } else if (err.response.data?.message) {
+          errorMessage = err.response.data.message;
+        }
+      } else if (err.request) {
+        errorMessage = 'Unable to connect to server. Please try again.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      setMonkeyEyesClosed(true);
+      
       setTimeout(() => {
         setMonkeyEyesClosed(false);
       }, 2000);
@@ -106,7 +161,6 @@ const Login = () => {
 
   return (
     <div className={`login-container ${darkMode ? 'dark' : 'light'}`}>
-
       <div className="login-card">
         {/* Session Expired Message */}
         {showSessionExpired && (
@@ -123,9 +177,8 @@ const Login = () => {
           <p className="logo-subtitle">Data Bundle Management Portal</p>
         </div>
 
-        {/* FIXED MONKEY ANIMATION - CORRECTED STRUCTURE */}
         <div className="monkey-container">
-          <div className="monkey-emoji">🐵</div>
+          <div className="monkey-emoji"></div>
           <div className={`monkey-eyes ${monkeyEyesClosed ? 'closed' : ''}`}>
             <div className="eye left-eye"></div>
             <div className="eye right-eye"></div>
@@ -159,6 +212,7 @@ const Login = () => {
                 value={formData.email}
                 onChange={handleChange}
                 onFocus={() => setMonkeyEyesClosed(false)}
+                autoComplete="email"
               />
               <div className="input-icon"></div>
             </div>
@@ -180,6 +234,7 @@ const Login = () => {
                 onChange={handleChange}
                 onFocus={() => setMonkeyEyesClosed(true)}
                 onBlur={() => setMonkeyEyesClosed(false)}
+                autoComplete="current-password"
               />
               <button 
                 type="button" 
@@ -260,9 +315,9 @@ const Login = () => {
       <div className="login-footer">
         <p>AllenDataHub © {new Date().getFullYear()} - All rights reserved</p>
         <div className="footer-links">
-          <a href="/privacy"></a>
-          <a href="/terms"></a>
-          <a href="/contact"></a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Service</a>
+          <a href="/contact">Contact Us</a>
         </div>
       </div>
     </div>
