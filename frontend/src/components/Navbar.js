@@ -17,9 +17,8 @@ const Navbar = () => {
 
   const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
-  // Check if user is on client dashboard
-  const isOnClientDashboard = location.pathname.includes('/client-dashboard');
-  const showCart = user && user.role === 'client' && isOnClientDashboard;
+  // Show cart in navbar for all authenticated users (if they have items)
+  const showCart = user && totalItems > 0;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -61,33 +60,53 @@ const Navbar = () => {
   }, [location.pathname]);
 
   // Dashboard link based on user role
-const getDashboardLink = () => {
-  if (!user) return '/login';
-  
-  // Handle different role naming conventions
-  const userRole = user.role?.toLowerCase();
-  
-  if (userRole === 'admin' || userRole === 'administrator') {
-    return '/admin-dashboard';
-  } else if (userRole === 'agent' || userRole === 'reseller') {
-    return '/agent-dashboard';
-  } else {
-    return '/client-dashboard';
-  }
-};
+  const getDashboardLink = () => {
+    if (!user) return '/login';
+    
+    const userRole = user.role?.toLowerCase();
+    
+    if (userRole === 'admin' || userRole === 'administrator') {
+      return '/admin-dashboard';
+    } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
+      return '/agent-dashboard';
+    } else {
+      return '/client-dashboard';
+    }
+  };
 
   // Navigate to admin login
   const goToAdminLogin = () => {
     setDropdownOpen(false);
     setMobileMenuOpen(false);
-    navigate('/AdminLogin');
+    navigate('/admin-login');
   };
 
   // Navigate to agent login
   const goToAgentLogin = () => {
     setDropdownOpen(false);
     setMobileMenuOpen(false);
-    navigate('/AgentLogin');
+    navigate('/agent-login');
+  };
+
+  // Navigate to profile page
+  const goToProfile = () => {
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+    navigate('/profile');
+  };
+
+  // Navigate to cart
+  const goToCart = () => {
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+    navigate('/cart');
+  };
+
+  // Navigate to checkout
+  const goToCheckout = () => {
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+    navigate('/checkout');
   };
 
   return (
@@ -101,15 +120,15 @@ const getDashboardLink = () => {
           </Link>
         </div>
 
-        {/* Desktop Navigation - Cart and Theme Toggle visible */}
+        {/* Desktop Navigation - Cart visible for all logged in users */}
         <div className="navbar-center desktop-nav">
-          {/* Cart - Only visible to clients on their dashboard */}
+          {/* Cart - Visible to all logged in users who have items */}
           {showCart && (
-            <Link to="/cart" className="nav-link cart-link">
+            <button onClick={goToCart} className="nav-link cart-link">
               <span className="nav-icon">🛒</span>
               Cart
-              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
-            </Link>
+              <span className="cart-badge">{totalItems}</span>
+            </button>
           )}
           
           {/* Theme Toggle - Always visible in desktop */}
@@ -118,13 +137,22 @@ const getDashboardLink = () => {
           </button>
         </div>
 
-        {/* Mobile Menu Toggle */}
-        <button 
-          className="menu-toggle"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        >
-          {mobileMenuOpen ? '✕' : '☰'}
-        </button>
+        {/* Mobile Menu Toggle and Cart Icon */}
+        <div className="mobile-header-right">
+          {showCart && (
+            <button onClick={goToCart} className="mobile-cart-btn">
+              <span className="mobile-cart-icon">🛒</span>
+              {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
+            </button>
+          )}
+          
+          <button 
+            className="menu-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? '✕' : '☰'}
+          </button>
+        </div>
 
         {/* Desktop Profile Area */}
         <div className="navbar-right desktop-nav">
@@ -136,6 +164,7 @@ const getDashboardLink = () => {
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               >
                 <span className="user-avatar">{getInitials(getDisplayName())}</span>
+                <span className="user-name-short">{getDisplayName()}</span>
               </button>
               
               {dropdownOpen && (
@@ -143,22 +172,56 @@ const getDashboardLink = () => {
                   <div className="dropdown-header">
                     <p className="user-name">{getDisplayName()}</p>
                     <p className="user-email">{user.email}</p>
-                    {user.role === 'agent' && (
-                      <p className="user-balance">Wallet: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
-                    )}
+                    <p className="user-role">Role: {user.role || 'client'}</p>
                   </div>
                   
-                  <Link 
-  to={getDashboardLink()} 
-  className="dropdown-item"
-  onClick={() => {
-    setDropdownOpen(false);
-    navigate(getDashboardLink()); // Force navigation
-  }}
->
-  <span className="dropdown-icon">📊</span>
-  Dashboard
-</Link>
+                  <button 
+                    onClick={() => {
+                      navigate(getDashboardLink());
+                      setDropdownOpen(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <span className="dropdown-icon">📊</span>
+                    Dashboard
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      goToProfile();
+                      setDropdownOpen(false);
+                    }}
+                    className="dropdown-item"
+                  >
+                    <span className="dropdown-icon">👤</span>
+                    Profile
+                  </button>
+                  
+                  {showCart && (
+                    <>
+                      <button 
+                        onClick={() => {
+                          goToCart();
+                          setDropdownOpen(false);
+                        }}
+                        className="dropdown-item"
+                      >
+                        <span className="dropdown-icon">🛒</span>
+                        Cart ({totalItems})
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          goToCheckout();
+                          setDropdownOpen(false);
+                        }}
+                        className="dropdown-item"
+                      >
+                        <span className="dropdown-icon">💰</span>
+                        Checkout
+                      </button>
+                    </>
+                  )}
                   
                   <hr />
                   
@@ -217,35 +280,72 @@ const getDashboardLink = () => {
               <div className="mobile-user-details">
                 <p className="mobile-user-name">{getDisplayName()}</p>
                 <p className="mobile-user-email">{user.email}</p>
-                {user.role === 'agent' && (
-                  <p className="mobile-user-balance">Balance: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
-                )}
+                <p className="mobile-user-role">Role: {user.role || 'client'}</p>
               </div>
             </div>
           )}
 
           {/* Mobile Links */}
-          {user && (
+          {user ? (
             <>
-              <Link to={getDashboardLink()} className="mobile-link">
+              <button 
+                onClick={() => {
+                  navigate(getDashboardLink());
+                  setMobileMenuOpen(false);
+                }}
+                className="mobile-link"
+              >
                 <span className="mobile-icon">📊</span>
                 Dashboard
-              </Link>
+              </button>
               
-              {user.role === 'agent' && (
-                <Link to="/agent-wallet" className="mobile-link">
-                  <span className="mobile-icon">💰</span>
-                  My Wallet
-                </Link>
-              )}
+              <button 
+                onClick={() => {
+                  goToProfile();
+                  setMobileMenuOpen(false);
+                }}
+                className="mobile-link"
+              >
+                <span className="mobile-icon">👤</span>
+                Profile
+              </button>
               
               {showCart && (
-                <Link to="/cart" className="mobile-link">
-                  <span className="mobile-icon">🛒</span>
-                  Cart
-                  {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
-                </Link>
+                <>
+                  <button 
+                    onClick={() => {
+                      goToCart();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="mobile-link"
+                  >
+                    <span className="mobile-icon">🛒</span>
+                    Cart ({totalItems})
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      goToCheckout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="mobile-link"
+                  >
+                    <span className="mobile-icon">💰</span>
+                    Checkout
+                  </button>
+                </>
               )}
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="mobile-link">
+                <span className="mobile-icon">🔐</span>
+                Login
+              </Link>
+              <Link to="/signup" className="mobile-link">
+                <span className="mobile-icon">✨</span>
+                Sign Up
+              </Link>
             </>
           )}
 
@@ -260,7 +360,7 @@ const getDashboardLink = () => {
             Agent Login
           </button>
 
-          {/* Mobile Theme Toggle - Added here */}
+          {/* Mobile Theme Toggle */}
           <button onClick={toggleTheme} className="mobile-link theme-toggle-mobile">
             <span className="mobile-icon">{darkMode ? '☀️' : '🌙'}</span>
             {darkMode ? 'Light Mode' : 'Dark Mode'}
@@ -272,20 +372,6 @@ const getDashboardLink = () => {
               <span className="mobile-icon">🚪</span>
               Logout
             </button>
-          )}
-
-          {/* Login/Signup for non-logged in users */}
-          {!user && (
-            <>
-              <Link to="/login" className="mobile-link">
-                <span className="mobile-icon">🔐</span>
-                Login
-              </Link>
-              <Link to="/signup" className="mobile-link">
-                <span className="mobile-icon">✨</span>
-                Sign Up
-              </Link>
-            </>
           )}
         </div>
       )}

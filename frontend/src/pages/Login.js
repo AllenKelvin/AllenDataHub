@@ -13,12 +13,13 @@ const Login = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [monkeyEyesClosed, setMonkeyEyesClosed] = useState(false);
   const [showSessionExpired, setShowSessionExpired] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   
   const { darkMode } = useTheme();
   const { user, login } = useAuth();
   const navigate = useNavigate();
 
-  // Check if user is already logged in
+  // Check if user is already logged in on component mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
@@ -26,16 +27,8 @@ const Login = () => {
     if (token && userData) {
       try {
         const parsedUser = JSON.parse(userData);
-        const userRole = parsedUser.role?.toLowerCase();
-        
-        // Redirect to appropriate dashboard
-        if (userRole === 'admin' || userRole === 'administrator') {
-          navigate('/admin-dashboard', { replace: true });
-        } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
-          navigate('/agent-dashboard', { replace: true });
-        } else {
-          navigate('/client-dashboard', { replace: true });
-        }
+        console.log('User already logged in, redirecting...', parsedUser);
+        redirectToDashboard(parsedUser);
       } catch (error) {
         console.error('Error parsing user data:', error);
         // Clear invalid data
@@ -45,12 +38,38 @@ const Login = () => {
     }
   }, [navigate]);
 
+  // Function to redirect to dashboard based on role
+  const redirectToDashboard = (userData) => {
+    if (!userData) return;
+    
+    const userRole = userData.role?.toLowerCase();
+    console.log('Redirecting user with role:', userRole);
+    
+    if (userRole === 'admin' || userRole === 'administrator') {
+      navigate('/admin-dashboard', { replace: true });
+    } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
+      navigate('/agent-dashboard', { replace: true });
+    } else {
+      navigate('/client-dashboard', { replace: true });
+    }
+  };
+
   // Check for session expired parameter
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const sessionExpired = urlParams.get('session_expired');
     if (sessionExpired === 'true') {
       setShowSessionExpired(true);
+    }
+    
+    // Also check if we're on admin or agent login page
+    const isAdminLogin = window.location.pathname.includes('admin-login');
+    const isAgentLogin = window.location.pathname.includes('agent-login');
+    
+    if (isAdminLogin) {
+      document.title = 'Admin Login - AllenDataHub';
+    } else if (isAgentLogin) {
+      document.title = 'Agent Login - AllenDataHub';
     }
   }, []);
 
@@ -63,6 +82,7 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setRedirecting(false);
     
     if (!formData.email || !formData.password) {
       setError('Please fill in all fields');
@@ -96,6 +116,10 @@ const Login = () => {
         localStorage.removeItem('userEmail');
       }
 
+      // Store auth data immediately
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      
       // Call the auth context login function
       console.log('Calling auth context login...');
       const loginResult = login(userData, token);
@@ -105,29 +129,17 @@ const Login = () => {
         throw new Error(loginResult.error || 'Login failed');
       }
       
-      // Wait a moment for auth state to update
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Set redirecting state and show message
+      setRedirecting(true);
       
-      console.log('✅ Login successful! Redirecting to dashboard...');
-      
-      // Determine role and redirect accordingly
-      const userRole = userData.role?.toLowerCase() || loginResult.user?.role?.toLowerCase();
-      
-      if (userRole === 'admin' || userRole === 'administrator') {
-        navigate('/admin-dashboard', { replace: true });
-      } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
-        navigate('/agent-dashboard', { replace: true });
-      } else {
-        navigate('/client-dashboard', { replace: true });
-      }
+      // Short delay to show redirecting message, then redirect
+      setTimeout(() => {
+        console.log('✅ Login successful! Redirecting to dashboard...');
+        redirectToDashboard(userData);
+      }, 500);
         
     } catch (err) {
       console.error('❌ Login error:', err);
-      console.error('Error details:', {
-        response: err.response?.data,
-        status: err.response?.status,
-        message: err.message
-      });
       
       let errorMessage = 'Login failed. Please check your credentials and try again.';
       
@@ -156,7 +168,9 @@ const Login = () => {
         setMonkeyEyesClosed(false);
       }, 2000);
     } finally {
-      setLoading(false);
+      if (!redirecting) {
+        setLoading(false);
+      }
     }
   };
 
@@ -177,6 +191,11 @@ const Login = () => {
     }
   }, [showPassword]);
 
+  // Check if this is a special login page (admin/agent)
+  const isAdminLogin = window.location.pathname.includes('admin-login');
+  const isAgentLogin = window.location.pathname.includes('agent-login');
+  const pageTitle = isAdminLogin ? 'Admin Login' : isAgentLogin ? 'Agent Login' : 'Login';
+
   return (
     <div className={`login-container ${darkMode ? 'dark' : 'light'}`}>
       <div className="login-card">
@@ -189,10 +208,22 @@ const Login = () => {
           </div>
         )}
 
+        {/* Redirecting Message */}
+        {redirecting && (
+          <div className="redirecting-message">
+            <div className="redirecting-icon">🔄</div>
+            <h3>Login Successful!</h3>
+            <p>Redirecting to your dashboard...</p>
+            <div className="redirecting-spinner"></div>
+          </div>
+        )}
+
         <div className="portal-logo">
           <div className="logo-icon">🚀</div>
           <h1>AllenDataHub</h1>
           <p className="logo-subtitle">Data Bundle Management Portal</p>
+          {isAdminLogin && <p className="login-type-badge admin-badge">Admin Access</p>}
+          {isAgentLogin && <p className="login-type-badge agent-badge">Agent Access</p>}
         </div>
 
         {/* Monkey Animation */}
@@ -203,8 +234,14 @@ const Login = () => {
             <div className="eye right-eye"></div>
           </div>
           <div className="welcome-text">
-            <h2 className="welcome-title">Welcome Back!</h2>
-            <p className="welcome-subtitle">Login to manage your data bundles</p>
+            <h2 className="welcome-title">{pageTitle}</h2>
+            <p className="welcome-subtitle">
+              {isAdminLogin 
+                ? 'Login to access admin dashboard' 
+                : isAgentLogin 
+                ? 'Login to access agent dashboard'
+                : 'Login to manage your data bundles'}
+            </p>
           </div>
         </div>
 
@@ -284,17 +321,22 @@ const Login = () => {
           <button 
             type="submit" 
             className="submit-btn" 
-            disabled={loading || !formData.email || !formData.password}
+            disabled={loading || redirecting || !formData.email || !formData.password}
           >
             {loading ? (
               <>
                 <div className="loading-spinner"></div>
                 Logging in...
               </>
+            ) : redirecting ? (
+              <>
+                <div className="loading-spinner"></div>
+                Redirecting...
+              </>
             ) : (
               <>
                 <span className="btn-icon">🔐</span>
-                Login to Dashboard
+                {pageTitle}
               </>
             )}
           </button>
@@ -314,6 +356,22 @@ const Login = () => {
             </button>
           </div>
         </form>
+
+        {!isAdminLogin && !isAgentLogin && (
+          <div className="special-login-links">
+            <p>Are you an admin or agent?</p>
+            <div className="special-login-buttons">
+              <Link to="/admin-login" className="special-login-btn admin-login-btn">
+                <span className="special-login-icon">👑</span>
+                Admin Login
+              </Link>
+              <Link to="/agent-login" className="special-login-btn agent-login-btn">
+                <span className="special-login-icon">👤</span>
+                Agent Login
+              </Link>
+            </div>
+          </div>
+        )}
 
         <div className="signup-prompt">
           <p>Don't have an account? Create one to start buying data bundles!</p>

@@ -1,8 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Cart from './pages/Cart';
@@ -22,41 +22,13 @@ import './responsive.css';
 
 // Component to handle redirects based on authentication
 const AppRoutes = () => {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-
-  // Helper function to get dashboard link based on user role
-  const getDashboardLink = () => {
-    if (!user) return '/login';
-    
-    const userRole = user.role?.toLowerCase();
-    
-    if (userRole === 'admin' || userRole === 'administrator') {
-      return '/admin-dashboard';
-    } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
-      return '/agent-dashboard';
-    } else {
-      return '/client-dashboard';
-    }
-  };
-
-  // Show loading spinner while auth state is being determined
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Loading...</p>
-      </div>
-    );
-  }
-
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
       <Route path="/admin-login" element={<Login />} />
       <Route path="/agent-login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/cart" element={<Cart />} />
       
       {/* Protected Routes */}
@@ -132,21 +104,11 @@ const AppRoutes = () => {
         } 
       />
       
-      {/* Root path redirect */}
-      <Route 
-        path="/" 
-        element={
-          user ? <Navigate to={getDashboardLink()} replace /> : <Navigate to="/login" replace />
-        } 
-      />
+      {/* Root path redirect - always go to login first */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
       
       {/* Catch-all route */}
-      <Route 
-        path="*" 
-        element={
-          user ? <Navigate to={getDashboardLink()} replace /> : <Navigate to="/login" replace />
-        } 
-      />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 };
