@@ -114,7 +114,7 @@ const Login = () => {
 
         {/* FIXED MONKEY ANIMATION - CORRECTED STRUCTURE */}
         <div className="monkey-container">
-          <div className="monkey-emoji">🐵</div>
+          <div className="monkey-emoji"></div>
           <div className={`monkey-eyes ${monkeyEyesClosed ? 'closed' : ''}`}>
             <div className="eye left-eye"></div>
             <div className="eye right-eye"></div>
