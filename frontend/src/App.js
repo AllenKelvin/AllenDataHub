@@ -13,8 +13,11 @@ import Payment from './pages/Payment';
 import PaymentReturn from './components/PaymentReturn';
 import PaymentSuccess from './pages/PaymentSuccess';
 import AdminDashboard from './pages/AdminDashboard';
+import AgentDashboard from './pages/AgentDashboard';
 import UserProfile from './pages/UserProfile';
 import ClientDashboard from './pages/ClientDashboard';
+import AdminLogin from './pages/AdminLogin';
+import AgentLogin from './pages/AgentLogin';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 import './responsive.css';
@@ -30,12 +33,28 @@ function App() {
               <main>
                 <Routes>
                   {/* Public Routes */}
-                  <Route path="/client-dashboard" element={<ClientDashboard />} />
-                  <Route path="/cart" element={<Cart />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/signup" element={<Signup />} />
+                  <Route path="/AdminLogin" element={<AdminLogin />} />
+                  <Route path="/AgentLogin" element={<AgentLogin />} />
                   
                   {/* Protected Routes */}
+                  <Route 
+                    path="/client-dashboard" 
+                    element={
+                      <ProtectedRoute>
+                        <ClientDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/cart" 
+                    element={
+                      <ProtectedRoute>
+                        <Cart />
+                      </ProtectedRoute>
+                    } 
+                  />
                   <Route 
                     path="/checkout" 
                     element={
@@ -77,10 +96,10 @@ function App() {
                     } 
                   />
                   <Route 
-                    path="/client-dashboard" 
+                    path="/agent-dashboard" 
                     element={
                       <ProtectedRoute>
-                        <ClientDashboard />
+                        <AgentDashboard />
                       </ProtectedRoute>
                     } 
                   />

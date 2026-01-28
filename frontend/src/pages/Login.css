@@ -1114,3 +1114,52 @@
   align-items: center;
   justify-content: center;
 }
+
+/* Add to Login.css for admin/agent specific styling */
+.login-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credentials-hint {
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.dark .credentials-hint {
+  background: #2d1b00;
+  border-color: #5c3c00;
+}
+
+.credentials-hint ul {
+  margin: 0.5rem 0 0 1rem;
+  padding: 0;
+}
+
+.credentials-hint li {
+  margin: 0.3rem 0;
+  font-family: monospace;
+}
+
+.support-info {
+  background: #f0f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.dark .support-info {
+  background: #001d3d;
+  border-color: #003a8c;
+}
+
+.support-info p {
+  margin: 0.3rem 0;
+}
