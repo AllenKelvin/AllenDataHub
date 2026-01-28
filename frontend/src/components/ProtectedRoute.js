@@ -1,27 +1,48 @@
-import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, loading, user } = useAuth();
-  const location = useLocation();
+  const { user, isAuthenticated, loading, trackActivity } = useAuth();
 
-  // If the AuthProvider is still reading from localStorage, DO NOT REDIRECT
+  // Track activity when user interacts with protected routes
+  useEffect(() => {
+    const handleActivity = () => {
+      if (isAuthenticated) {
+        trackActivity?.();
+      }
+    };
+
+    // Add event listeners for activity tracking
+    window.addEventListener('click', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('mousemove', handleActivity);
+    window.addEventListener('scroll', handleActivity);
+
+    return () => {
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+    };
+  }, [isAuthenticated, trackActivity]);
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div className="loading-spinner"></div> {/* Ensure this CSS exists or use text */}
-        <p>Verifying Access...</p>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    // Save the location they tried to access so we can redirect them back after login
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Redirect to login with return URL
+    return <Navigate to="/login" replace />;
   }
 
   if (requireAdmin && user?.role !== 'admin') {
+    // Redirect non-admins away from admin routes
     return <Navigate to="/client-dashboard" replace />;
   }
 
