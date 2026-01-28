@@ -3,53 +3,67 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
+
+// Components
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import Cart from './pages/Cart';
+import ProtectedRoute from './components/ProtectedRoute';
+import PaymentReturn from './components/PaymentReturn';
+
+// Pages
 import Login from './pages/Login';
+import AdminLogin from './pages/AdminLogin';
+import AgentLogin from './pages/AgentLogin';
 import Signup from './pages/Signup';
+import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Payment from './pages/Payment';
-import PaymentReturn from './components/PaymentReturn';
 import PaymentSuccess from './pages/PaymentSuccess';
 import AdminDashboard from './pages/AdminDashboard';
 import AgentDashboard from './pages/AgentDashboard';
-import UserProfile from './pages/UserProfile';
 import ClientDashboard from './pages/ClientDashboard';
-import ProtectedRoute from './components/ProtectedRoute';
+import UserProfile from './pages/UserProfile';
+
+// Styles
 import './App.css';
 import './responsive.css';
-import AdminLogin from './pages/AdminLogin';
-import AgentLogin from './pages/AgentLogin';
 
-// Component to handle redirects based on authentication
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* Public Routes */}
+      {/* ==========================================
+          1. PUBLIC ROUTES 
+          Accessible by everyone
+      ========================================== */}
       <Route path="/login" element={<Login />} />
       <Route path="/admin-login" element={<AdminLogin />} />
       <Route path="/agent-login" element={<AgentLogin />} />
       <Route path="/signup" element={<Signup />} />
-      <Route path="/cart" element={<Cart />} />
       
-      {/* Protected Routes */}
+      {/* ==========================================
+          2. PROTECTED ROUTES 
+          Require authentication to access
+      ========================================== */}
+      
+      {/* Client Routes */}
       <Route 
-        path="/admin-dashboard" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>}
+        path="/client-dashboard" 
+        element={
+          <ProtectedRoute>
+            <ClientDashboard />
+          </ProtectedRoute>
+        } 
       />
       
       <Route 
-  path="/agent-dashboard" element={<ProtectedRoute><AgentDashboard /></ProtectedRoute>}
-/>
-<Route 
-  path="/agent-dashboard" 
-  element={
-    <ProtectedRoute>
-      <AgentDashboard />
-    </ProtectedRoute>
-  } 
-/>
-      
+        path="/cart" 
+        element={
+          <ProtectedRoute>
+            <Cart />
+          </ProtectedRoute>
+        } 
+      />
+
       <Route 
         path="/checkout" 
         element={
@@ -58,12 +72,42 @@ const AppRoutes = () => {
           </ProtectedRoute>
         } 
       />
-      
+
       <Route 
         path="/payment" 
         element={
           <ProtectedRoute>
             <Payment />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Admin Routes */}
+      <Route 
+        path="/admin-dashboard" 
+        element={
+          <ProtectedRoute requireAdmin={true}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* Agent Routes */}
+      <Route 
+        path="/agent-dashboard" 
+        element={
+          <ProtectedRoute>
+            <AgentDashboard />
+          </ProtectedRoute>
+        } 
+      />
+
+      {/* General Protected Routes */}
+      <Route 
+        path="/profile" 
+        element={
+          <ProtectedRoute>
+            <UserProfile />
           </ProtectedRoute>
         } 
       />
@@ -85,20 +129,15 @@ const AppRoutes = () => {
           </ProtectedRoute>
         } 
       />
+
+      {/* ==========================================
+          3. FALLBACKS & REDIRECTS
+      ========================================== */}
       
-      <Route 
-        path="/profile" 
-        element={
-          <ProtectedRoute>
-            <UserProfile />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Root path redirect - always go to login first */}
+      {/* Default to login if path is empty */}
       <Route path="/" element={<Navigate to="/login" replace />} />
       
-      {/* Catch-all route */}
+      {/* Redirect any unknown routes to login */}
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
@@ -112,7 +151,7 @@ function App() {
           <Router>
             <div className="App">
               <Navbar />
-              <main>
+              <main className="main-content">
                 <AppRoutes />
               </main>
               <Footer />
