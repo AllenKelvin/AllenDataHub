@@ -16,30 +16,30 @@ const AdminLogin = () => {
     { username: '@Admin002', password: 'Password200' }
   ];
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
 
-    try {
-      const isValid = validAdmins.find(a => a.username === username && a.password === password);
-      if (!isValid) throw new Error('Invalid Admin Credentials');
+    const isValid = validAdmins.find(a => a.username === username && a.password === password);
 
+    if (isValid) {
       const adminUser = {
         _id: `admin-${username}`,
         username,
         role: 'admin',
         name: username === '@Admin001' ? 'Admin One' : 'Admin Two',
       };
-
       const token = 'admin-token-' + Date.now();
+
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(adminUser));
+      login(adminUser, token);
       
-      await login(adminUser, token);
-      navigate('/admin-dashboard', { replace: true });
-    } catch (err) {
-      setError(err.message);
+      // Navigate immediately
+      navigate('/admin-dashboard');
+    } else {
+      setError('Invalid Admin Credentials');
       setLoading(false);
     }
   };
@@ -49,40 +49,23 @@ const AdminLogin = () => {
       <div className="login-container">
         <div className="login-header">
           <h1>👑 Admin Portal</h1>
-          <p>Secure Management Access</p>
+          <p>Management Access Only</p>
         </div>
-
         {error && <div className="error-message">{error}</div>}
-
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label>Admin Username</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="@Admin001"
-              required
-            />
+            <label>Username</label>
+            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </div>
-
           <div className="form-group">
             <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
-
           <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Verifying...' : 'Login as Admin'}
+            {loading ? 'Entering...' : 'Login as Admin'}
           </button>
-
           <div className="signup-prompt">
-            <p><Link to="/login">← Back to Client Login</Link></p>
+            <Link to="/login">← Back to Client Login</Link>
           </div>
         </form>
       </div>
