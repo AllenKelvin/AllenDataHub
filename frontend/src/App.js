@@ -35,31 +35,20 @@ const AppRoutes = () => {
       
       {/* Protected Routes */}
       <Route 
-        path="/client-dashboard" 
-        element={
-          <ProtectedRoute>
-            <ClientDashboard />
-          </ProtectedRoute>
-        } 
+        path="/admin-dashboard" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>}
       />
       
       <Route 
-        path="/admin-dashboard" 
-        element={
-          <ProtectedRoute>
-            <AdminDashboard />
-          </ProtectedRoute>
-        } 
-      />
-      
-      <Route 
-        path="/agent-dashboard" 
-        element={
-          <ProtectedRoute>
-            <AgentDashboard />
-          </ProtectedRoute>
-        } 
-      />
+  path="/agent-dashboard" element={<ProtectedRoute><AgentDashboard /></ProtectedRoute>}
+/>
+<Route 
+  path="/agent-dashboard" 
+  element={
+    <ProtectedRoute>
+      <AgentDashboard />
+    </ProtectedRoute>
+  } 
+/>
       
       <Route 
         path="/checkout" 
