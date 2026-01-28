@@ -19,6 +19,8 @@ import ClientDashboard from './pages/ClientDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 import './responsive.css';
+import AdminLogin from './pages/AdminLogin';
+import AgentLogin from './pages/AgentLogin';
 
 // Component to handle redirects based on authentication
 const AppRoutes = () => {
@@ -26,8 +28,8 @@ const AppRoutes = () => {
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/admin-login" element={<Login />} />
-      <Route path="/agent-login" element={<Login />} />
+      <Route path="/admin-login" element={<AdminLogin />} />
+      <Route path="/agent-login" element={<AgentLogin />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/cart" element={<Cart />} />
       

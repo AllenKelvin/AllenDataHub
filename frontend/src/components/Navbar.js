@@ -17,8 +17,9 @@ const Navbar = () => {
 
   const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
-  // Show cart in navbar for all authenticated users (if they have items)
-  const showCart = user && totalItems > 0;
+  // Check if user is on client dashboard
+  const isOnClientDashboard = location.pathname.includes('/client-dashboard');
+  const showCart = user && user.role === 'client' && isOnClientDashboard;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -62,15 +63,10 @@ const Navbar = () => {
   // Dashboard link based on user role
   const getDashboardLink = () => {
     if (!user) return '/login';
-    
-    const userRole = user.role?.toLowerCase();
-    
-    if (userRole === 'admin' || userRole === 'administrator') {
-      return '/admin-dashboard';
-    } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
-      return '/agent-dashboard';
-    } else {
-      return '/client-dashboard';
+    switch (user.role) {
+      case 'admin': return '/admin-dashboard';
+      case 'agent': return '/agent-dashboard';
+      default: return '/client-dashboard';
     }
   };
 
@@ -78,35 +74,14 @@ const Navbar = () => {
   const goToAdminLogin = () => {
     setDropdownOpen(false);
     setMobileMenuOpen(false);
-    navigate('/admin-login');
+    navigate('/AdminLogin');
   };
 
   // Navigate to agent login
   const goToAgentLogin = () => {
     setDropdownOpen(false);
     setMobileMenuOpen(false);
-    navigate('/agent-login');
-  };
-
-  // Navigate to profile page
-  const goToProfile = () => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-    navigate('/profile');
-  };
-
-  // Navigate to cart
-  const goToCart = () => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-    navigate('/cart');
-  };
-
-  // Navigate to checkout
-  const goToCheckout = () => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-    navigate('/checkout');
+    navigate('/AgentLogin');
   };
 
   return (
@@ -120,15 +95,15 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* Desktop Navigation - Cart visible for all logged in users */}
+        {/* Desktop Navigation - Cart and Theme Toggle visible */}
         <div className="navbar-center desktop-nav">
-          {/* Cart - Visible to all logged in users who have items */}
+          {/* Cart - Only visible to clients on their dashboard */}
           {showCart && (
-            <button onClick={goToCart} className="nav-link cart-link">
+            <Link to="/cart" className="nav-link cart-link">
               <span className="nav-icon">🛒</span>
               Cart
-              <span className="cart-badge">{totalItems}</span>
-            </button>
+              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+            </Link>
           )}
           
           {/* Theme Toggle - Always visible in desktop */}
@@ -137,22 +112,13 @@ const Navbar = () => {
           </button>
         </div>
 
-        {/* Mobile Menu Toggle and Cart Icon */}
-        <div className="mobile-header-right">
-          {showCart && (
-            <button onClick={goToCart} className="mobile-cart-btn">
-              <span className="mobile-cart-icon">🛒</span>
-              {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
-            </button>
-          )}
-          
-          <button 
-            className="menu-toggle"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? '✕' : '☰'}
-          </button>
-        </div>
+        {/* Mobile Menu Toggle */}
+        <button 
+          className="menu-toggle"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? '✕' : '☰'}
+        </button>
 
         {/* Desktop Profile Area */}
         <div className="navbar-right desktop-nav">
@@ -164,7 +130,6 @@ const Navbar = () => {
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               >
                 <span className="user-avatar">{getInitials(getDisplayName())}</span>
-                <span className="user-name-short">{getDisplayName()}</span>
               </button>
               
               {dropdownOpen && (
@@ -172,56 +137,19 @@ const Navbar = () => {
                   <div className="dropdown-header">
                     <p className="user-name">{getDisplayName()}</p>
                     <p className="user-email">{user.email}</p>
-                    <p className="user-role">Role: {user.role || 'client'}</p>
+                    {user.role === 'agent' && (
+                      <p className="user-balance">Wallet: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
+                    )}
                   </div>
                   
-                  <button 
-                    onClick={() => {
-                      navigate(getDashboardLink());
-                      setDropdownOpen(false);
-                    }}
+                  <Link 
+                    to={getDashboardLink()} 
                     className="dropdown-item"
+                    onClick={() => setDropdownOpen(false)}
                   >
                     <span className="dropdown-icon">📊</span>
                     Dashboard
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      goToProfile();
-                      setDropdownOpen(false);
-                    }}
-                    className="dropdown-item"
-                  >
-                    <span className="dropdown-icon">👤</span>
-                    Profile
-                  </button>
-                  
-                  {showCart && (
-                    <>
-                      <button 
-                        onClick={() => {
-                          goToCart();
-                          setDropdownOpen(false);
-                        }}
-                        className="dropdown-item"
-                      >
-                        <span className="dropdown-icon">🛒</span>
-                        Cart ({totalItems})
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          goToCheckout();
-                          setDropdownOpen(false);
-                        }}
-                        className="dropdown-item"
-                      >
-                        <span className="dropdown-icon">💰</span>
-                        Checkout
-                      </button>
-                    </>
-                  )}
+                  </Link>
                   
                   <hr />
                   
@@ -280,72 +208,35 @@ const Navbar = () => {
               <div className="mobile-user-details">
                 <p className="mobile-user-name">{getDisplayName()}</p>
                 <p className="mobile-user-email">{user.email}</p>
-                <p className="mobile-user-role">Role: {user.role || 'client'}</p>
+                {user.role === 'agent' && (
+                  <p className="mobile-user-balance">Balance: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
+                )}
               </div>
             </div>
           )}
 
           {/* Mobile Links */}
-          {user ? (
+          {user && (
             <>
-              <button 
-                onClick={() => {
-                  navigate(getDashboardLink());
-                  setMobileMenuOpen(false);
-                }}
-                className="mobile-link"
-              >
+              <Link to={getDashboardLink()} className="mobile-link">
                 <span className="mobile-icon">📊</span>
                 Dashboard
-              </button>
+              </Link>
               
-              <button 
-                onClick={() => {
-                  goToProfile();
-                  setMobileMenuOpen(false);
-                }}
-                className="mobile-link"
-              >
-                <span className="mobile-icon">👤</span>
-                Profile
-              </button>
+              {user.role === 'agent' && (
+                <Link to="/agent-wallet" className="mobile-link">
+                  <span className="mobile-icon">💰</span>
+                  My Wallet
+                </Link>
+              )}
               
               {showCart && (
-                <>
-                  <button 
-                    onClick={() => {
-                      goToCart();
-                      setMobileMenuOpen(false);
-                    }}
-                    className="mobile-link"
-                  >
-                    <span className="mobile-icon">🛒</span>
-                    Cart ({totalItems})
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      goToCheckout();
-                      setMobileMenuOpen(false);
-                    }}
-                    className="mobile-link"
-                  >
-                    <span className="mobile-icon">💰</span>
-                    Checkout
-                  </button>
-                </>
+                <Link to="/cart" className="mobile-link">
+                  <span className="mobile-icon">🛒</span>
+                  Cart
+                  {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
+                </Link>
               )}
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="mobile-link">
-                <span className="mobile-icon">🔐</span>
-                Login
-              </Link>
-              <Link to="/signup" className="mobile-link">
-                <span className="mobile-icon">✨</span>
-                Sign Up
-              </Link>
             </>
           )}
 
@@ -360,7 +251,7 @@ const Navbar = () => {
             Agent Login
           </button>
 
-          {/* Mobile Theme Toggle */}
+          {/* Mobile Theme Toggle - Added here */}
           <button onClick={toggleTheme} className="mobile-link theme-toggle-mobile">
             <span className="mobile-icon">{darkMode ? '☀️' : '🌙'}</span>
             {darkMode ? 'Light Mode' : 'Dark Mode'}
@@ -372,6 +263,20 @@ const Navbar = () => {
               <span className="mobile-icon">🚪</span>
               Logout
             </button>
+          )}
+
+          {/* Login/Signup for non-logged in users */}
+          {!user && (
+            <>
+              <Link to="/login" className="mobile-link">
+                <span className="mobile-icon">🔐</span>
+                Login
+              </Link>
+              <Link to="/signup" className="mobile-link">
+                <span className="mobile-icon">✨</span>
+                Sign Up
+              </Link>
+            </>
           )}
         </div>
       )}
