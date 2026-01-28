@@ -40,32 +40,43 @@ const Login = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    
-    if (!formData.email || !formData.password) {
-      setError('Please fill in all fields');
-      setLoading(false);
-      return;
-    }
+  e.preventDefault();
+  setLoading(true);
+  setError('');
+  
+  if (!formData.email || !formData.password) {
+    setError('Please fill in all fields');
+    setLoading(false);
+    return;
+  }
 
-    try {
-      const response = await authAPI.login(formData);
-      login(response.data.user, response.data.token);
-      
-      // Store remember me preference
-      if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
-        localStorage.setItem('userEmail', formData.email);
-      } else {
-        localStorage.removeItem('rememberMe');
-        localStorage.removeItem('userEmail');
-      }
-      
-      // Redirect based on user role
-      const redirectPath = response.data.user.role === 'admin' ? '/admin-dashboard' : '/client-dashboard';
-      navigate(redirectPath, { replace: true });
+  try {
+    const response = await authAPI.login(formData);
+    
+    // Use the auth context login
+    const loginResult = login(response.data.user, response.data.token);
+    
+    // Store remember me preference
+    if (rememberMe) {
+      localStorage.setItem('rememberMe', 'true');
+      localStorage.setItem('userEmail', formData.email);
+    } else {
+      localStorage.removeItem('rememberMe');
+      localStorage.removeItem('userEmail');
+    }
+    
+    // DEBUG: Check what we got back
+    console.log('Login result:', loginResult);
+    console.log('User role:', response.data.user.role);
+    
+    // Redirect based on user role
+    if (response.data.user.role === 'admin') {
+      console.log('Redirecting to admin dashboard...');
+      navigate('/admin-dashboard', { replace: true });
+    } else {
+      console.log('Redirecting to client dashboard...');
+      navigate('/client-dashboard', { replace: true });
+    }
       
     } catch (err) {
       const errorMessage = err.response?.data?.error || 

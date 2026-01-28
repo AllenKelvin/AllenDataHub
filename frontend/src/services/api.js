@@ -219,22 +219,22 @@ export const adminAPI = {
   
   getAgents: () => {
     console.log('👥 Fetching agents list');
-    return api.get('/admin/agents');
+    return api.get('/admin/users');
   },
   
-  verifyAgent: (agentId, approve) => {
-    console.log(`✅ ${approve ? 'Approving' : 'Rejecting'} agent:`, agentId);
-    return api.post('/admin/verify-agent', { agentId, approve });
+  getPendingVerifications: () => {
+    console.log('📋 Fetching pending verifications');
+    return api.get('/admin/verifications');
   },
   
-  loadAgentWallet: (agentId, amount) => {
-    console.log('💰 Loading agent wallet:', { agentId, amount });
-    return api.post('/admin/load-wallet', { agentId, amount });
+  updateAgentStatus: (agentId, status) => {
+    console.log(`✅ Updating agent status:`, { agentId, status });
+    return api.patch(`/admin/users/${agentId}/status`, { status });
   },
   
-  updateAgentPrices: (network, updates) => {
-    console.log('⚙️ Updating agent prices:', { network, updates });
-    return api.post('/admin/update-prices', { network, updates });
+  updateDataPlan: (network, data) => {
+    console.log('⚙️ Updating data plan:', { network, data });
+    return api.put(`/admin/plans/${network}`, data);
   },
   
   getAllOrders: (params) => {
@@ -246,19 +246,6 @@ export const adminAPI = {
   
   updateOrderStatus: (orderId, status) => 
     api.patch(`/admin/orders/${orderId}/status`, { status }),
-};
-
-// ==================== NETWORKS API (For direct vendor access) ====================
-export const networksAPI = {
-  testFosterConsole: () => {
-    console.log('🔌 Testing Foster Console connection');
-    return api.get('/test/foster-console-setup');
-  },
-  
-  testDatabase: () => {
-    console.log('🗄️ Testing database connection');
-    return api.get('/test-db');
-  }
 };
 
 // ==================== TESTING UTILITIES ====================

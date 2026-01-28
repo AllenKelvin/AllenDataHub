@@ -1,395 +1,417 @@
-// src/pages/AdminDashboard.js
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { adminAPI } from '../services/api';
 import './AdminDashboard.css';
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
+  const { user, logout, isUserAdmin } = useAuth();
   const { darkMode } = useTheme();
+  
+  // State declarations
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [stats, setStats] = useState({
-    totalAgents: 0,
-    activeAgents: 0,
-    totalSales: 0,
-    totalCommission: 0,
-    pendingAgents: 0,
-    totalWalletBalance: 0
+    totalUsers: 0,
+    totalOrders: 0,
+    totalRevenue: 0,
+    todayRevenue: 0,
+    pendingVerifications: 0
   });
   const [agents, setAgents] = useState([]);
   const [pendingVerifications, setPendingVerifications] = useState([]);
-  const [selectedAgent, setSelectedAgent] = useState(null);
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState(null);
   const [showPriceModal, setShowPriceModal] = useState(false);
-  const [priceUpdates, setPriceUpdates] = useState({});
-
+  const [priceUpdates, setPriceUpdates] = useState({
+    mtn: { price: '', size: '' },
+    telecel: { price: '', size: '' },
+    airteltigo: { price: '', size: '' }
+  });
+  
+  // Check if user is admin on component mount
   useEffect(() => {
-    fetchAdminData();
-  }, []);
-
-  const fetchAdminData = async () => {
-    setLoading(true);
-    setError('');
+    console.log('AdminDashboard mounted:', {
+      user,
+      isAdmin: user?.role === 'admin',
+      isAuthenticated: !!user
+    });
+    
+    if (user?.role !== 'admin') {
+      console.log('Not admin, redirecting...');
+      navigate('/login');
+      return;
+    }
+    
+    fetchDashboardData();
+  }, [user, navigate]);
+  
+  const fetchDashboardData = async () => {
     try {
-      // Fetch admin stats
+      setLoading(true);
+      setError('');
+      
+      // Fetch stats
       const statsResponse = await adminAPI.getStats();
-      if (statsResponse.data && statsResponse.data.success) {
-        setStats(statsResponse.data.stats);
-      }
-
-      // Fetch agents list
+      setStats(statsResponse.data);
+      
+      // Fetch agents
       const agentsResponse = await adminAPI.getAgents();
-      if (agentsResponse.data && agentsResponse.data.success) {
-        setAgents(agentsResponse.data.agents);
-        setPendingVerifications(
-          agentsResponse.data.agents.filter(agent => agent.status === 'pending')
-        );
-      }
-
-    } catch (error) {
-      console.error('❌ Error fetching admin data:', error);
-      setError('Failed to load admin dashboard data.');
+      setAgents(agentsResponse.data.users || []);
+      
+      // Fetch pending verifications
+      const verificationsResponse = await adminAPI.getPendingVerifications();
+      setPendingVerifications(verificationsResponse.data.verifications || []);
+      
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err.response?.data?.error || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
-
-  const handleVerifyAgent = async (agentId, approve) => {
+  
+  const handleAgentAction = async (agentId, action) => {
     try {
-      const response = await adminAPI.verifyAgent(agentId, approve);
-      if (response.data && response.data.success) {
-        alert(response.data.message);
-        fetchAdminData(); // Refresh data
-      }
-    } catch (error) {
-      console.error('Verification error:', error);
-      alert('Failed to process verification.');
+      await adminAPI.updateAgentStatus(agentId, action);
+      setShowAgentModal(false);
+      setSelectedAgent(null);
+      fetchDashboardData(); // Refresh data
+    } catch (err) {
+      console.error('Error updating agent status:', err);
+      setError('Failed to update agent status');
     }
   };
-
-  const handleLoadWallet = async (agentId, amount) => {
-    const amountValue = parseFloat(amount);
-    if (!amountValue || amountValue <= 0) {
-      alert('Please enter a valid amount');
-      return;
-    }
-
+  
+  const handlePriceUpdate = async (network) => {
     try {
-      const response = await adminAPI.loadAgentWallet(agentId, amountValue);
-      if (response.data && response.data.success) {
-        alert(`Successfully loaded GHS ${amountValue} to agent's wallet`);
-        setShowAgentModal(false);
-        fetchAdminData();
+      const data = priceUpdates[network.toLowerCase()];
+      if (!data.price || !data.size) {
+        setError(`Please enter both price and size for ${network}`);
+        return;
       }
-    } catch (error) {
-      console.error('Wallet load error:', error);
-      alert('Failed to load wallet.');
+      
+      await adminAPI.updateDataPlan(network, data);
+      setShowPriceModal(false);
+      setPriceUpdates({
+        mtn: { price: '', size: '' },
+        telecel: { price: '', size: '' },
+        airteltigo: { price: '', size: '' }
+      });
+      fetchDashboardData(); // Refresh data
+    } catch (err) {
+      console.error('Error updating prices:', err);
+      setError('Failed to update prices');
     }
   };
-
-  const handleUpdatePrices = async (network, updates) => {
-    try {
-      const response = await adminAPI.updateAgentPrices(network, updates);
-      if (response.data && response.data.success) {
-        alert('Agent prices updated successfully');
-        setShowPriceModal(false);
-        fetchAdminData();
-      }
-    } catch (error) {
-      console.error('Price update error:', error);
-      alert('Failed to update prices.');
-    }
+  
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
-
-  const handlePriceChange = (planId, newPrice) => {
-    setPriceUpdates(prev => ({
-      ...prev,
-      [planId]: parseFloat(newPrice)
-    }));
-  };
-
+  
   if (loading) {
     return (
-      <div className={`loading-container ${darkMode ? 'dark' : ''}`}>
-        <div className="loading-spinner"></div>
-        <h2>Loading Admin Dashboard...</h2>
+      <div className={`admin-dashboard ${darkMode ? 'dark' : 'light'}`}>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading admin dashboard...</p>
+        </div>
       </div>
     );
   }
-
-  return (
-    <div className={`admin-dashboard ${darkMode ? 'dark' : ''}`}>
-      {error && (
-        <div className="error-message">
-          <span className="error-icon">❌</span>
-          <span className="error-text">{error}</span>
-          <button className="retry-btn" onClick={fetchAdminData}>
+  
+  if (error) {
+    return (
+      <div className={`admin-dashboard ${darkMode ? 'dark' : 'light'}`}>
+        <div className="error-container">
+          <div className="error-icon">⚠️</div>
+          <h3>Error Loading Dashboard</h3>
+          <p>{error}</p>
+          <button onClick={fetchDashboardData} className="retry-btn">
             Retry
           </button>
         </div>
-      )}
-
-      <div className="dashboard-header">
-        <h1>👑 Admin Dashboard</h1>
-        <button className="refresh-btn" onClick={fetchAdminData}>
-          🔄 Refresh
-        </button>
       </div>
-
-      {/* Stats Overview */}
-      <div className="stats-section">
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-icon">👥</div>
-            <div className="stat-value">{stats.totalAgents}</div>
-            <div className="stat-label">Total Agents</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">⏳</div>
-            <div className="stat-value">{stats.pendingAgents}</div>
-            <div className="stat-label">Pending Verifications</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">💰</div>
-            <div className="stat-value">GHS {stats.totalSales?.toFixed(2)}</div>
-            <div className="stat-label">Total Sales</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-icon">💳</div>
-            <div className="stat-value">GHS {stats.totalWalletBalance?.toFixed(2)}</div>
-            <div className="stat-label">Total Wallet Balance</div>
-          </div>
+    );
+  }
+  
+  return (
+    <div className={`admin-dashboard ${darkMode ? 'dark' : 'light'}`}>
+      {/* Header */}
+      <header className="admin-header">
+        <div className="header-left">
+          <h1>Admin Dashboard</h1>
+          <p className="welcome-message">
+            Welcome back, <span className="admin-name">{user?.username || 'Admin'}</span>
+          </p>
         </div>
-      </div>
-
-      {/* Pending Verifications */}
-      <div className="pending-section">
-        <h2>⏳ Pending Agent Verifications</h2>
-        {pendingVerifications.length === 0 ? (
-          <p className="no-pending">No pending verifications.</p>
-        ) : (
-          <div className="pending-list">
-            {pendingVerifications.map(agent => (
-              <div key={agent._id} className="pending-card">
-                <div className="agent-info">
-                  <div className="agent-name">{agent.username}</div>
-                  <div className="agent-email">{agent.email}</div>
-                  <div className="agent-phone">{agent.phone || 'No phone'}</div>
-                  <div className="agent-date">
-                    Joined: {new Date(agent.createdAt).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="verification-actions">
-                  <button
-                    className="verify-btn approve"
-                    onClick={() => handleVerifyAgent(agent._id, true)}
-                  >
-                    ✅ Approve
-                  </button>
-                  <button
-                    className="verify-btn reject"
-                    onClick={() => handleVerifyAgent(agent._id, false)}
-                  >
-                    ❌ Reject
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Agents Management */}
-      <div className="agents-section">
-        <div className="section-header">
-          <h2>👥 Agents Management</h2>
-          <button 
-            className="price-manage-btn"
-            onClick={() => setShowPriceModal(true)}
-          >
-            ⚙️ Manage Agent Prices
+        <div className="header-right">
+          <button className="header-btn" onClick={() => setShowPriceModal(true)}>
+            ⚙️ Update Prices
+          </button>
+          <button className="header-btn logout-btn" onClick={handleLogout}>
+            🚪 Logout
           </button>
         </div>
-
-        <div className="agents-table-container">
-          <table className="agents-table">
-            <thead>
-              <tr>
-                <th>Agent ID</th>
-                <th>Email</th>
-                <th>Wallet Balance</th>
-                <th>Status</th>
-                <th>Total Sales</th>
-                <th>Commission</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map(agent => (
-                <tr key={agent._id}>
-                  <td>{agent.username}</td>
-                  <td>{agent.email}</td>
-                  <td>GHS {agent.walletBalance?.toFixed(2) || '0.00'}</td>
-                  <td>
-                    <span className={`status-badge ${agent.status}`}>
-                      {agent.status}
-                    </span>
-                  </td>
-                  <td>GHS {(agent.totalSales || 0).toFixed(2)}</td>
-                  <td>GHS {(agent.totalCommission || 0).toFixed(2)}</td>
-                  <td className="agent-actions">
-                    <button
-                      className="action-btn wallet-btn"
+      </header>
+      
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div className="stat-card revenue">
+          <div className="stat-icon">💰</div>
+          <div className="stat-info">
+            <h3>Total Revenue</h3>
+            <p className="stat-value">GH₵{stats.totalRevenue?.toFixed(2) || '0.00'}</p>
+            <p className="stat-subtext">Today: GH₵{stats.todayRevenue?.toFixed(2) || '0.00'}</p>
+          </div>
+        </div>
+        
+        <div className="stat-card orders">
+          <div className="stat-icon">📦</div>
+          <div className="stat-info">
+            <h3>Total Orders</h3>
+            <p className="stat-value">{stats.totalOrders || 0}</p>
+            <p className="stat-subtext">All time orders</p>
+          </div>
+        </div>
+        
+        <div className="stat-card users">
+          <div className="stat-icon">👥</div>
+          <div className="stat-info">
+            <h3>Total Users</h3>
+            <p className="stat-value">{stats.totalUsers || 0}</p>
+            <p className="stat-subtext">Registered users</p>
+          </div>
+        </div>
+        
+        <div className="stat-card pending">
+          <div className="stat-icon">⏳</div>
+          <div className="stat-info">
+            <h3>Pending Verifications</h3>
+            <p className="stat-value">{pendingVerifications.length || 0}</p>
+            <p className="stat-subtext">Awaiting approval</p>
+          </div>
+        </div>
+      </div>
+      
+      {/* Main Content */}
+      <div className="admin-content">
+        {/* Agents Section */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2>Agents Management</h2>
+            <span className="badge">{agents.length} Agents</span>
+          </div>
+          
+          <div className="agents-grid">
+            {agents.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">👥</div>
+                <p>No agents found</p>
+              </div>
+            ) : (
+              agents.map(agent => (
+                <div key={agent._id} className="agent-card">
+                  <div className="agent-info">
+                    <div className="agent-avatar">
+                      {agent.username?.charAt(0).toUpperCase() || 'A'}
+                    </div>
+                    <div>
+                      <h4>{agent.username}</h4>
+                      <p className="agent-email">{agent.email}</p>
+                      <span className={`status-badge ${agent.status}`}>
+                        {agent.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="agent-actions">
+                    <button 
+                      className="action-btn view-btn"
                       onClick={() => {
                         setSelectedAgent(agent);
                         setShowAgentModal(true);
                       }}
                     >
-                      💰 Load Wallet
+                      View Details
                     </button>
-                    <button
-                      className="action-btn suspend-btn"
-                      onClick={() => {
-                        if (window.confirm(`Are you sure you want to ${agent.status === 'active' ? 'suspend' : 'activate'} this agent?`)) {
-                          // Handle suspend/activate
-                        }
-                      }}
-                    >
-                      {agent.status === 'active' ? '⏸️ Suspend' : '▶️ Activate'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        
+        {/* Pending Verifications */}
+        <div className="content-section">
+          <div className="section-header">
+            <h2>Pending Verifications</h2>
+            <span className="badge warning">{pendingVerifications.length} Pending</span>
+          </div>
+          
+          <div className="verifications-list">
+            {pendingVerifications.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">✅</div>
+                <p>No pending verifications</p>
+              </div>
+            ) : (
+              pendingVerifications.map(verification => (
+                <div key={verification._id} className="verification-item">
+                  <div>
+                    <h4>{verification.user?.username}</h4>
+                    <p>{verification.user?.email}</p>
+                    <small>Submitted: {new Date(verification.createdAt).toLocaleDateString()}</small>
+                  </div>
+                  <div className="verification-actions">
+                    <button className="approve-btn">Approve</button>
+                    <button className="reject-btn">Reject</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Load Wallet Modal */}
+      
+      {/* Agent Modal */}
       {showAgentModal && selectedAgent && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal">
             <div className="modal-header">
-              <h3>Load Wallet for {selectedAgent.username}</h3>
-              <button 
-                className="close-btn"
-                onClick={() => {
-                  setShowAgentModal(false);
-                  setSelectedAgent(null);
-                }}
-              >
-                ✕
+              <h3>Agent Details</h3>
+              <button className="close-btn" onClick={() => setShowAgentModal(false)}>
+                ×
               </button>
             </div>
             <div className="modal-body">
               <div className="agent-details">
-                <p><strong>Email:</strong> {selectedAgent.email}</p>
-                <p><strong>Current Balance:</strong> GHS {selectedAgent.walletBalance?.toFixed(2)}</p>
+                <div className="detail-row">
+                  <span className="detail-label">Name:</span>
+                  <span className="detail-value">{selectedAgent.username}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Email:</span>
+                  <span className="detail-value">{selectedAgent.email}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Phone:</span>
+                  <span className="detail-value">{selectedAgent.phone || 'N/A'}</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Status:</span>
+                  <span className={`status-badge ${selectedAgent.status}`}>
+                    {selectedAgent.status}
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Joined:</span>
+                  <span className="detail-value">
+                    {new Date(selectedAgent.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
-              <div className="load-wallet-form">
-                <input
-                  type="number"
-                  placeholder="Enter amount (GHS)"
-                  className="amount-input"
-                  min="1"
-                  step="0.01"
-                  defaultValue="10"
-                />
-                <button
-                  className="load-btn"
-                  onClick={() => {
-                    const amount = document.querySelector('.amount-input').value;
-                    handleLoadWallet(selectedAgent._id, amount);
-                  }}
-                >
-                  💰 Load Wallet
-                </button>
-              </div>
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="modal-btn secondary"
+                onClick={() => setShowAgentModal(false)}
+              >
+                Close
+              </button>
+              <button 
+                className="modal-btn danger"
+                onClick={() => handleAgentAction(selectedAgent._id, 'suspended')}
+              >
+                Suspend Agent
+              </button>
+              <button 
+                className="modal-btn success"
+                onClick={() => handleAgentAction(selectedAgent._id, 'active')}
+              >
+                Activate Agent
+              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Price Management Modal */}
+      
+      {/* Price Update Modal */}
       {showPriceModal && (
         <div className="modal-overlay">
-          <div className="modal-content price-modal">
+          <div className="modal">
             <div className="modal-header">
-              <h3>⚙️ Manage Agent Prices</h3>
-              <button 
-                className="close-btn"
-                onClick={() => {
-                  setShowPriceModal(false);
-                  setPriceUpdates({});
-                }}
-              >
-                ✕
+              <h3>Update Data Plan Prices</h3>
+              <button className="close-btn" onClick={() => setShowPriceModal(false)}>
+                ×
               </button>
             </div>
             <div className="modal-body">
-              <p className="modal-description">
-                Update agent prices for different networks and plans.
-              </p>
-              
-              <div className="price-update-section">
-                <h4>MTN Network</h4>
-                <div className="price-inputs">
-                  <div className="price-input-group">
-                    <label>1GB Agent Price (Current: GHS 4.10)</label>
-                    <input
-                      type="number"
-                      placeholder="New price"
-                      step="0.01"
-                      min="0"
-                      onChange={(e) => handlePriceChange('mtn-1gb', e.target.value)}
-                    />
+              <div className="price-update-form">
+                {['MTN', 'Telecel', 'AirtelTigo'].map(network => (
+                  <div key={network} className="price-input-group">
+                    <h4>{network}</h4>
+                    <div className="input-row">
+                      <input
+                        type="text"
+                        placeholder="Size (e.g., 1GB)"
+                        value={priceUpdates[network.toLowerCase()].size}
+                        onChange={(e) => setPriceUpdates(prev => ({
+                          ...prev,
+                          [network.toLowerCase()]: {
+                            ...prev[network.toLowerCase()],
+                            size: e.target.value
+                          }
+                        }))}
+                      />
+                      <input
+                        type="number"
+                        placeholder="Price (GHS)"
+                        value={priceUpdates[network.toLowerCase()].price}
+                        onChange={(e) => setPriceUpdates(prev => ({
+                          ...prev,
+                          [network.toLowerCase()]: {
+                            ...prev[network.toLowerCase()],
+                            price: e.target.value
+                          }
+                        }))}
+                        step="0.01"
+                        min="0"
+                      />
+                      <button 
+                        className="update-btn"
+                        onClick={() => handlePriceUpdate(network)}
+                      >
+                        Update
+                      </button>
+                    </div>
                   </div>
-                  <div className="price-input-group">
-                    <label>5GB Agent Price (Current: GHS 20.30)</label>
-                    <input
-                      type="number"
-                      placeholder="New price"
-                      step="0.01"
-                      min="0"
-                      onChange={(e) => handlePriceChange('mtn-5gb', e.target.value)}
-                    />
-                  </div>
-                </div>
+                ))}
               </div>
-
-              <div className="price-update-section">
-                <h4>Telecel Network</h4>
-                <div className="price-inputs">
-                  <div className="price-input-group">
-                    <label>5GB Agent Price (Current: GHS 19.30)</label>
-                    <input
-                      type="number"
-                      placeholder="New price"
-                      step="0.01"
-                      min="0"
-                      onChange={(e) => handlePriceChange('telecel-5gb', e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  className="save-btn"
-                  onClick={() => handleUpdatePrices('all', priceUpdates)}
-                >
-                  💾 Save All Changes
-                </button>
-                <button
-                  className="cancel-btn"
-                  onClick={() => {
-                    setShowPriceModal(false);
-                    setPriceUpdates({});
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="modal-btn secondary"
+                onClick={() => setShowPriceModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="modal-btn primary"
+                onClick={() => {
+                  // Update all prices
+                  ['MTN', 'Telecel', 'AirtelTigo'].forEach(network => {
+                    if (priceUpdates[network.toLowerCase()].price && 
+                        priceUpdates[network.toLowerCase()].size) {
+                      handlePriceUpdate(network);
+                    }
+                  });
+                }}
+              >
+                Update All
+              </button>
             </div>
           </div>
         </div>
