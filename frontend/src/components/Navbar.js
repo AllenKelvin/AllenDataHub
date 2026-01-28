@@ -61,14 +61,20 @@ const Navbar = () => {
   }, [location.pathname]);
 
   // Dashboard link based on user role
-  const getDashboardLink = () => {
-    if (!user) return '/login';
-    switch (user.role) {
-      case 'admin': return '/admin-dashboard';
-      case 'agent': return '/agent-dashboard';
-      default: return '/client-dashboard';
-    }
-  };
+const getDashboardLink = () => {
+  if (!user) return '/login';
+  
+  // Handle different role naming conventions
+  const userRole = user.role?.toLowerCase();
+  
+  if (userRole === 'admin' || userRole === 'administrator') {
+    return '/admin-dashboard';
+  } else if (userRole === 'agent' || userRole === 'reseller') {
+    return '/agent-dashboard';
+  } else {
+    return '/client-dashboard';
+  }
+};
 
   // Navigate to admin login
   const goToAdminLogin = () => {
@@ -143,13 +149,16 @@ const Navbar = () => {
                   </div>
                   
                   <Link 
-                    to={getDashboardLink()} 
-                    className="dropdown-item"
-                    onClick={() => setDropdownOpen(false)}
-                  >
-                    <span className="dropdown-icon">📊</span>
-                    Dashboard
-                  </Link>
+  to={getDashboardLink()} 
+  className="dropdown-item"
+  onClick={() => {
+    setDropdownOpen(false);
+    navigate(getDashboardLink()); // Force navigation
+  }}
+>
+  <span className="dropdown-icon">📊</span>
+  Dashboard
+</Link>
                   
                   <hr />
                   

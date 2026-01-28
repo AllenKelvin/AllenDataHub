@@ -15,8 +15,35 @@ const Login = () => {
   const [showSessionExpired, setShowSessionExpired] = useState(false);
   
   const { darkMode } = useTheme();
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+    
+    if (token && userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        const userRole = parsedUser.role?.toLowerCase();
+        
+        // Redirect to appropriate dashboard
+        if (userRole === 'admin' || userRole === 'administrator') {
+          navigate('/admin-dashboard', { replace: true });
+        } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
+          navigate('/agent-dashboard', { replace: true });
+        } else {
+          navigate('/client-dashboard', { replace: true });
+        }
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        // Clear invalid data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+    }
+  }, [navigate]);
 
   // Check for session expired parameter
   useEffect(() => {
@@ -55,9 +82,9 @@ const Login = () => {
       }
 
       // Extract user data and token from response
-      const { user, token } = response.data;
+      const { user: userData, token } = response.data;
       
-      console.log('User data received:', user);
+      console.log('User data received:', userData);
       console.log('Token received:', token ? 'Yes' : 'No');
       
       // Store remember me preference
@@ -71,21 +98,28 @@ const Login = () => {
 
       // Call the auth context login function
       console.log('Calling auth context login...');
-      const loginResult = login(user, token);
+      const loginResult = login(userData, token);
       console.log('Auth context login result:', loginResult);
       
-      // Verify login was successful
-      const storedUser = localStorage.getItem('user');
-      const storedToken = localStorage.getItem('token');
-      
-      if (!storedUser || !storedToken) {
-        throw new Error('Failed to store authentication data');
+      if (!loginResult.success) {
+        throw new Error(loginResult.error || 'Login failed');
       }
       
-      console.log('✅ Login successful! Redirecting to client dashboard...');
+      // Wait a moment for auth state to update
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Always redirect to client dashboard after successful login
-      navigate('/client-dashboard', { replace: true });
+      console.log('✅ Login successful! Redirecting to dashboard...');
+      
+      // Determine role and redirect accordingly
+      const userRole = userData.role?.toLowerCase() || loginResult.user?.role?.toLowerCase();
+      
+      if (userRole === 'admin' || userRole === 'administrator') {
+        navigate('/admin-dashboard', { replace: true });
+      } else if (userRole === 'agent' || userRole === 'reseller' || userRole === 'distributor') {
+        navigate('/agent-dashboard', { replace: true });
+      } else {
+        navigate('/client-dashboard', { replace: true });
+      }
         
     } catch (err) {
       console.error('❌ Login error:', err);
