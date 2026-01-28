@@ -1,0 +1,22 @@
+/* AgentLogin.css - Only agent specific styles */
+.login-header.agent-header h1 {
+  background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.support-info {
+  background: #f0f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.dark .support-info {
+  background: #001d3d;
+  border-color: #003a8c;
+  color: #91d5ff;
+}

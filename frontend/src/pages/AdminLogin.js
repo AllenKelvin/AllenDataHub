@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Login.css';
+import './AdminLogin.css'; // Add this
 
 const AdminLogin = () => {
   const [username, setUsername] = useState('');
@@ -126,8 +127,8 @@ const AdminLogin = () => {
             <div className="credentials-hint">
               <p><strong>Valid Credentials:</strong></p>
               <ul>
-                <li>Username: @Admin001 | Password: Password100</li>
-                <li>Username: @Admin002 | Password: Password200</li>
+                <li>Username: Ad*** | Password: Password***</li>
+                <li>Username: @Ad*** | Password: Password***</li>
               </ul>
             </div>
           </div>

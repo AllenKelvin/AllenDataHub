@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import './Login.css';
+import './AgentLogin.css'; // Add this
 
 const AgentLogin = () => {
   const [email, setEmail] = useState('');

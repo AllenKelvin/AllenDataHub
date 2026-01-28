@@ -1,0 +1,22 @@
+/* AdminLogin.css - Only admin specific styles */
+.login-header.admin-header h1 {
+  background: linear-gradient(135deg, #ffd700 0%, #ff9900 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.credentials-hint {
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.dark .credentials-hint {
+  background: #2d1b00;
+  border-color: #5c3c00;
+  color: #ffd591;
+}
