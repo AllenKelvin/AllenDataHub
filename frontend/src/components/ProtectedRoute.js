@@ -1,11 +1,11 @@
 import React, { useEffect } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, user, loading, trackActivity } = useAuth();
-  const location = useLocation();
+  const { user, isAuthenticated, loading, trackActivity } = useAuth();
 
+  // Track activity when user interacts with protected routes
   useEffect(() => {
     const handleActivity = () => {
       if (isAuthenticated) {
@@ -13,6 +13,7 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
       }
     };
 
+    // Add event listeners for activity tracking
     window.addEventListener('click', handleActivity);
     window.addEventListener('keydown', handleActivity);
     window.addEventListener('mousemove', handleActivity);
@@ -26,32 +27,25 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
     };
   }, [isAuthenticated, trackActivity]);
 
-  // 1. Show loading state while AuthContext initializes
   if (loading) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
-        <p>Verifying session...</p>
+        <p>Loading...</p>
       </div>
     );
   }
 
-  // 2. If not authenticated, send to login but save the attempted location
   if (!isAuthenticated) {
-    console.log('❌ Not authenticated, redirecting to login');
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Redirect to login with return URL
+    return <Navigate to="/login" replace />;
   }
 
-  // 3. Admin Check: If route requires admin but user isn't one, send to client dashboard
   if (requireAdmin && user?.role !== 'admin') {
-    console.log('🚫 Admin access required, but user is:', user?.role);
+    // Redirect non-admins away from admin routes
     return <Navigate to="/client-dashboard" replace />;
   }
 
-  // 4. Agent Check: If user is an agent trying to access client area, or vice-versa
-  // (Optional: Add specific logic here if you want to keep them strictly separated)
-
-  console.log(`✅ Access granted to ${user?.role || 'user'}`);
   return children;
 };
 

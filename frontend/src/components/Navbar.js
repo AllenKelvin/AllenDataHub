@@ -70,20 +70,6 @@ const Navbar = () => {
     }
   };
 
-  // Navigate to admin login
-  const goToAdminLogin = () => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-    navigate('/AdminLogin');
-  };
-
-  // Navigate to agent login
-  const goToAgentLogin = () => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-    navigate('/AgentLogin');
-  };
-
   return (
     <nav className={`navbar ${darkMode ? 'dark' : ''}`}>
       <div className="navbar-container">
@@ -95,23 +81,6 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* Desktop Navigation - Cart and Theme Toggle visible */}
-        <div className="navbar-center desktop-nav">
-          {/* Cart - Only visible to clients on their dashboard */}
-          {showCart && (
-            <Link to="/cart" className="nav-link cart-link">
-              <span className="nav-icon">🛒</span>
-              Cart
-              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
-            </Link>
-          )}
-          
-          {/* Theme Toggle - Always visible in desktop */}
-          <button onClick={toggleTheme} className="theme-toggle-btn">
-            {darkMode ? '☀️' : '🌙'}
-          </button>
-        </div>
-
         {/* Mobile Menu Toggle */}
         <button 
           className="menu-toggle"
@@ -120,8 +89,22 @@ const Navbar = () => {
           {mobileMenuOpen ? '✕' : '☰'}
         </button>
 
-        {/* Desktop Profile Area */}
+        {/* Desktop Navigation */}
         <div className="navbar-right desktop-nav">
+          {/* Theme Toggle */}
+          <button onClick={toggleTheme} className="theme-toggle-btn">
+            {darkMode ? '☀️ Light' : '🌙 Dark'}
+          </button>
+
+          {/* Cart - Only visible to clients on their dashboard */}
+          {showCart && (
+            <Link to="/cart" className="nav-link cart-link">
+              <span className="nav-icon">🛒</span>
+              Cart
+              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+            </Link>
+          )}
+
           {/* User Profile Dropdown or Login/Signup */}
           {user ? (
             <div className="profile-dropdown" ref={dropdownRef}>
@@ -151,25 +134,25 @@ const Navbar = () => {
                     Dashboard
                   </Link>
                   
-                  <hr />
+                  {user.role === 'agent' && (
+                    <Link 
+                      to="/agent-wallet" 
+                      className="dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      <span className="dropdown-icon">💰</span>
+                      My Wallet
+                    </Link>
+                  )}
                   
-                  {/* Admin Login Button - Available to all users */}
-                  <button 
-                    className="dropdown-item admin-btn"
-                    onClick={goToAdminLogin}
+                  <Link 
+                    to="/profile" 
+                    className="dropdown-item"
+                    onClick={() => setDropdownOpen(false)}
                   >
-                    <span className="dropdown-icon">👑</span>
-                    Admin Login
-                  </button>
-                  
-                  {/* Agent Login Button - Available to all users */}
-                  <button 
-                    className="dropdown-item agent-btn"
-                    onClick={goToAgentLogin}
-                  >
-                    <span className="dropdown-icon">👤</span>
-                    Agent Login
-                  </button>
+                    <span className="dropdown-icon">⚙️</span>
+                    Profile
+                  </Link>
                   
                   <hr />
                   
@@ -216,6 +199,11 @@ const Navbar = () => {
           )}
 
           {/* Mobile Links */}
+          <Link to="/" className="mobile-link">
+            <span className="mobile-icon">🏠</span>
+            Home
+          </Link>
+          
           {user && (
             <>
               <Link to={getDashboardLink()} className="mobile-link">
@@ -237,35 +225,14 @@ const Navbar = () => {
                   {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
                 </Link>
               )}
+              
+              <Link to="/profile" className="mobile-link">
+                <span className="mobile-icon">⚙️</span>
+                Profile
+              </Link>
             </>
           )}
 
-          {/* Admin and Agent Login in Mobile Menu */}
-          <button onClick={goToAdminLogin} className="mobile-link admin-btn">
-            <span className="mobile-icon">👑</span>
-            Admin Login
-          </button>
-          
-          <button onClick={goToAgentLogin} className="mobile-link agent-btn">
-            <span className="mobile-icon">👤</span>
-            Agent Login
-          </button>
-
-          {/* Mobile Theme Toggle - Added here */}
-          <button onClick={toggleTheme} className="mobile-link theme-toggle-mobile">
-            <span className="mobile-icon">{darkMode ? '☀️' : '🌙'}</span>
-            {darkMode ? 'Light Mode' : 'Dark Mode'}
-          </button>
-
-          {/* Logout Button */}
-          {user && (
-            <button onClick={handleLogout} className="mobile-link logout-btn">
-              <span className="mobile-icon">🚪</span>
-              Logout
-            </button>
-          )}
-
-          {/* Login/Signup for non-logged in users */}
           {!user && (
             <>
               <Link to="/login" className="mobile-link">
@@ -277,6 +244,21 @@ const Navbar = () => {
                 Sign Up
               </Link>
             </>
+          )}
+
+          {/* Theme Toggle Mobile */}
+          <div className="mobile-theme-toggle">
+            <button onClick={toggleTheme} className="mobile-theme-btn">
+              {darkMode ? '☀️ Switch to Light Mode' : '🌙 Switch to Dark Mode'}
+            </button>
+          </div>
+
+          {/* Logout Button */}
+          {user && (
+            <button onClick={handleLogout} className="mobile-link logout-btn">
+              <span className="mobile-icon">🚪</span>
+              Logout
+            </button>
           )}
         </div>
       )}
