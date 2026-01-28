@@ -1163,3 +1163,155 @@
 .support-info p {
   margin: 0.3rem 0;
 }
+
+/* Add these styles to your Login.css file */
+
+/* Admin specific styling */
+.login-header.admin-header h1 {
+  background: linear-gradient(135deg, #ffd700 0%, #ff9900 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+}
+
+.admin-login-btn {
+  background: linear-gradient(135deg, #ffd700 0%, #ff9900 100%) !important;
+  color: #000 !important;
+  font-weight: 700;
+}
+
+.admin-login-btn:hover {
+  background: linear-gradient(135deg, #ffcc00 0%, #ff8800 100%) !important;
+}
+
+/* Agent specific styling */
+.login-header.agent-header h1 {
+  background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+}
+
+.agent-login-btn {
+  background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%) !important;
+  color: white !important;
+  font-weight: 700;
+}
+
+.agent-login-btn:hover {
+  background: linear-gradient(135deg, #096dd9 0%, #003a8c 100%) !important;
+}
+
+/* Credentials hint box */
+.credentials-hint {
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.dark .credentials-hint {
+  background: #2d1b00;
+  border-color: #5c3c00;
+  color: #ffd591;
+}
+
+.credentials-hint h3 {
+  margin-top: 0;
+  color: #d48806;
+}
+
+.dark .credentials-hint h3 {
+  color: #ffd591;
+}
+
+.credentials-hint ul {
+  margin: 0.5rem 0 0 1rem;
+  padding: 0;
+}
+
+.credentials-hint li {
+  margin: 0.3rem 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.dark .credentials-hint li {
+  color: #ccc;
+}
+
+.credentials-hint code {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.dark .credentials-hint code {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Support info box */
+.support-info {
+  background: #f0f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.dark .support-info {
+  background: #001d3d;
+  border-color: #003a8c;
+  color: #91d5ff;
+}
+
+.support-info h3 {
+  margin-top: 0;
+  color: #096dd9;
+}
+
+.dark .support-info h3 {
+  color: #91d5ff;
+}
+
+.support-contact {
+  margin-top: 0.8rem;
+}
+
+.support-contact p {
+  margin: 0.4rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Login page header adjustments */
+.login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.login-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.login-header p {
+  color: #666;
+  font-size: 1rem;
+}
+
+.dark .login-header p {
+  color: #94a3b8;
+}

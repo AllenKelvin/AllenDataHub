@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Login.css';
-import './AdminLogin.css'; // Add this
 
 const AdminLogin = () => {
   const [username, setUsername] = useState('');
@@ -10,6 +9,7 @@ const AdminLogin = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   // Hardcoded admin credentials
   const validAdmins = [
@@ -44,12 +44,10 @@ const AdminLogin = () => {
       // Simulate API call and login
       setTimeout(() => {
         // Use the login function from AuthContext
-        // In a real app, you would get a token from your backend
         const token = 'admin-token-' + Date.now();
         
-        // Store in localStorage
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(adminUser));
+        // Call the login function from AuthContext
+        login(adminUser, token);
         
         // Redirect to admin dashboard
         navigate('/admin-dashboard');
@@ -65,7 +63,7 @@ const AdminLogin = () => {
   return (
     <div className="login-page">
       <div className="login-container">
-        <div className="login-header">
+        <div className="login-header admin-header">
           <h1>👑 Admin Login</h1>
           <p>Access admin dashboard with authorized credentials</p>
         </div>
@@ -85,7 +83,7 @@ const AdminLogin = () => {
               id="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="@Admin001 or @Admin002"
+              placeholder="@Ad*** or @Ad***"
               required
               className="form-control"
             />
@@ -106,7 +104,7 @@ const AdminLogin = () => {
 
           <button 
             type="submit" 
-            className="login-btn"
+            className="login-btn admin-login-btn"
             disabled={loading}
           >
             {loading ? '🔐 Logging in...' : '🔐 Admin Login'}
@@ -121,16 +119,14 @@ const AdminLogin = () => {
             </Link>
           </div>
 
-          <div className="login-info">
+          <div className="credentials-hint">
             <h3>⚠️ Admin Access Only</h3>
             <p>This page is restricted to authorized administrators only.</p>
-            <div className="credentials-hint">
-              <p><strong>Valid Credentials:</strong></p>
-              <ul>
-                <li>Username: Ad*** | Password: Password***</li>
-                <li>Username: @Ad*** | Password: Password***</li>
-              </ul>
-            </div>
+            <p><strong>Valid Credentials:</strong></p>
+            <ul>
+              <li>Username: <code>@Ad***</code> | Password: <code>Password***</code></li>
+              <li>Username: <code>@Ad***</code> | Password: <code>Password***</code></li>
+            </ul>
           </div>
         </form>
       </div>
