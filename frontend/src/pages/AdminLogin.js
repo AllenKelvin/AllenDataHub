@@ -32,27 +32,34 @@ const AdminLogin = () => {
         throw new Error('Invalid admin credentials');
       }
 
-      // Create admin user object
+      // Create admin user object with proper structure
       const adminUser = {
+        _id: `admin-${username}`,
         username,
         email: `${username.toLowerCase().replace('@', '')}@allendatahub.com`,
         role: 'admin',
-        name: 'Admin User',
-        createdAt: new Date().toISOString()
+        name: username === '@Admin001' ? 'Admin User 1' : 'Admin User 2',
+        createdAt: new Date().toISOString(),
+        // Add any other required fields
       };
 
-      // Simulate API call and login
+      console.log('Admin user created:', adminUser);
+
+      // Simulate API call
       setTimeout(() => {
-        // Use the login function from AuthContext
         const token = 'admin-token-' + Date.now();
         
-        // Call the login function from AuthContext
+        // Store in localStorage directly first
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(adminUser));
+        
+        // Then use the login function
         login(adminUser, token);
         
-        // Redirect to admin dashboard
-        navigate('/admin-dashboard');
+        // Force redirect to admin dashboard
+        window.location.href = '/admin-dashboard';
         setLoading(false);
-      }, 1000);
+      }, 500);
 
     } catch (error) {
       setError(error.message || 'Invalid admin credentials');
@@ -83,7 +90,7 @@ const AdminLogin = () => {
               id="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="@Ad*** or @Ad***"
+              placeholder="@Admin001 or @Admin002"
               required
               className="form-control"
             />

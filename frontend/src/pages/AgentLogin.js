@@ -17,16 +17,16 @@ const AgentLogin = () => {
     setLoading(true);
 
     try {
-      // For now, we'll simulate an API call
+      // For demonstration, accept any email/password
       // In real app, this would call your backend API
       setTimeout(() => {
-        // This is a placeholder - in real app, validate against your backend
         if (!email || !password) {
           throw new Error('Please enter email and password');
         }
 
-        // Simulate successful login
+        // Create agent user object
         const agentUser = {
+          _id: `agent-${Date.now()}`,
           email,
           username: email.split('@')[0],
           role: 'agent',
@@ -35,14 +35,21 @@ const AgentLogin = () => {
           createdAt: new Date().toISOString()
         };
 
-        // Use the login function from AuthContext
+        console.log('Agent user created:', agentUser);
+
         const token = 'agent-token-' + Date.now();
+        
+        // Store in localStorage directly first
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(agentUser));
+        
+        // Then use the login function
         login(agentUser, token);
         
-        // Redirect to agent dashboard
-        navigate('/agent-dashboard');
+        // Force redirect to agent dashboard
+        window.location.href = '/agent-dashboard';
         setLoading(false);
-      }, 1000);
+      }, 500);
 
     } catch (error) {
       setError(error.message || 'Login failed. Please check credentials.');
@@ -103,9 +110,6 @@ const AgentLogin = () => {
           <div className="login-links">
             <Link to="/login" className="link">
               ← Back to Client Login
-            </Link>
-            <Link to="/" className="link">
-              ← Back to Home
             </Link>
           </div>
 
