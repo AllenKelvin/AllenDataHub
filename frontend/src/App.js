@@ -18,6 +18,8 @@ import ClientDashboard from './pages/ClientDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 import './responsive.css';
+import AdminLogin from './pages/AdminLogin';
+import AgentLogin from './pages/AgentLogin';
 
 function App() {
   return (
@@ -34,6 +36,8 @@ function App() {
                   <Route path="/cart" element={<Cart />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/signup" element={<Signup />} />
+                  <Route path="/admin-login" element={<AdminLogin />} />
+                  <Route path="/agent-login" element={<AgentLogin />} />
                   
                   {/* Protected Routes */}
                   <Route 

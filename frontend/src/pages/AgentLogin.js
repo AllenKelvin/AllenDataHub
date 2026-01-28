@@ -7,49 +7,75 @@ const AgentLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
-    const agentUser = {
-      _id: `agent-${Date.now()}`,
-      email,
-      role: 'agent',
-      name: 'Data Agent',
-    };
-    const token = 'agent-token-' + Date.now();
-
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(agentUser));
-    login(agentUser, token);
-
-    navigate('/agent-dashboard');
+    try {
+      const agentData = { 
+        name: 'Field Agent', 
+        role: 'agent', 
+        email,
+        username: email.split('@')[0] 
+      };
+      const token = 'agent-token-' + Date.now();
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(agentData));
+      await login(agentData, token);
+      navigate('/agent-dashboard', { replace: true });
+    } catch (err) {
+      setError('Agent authentication failed.');
+      setLoading(false);
+    }
   };
 
   return (
     <div className="login-page">
       <div className="login-container">
-        <div className="login-header">
+        <div className="login-header agent-header">
           <h1>👤 Agent Portal</h1>
-          <p>Partner Network Access</p>
+          <p>Agent Network Login</p>
         </div>
+
+        {error && <div className="error-message">{error}</div>}
+
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
             <label>Agent Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input 
+              type="email" 
+              placeholder="agent@allendatahub.com" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              required 
+            />
           </div>
+
           <div className="form-group">
             <label>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input 
+              type="password" 
+              placeholder="••••••••" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              required 
+            />
           </div>
+
           <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Loading...' : 'Login as Agent'}
+            {loading ? 'Processing...' : 'Login as Agent'}
           </button>
+
           <div className="signup-prompt">
-            <Link to="/login">← Back to Client Login</Link>
+            <Link to="/login" className="signup-link">
+              ← Back to Main Login
+            </Link>
           </div>
         </form>
       </div>
