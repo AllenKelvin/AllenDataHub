@@ -32,83 +32,67 @@ function App() {
               <Navbar />
               <main>
                 <Routes>
-                  {/* Public Routes */}
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/admin-login" element={<AdminLogin />} />
-                  <Route path="/agent-login" element={<AgentLogin />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/cart" element={<Cart />} />
-                  
-                  {/* Protected Routes */}
-                  <Route 
-                    path="/checkout" 
-                    element={
-                      <ProtectedRoute>
-                        <Checkout />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment" 
-                    element={
-                      <ProtectedRoute>
-                        <Payment />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment-return" 
-                    element={
-                      <ProtectedRoute>
-                        <PaymentReturn />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment-success" 
-                    element={
-                      <ProtectedRoute>
-                        <PaymentSuccess />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/admin-dashboard" 
-                    element={
-                      <ProtectedRoute requireAdmin={true}>
-                        <AdminDashboard />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/agent-dashboard" 
-                    element={
-                      <ProtectedRoute requireAgent={true}>
-                        <AgentDashboard />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/client-dashboard" 
-                    element={
-                      <ProtectedRoute>
-                        <ClientDashboard />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/profile" 
-                    element={
-                      <ProtectedRoute>
-                        <UserProfile />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  
-                  {/* Default and catch-all routes */}
-                  <Route path="/" element={<Navigate to="/login" />} />
-                  <Route path="*" element={<Navigate to="/login" />} />
-                </Routes>
+                 {/* Public Routes */}
+  <Route path="/login" element={<Login />} />
+  <Route path="/admin-login" element={<AdminLogin />} />
+  <Route path="/agent-login" element={<AgentLogin />} />
+  <Route path="/signup" element={<Signup />} />
+  <Route path="/cart" element={<Cart />} />
+  
+  {/* Protected Routes */}
+  <Route path="/checkout" element={
+    <ProtectedRoute>
+      <Checkout />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/payment" element={
+    <ProtectedRoute>
+      <Payment />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/payment-return" element={
+    <ProtectedRoute>
+      <PaymentReturn />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/payment-success" element={
+    <ProtectedRoute>
+      <PaymentSuccess />
+    </ProtectedRoute>
+  } />
+  
+  {/* Role-specific routes */}
+  <Route path="/admin-dashboard" element={
+    <ProtectedRoute requireAdmin={true}>
+      <AdminDashboard />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/agent-dashboard" element={
+    <ProtectedRoute requireAgent={true}>
+      <AgentDashboard />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/client-dashboard" element={
+    <ProtectedRoute requireClient={true}>
+      <ClientDashboard />
+    </ProtectedRoute>
+  } />
+  
+  <Route path="/profile" element={
+    <ProtectedRoute>
+      <UserProfile />
+    </ProtectedRoute>
+  } />
+  
+  {/* Default and catch-all routes */}
+  <Route path="/" element={<Navigate to="/login" />} />
+  <Route path="*" element={<Navigate to="/login" />} />
+  </Routes>
               </main>
               <Footer />
             </div>

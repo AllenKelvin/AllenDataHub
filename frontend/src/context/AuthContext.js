@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
 
 const AuthContext = createContext();
 
@@ -13,6 +13,7 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [showWarning, setShowWarning] = useState(false);
   
@@ -24,7 +25,7 @@ export const AuthProvider = ({ children }) => {
   // ========== INACTIVITY TRACKING ==========
   
   // Reset activity timer on user interaction
-  const resetInactivityTimer = () => {
+  const resetInactivityTimer = useCallback(() => {
     console.log('🔄 Resetting inactivity timer');
     setLastActivity(Date.now());
     setShowWarning(false);
@@ -47,17 +48,10 @@ export const AuthProvider = ({ children }) => {
         handleAutoLogout();
       }, 30 * 60 * 1000); // 30 minutes
     }
-  };
-
-  // Track user activity
-  const trackActivity = () => {
-    if (user) { // Only track if user is logged in
-      resetInactivityTimer();
-    }
-  };
+  }, [user]);
 
   // Handle auto logout
-  const handleAutoLogout = () => {
+  const handleAutoLogout = useCallback(() => {
     console.log('👋 Auto-logout due to inactivity');
     
     // Clear all timers
@@ -70,10 +64,17 @@ export const AuthProvider = ({ children }) => {
     
     // Redirect to login page with message
     const currentPath = window.location.pathname;
-    if (!currentPath.includes('/login')) {
+    if (!currentPath.includes('/login') && !currentPath.includes('/signup')) {
       window.location.href = '/login?session_expired=true';
     }
-  };
+  }, []);
+
+  // Track user activity
+  const trackActivity = useCallback(() => {
+    if (user) { // Only track if user is logged in
+      resetInactivityTimer();
+    }
+  }, [user, resetInactivityTimer]);
 
   // ========== AUTH FUNCTIONS ==========
 
@@ -89,8 +90,20 @@ export const AuthProvider = ({ children }) => {
           const parsedUser = JSON.parse(userData);
           console.log('📋 Parsed user data:', parsedUser);
           
-          if (parsedUser && parsedUser._id) {
-            setUser(parsedUser);
+          // More flexible validation - accept different ID field names
+          const userId = parsedUser._id || parsedUser.id || parsedUser.userId;
+          
+          if (parsedUser && userId) {
+            // Ensure consistent structure
+            const normalizedUser = {
+              ...parsedUser,
+              _id: userId,
+              id: userId,
+              role: parsedUser.role || 'client' // Default to client if no role specified
+            };
+            
+            setUser(normalizedUser);
+            setIsAuthenticated(true);
             
             // Start tracking activity
             resetInactivityTimer();
@@ -100,7 +113,7 @@ export const AuthProvider = ({ children }) => {
               const now = Date.now();
               const inactiveTime = now - lastActivity;
               
-              if (inactiveTime > 30 * 60 * 1000) {
+              if (inactiveTime > 30 * 60 * 1000 && user) {
                 handleAutoLogout();
               }
             }, 30 * 1000);
@@ -129,53 +142,82 @@ export const AuthProvider = ({ children }) => {
       if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
       if (activityTimerRef.current) clearInterval(activityTimerRef.current);
     };
-  }, []);
+  }, [resetInactivityTimer, handleAutoLogout, lastActivity, user]);
 
   const login = (userData, token) => {
     console.log('🔐 Login called with user data:', userData);
     
     if (!userData || !token) {
       console.error('❌ Login failed: Missing user data or token');
-      throw new Error('Login failed: Invalid credentials');
+      return {
+        success: false,
+        error: 'Missing user data or token'
+      };
     }
     
-    // Validate user data structure
-    if (!userData._id || !userData.email || !userData.role) {
+    // Flexible user data validation - accept different field names
+    const userId = userData._id || userData.id || userData.userId;
+    const userEmail = userData.email || userData.Email || userData.username;
+    const userRole = userData.role || userData.Role || 'client'; // Default to client
+    
+    if (!userId || !userEmail) {
       console.error('❌ Login failed: Invalid user data structure', userData);
-      throw new Error('Login failed: Invalid user data');
+      return {
+        success: false,
+        error: 'Invalid user data structure'
+      };
     }
+    
+    // Normalize user data to consistent structure
+    const normalizedUser = {
+      _id: userId,
+      id: userId,
+      email: userEmail,
+      role: userRole.toLowerCase(), // Ensure lowercase for consistency
+      ...userData // Keep all other properties
+    };
     
     // Store auth data
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
     
     // Update state
-    setUser(userData);
+    setUser(normalizedUser);
+    setIsAuthenticated(true);
     
     // Reset activity tracking
     resetInactivityTimer();
     
     console.log('✅ User logged in successfully:', {
-      id: userData._id,
-      email: userData.email,
-      role: userData.role,
-      name: userData.username || userData.name
+      id: normalizedUser._id,
+      email: normalizedUser.email,
+      role: normalizedUser.role,
+      name: normalizedUser.username || normalizedUser.name || normalizedUser.email
     });
     
-    // Check if user is admin
-    const isAdmin = userData.role === 'admin';
-    console.log(`👑 User role: ${userData.role}, Is Admin: ${isAdmin}`);
+    // Set up activity tracking interval
+    if (activityTimerRef.current) clearInterval(activityTimerRef.current);
+    activityTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      const inactiveTime = now - lastActivity;
+      
+      if (inactiveTime > 30 * 60 * 1000) {
+        handleAutoLogout();
+      }
+    }, 30 * 1000);
     
     // Return success with user data
     return {
       success: true,
-      user: userData,
-      isAdmin: isAdmin,
+      user: normalizedUser,
+      isAdmin: normalizedUser.role === 'admin',
+      isAgent: normalizedUser.role === 'agent',
+      isClient: normalizedUser.role === 'client' || normalizedUser.role === 'user',
       message: 'Login successful'
     };
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
     console.log('🚪 User logging out');
     
     // Clear timers
@@ -185,26 +227,27 @@ export const AuthProvider = ({ children }) => {
     
     // Clear state and storage
     setUser(null);
+    setIsAuthenticated(false);
     setShowWarning(false);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     
     console.log('✅ User logged out successfully');
-  };
+  }, []);
 
   // Manual logout with redirect
-  const logoutWithRedirect = (redirectTo = '/login') => {
+  const logoutWithRedirect = useCallback((redirectTo = '/login') => {
     console.log(`🔄 Logging out and redirecting to: ${redirectTo}`);
     logout();
     window.location.href = redirectTo;
-  };
+  }, [logout]);
 
   // Extend session manually (called when user clicks "Stay Logged In")
-  const extendSession = () => {
+  const extendSession = useCallback(() => {
     console.log('⏱️ User extended session');
     setShowWarning(false);
     resetInactivityTimer();
-  };
+  }, [resetInactivityTimer]);
 
   // Get user role safely
   const getUserRole = () => {
@@ -213,12 +256,20 @@ export const AuthProvider = ({ children }) => {
 
   // Check if user is admin
   const isUserAdmin = () => {
-    return user?.role === 'admin';
+    const role = user?.role;
+    return role === 'admin' || role === 'Admin' || role === 'ADMIN';
   };
 
-  // Check if user is client
+  // Check if user is client (accepts 'client', 'user', or similar)
   const isUserClient = () => {
-    return user?.role === 'client';
+    const role = user?.role?.toLowerCase();
+    return role === 'client' || role === 'user' || role === 'customer' || role === 'member';
+  };
+
+  // Check if user is agent
+  const isUserAgent = () => {
+    const role = user?.role?.toLowerCase();
+    return role === 'agent' || role === 'reseller' || role === 'distributor';
   };
 
   const value = {
@@ -227,14 +278,16 @@ export const AuthProvider = ({ children }) => {
     logout,
     logoutWithRedirect,
     loading,
-    isAuthenticated: !!user,
+    isAuthenticated,
     getUserRole,
     isUserAdmin,
     isUserClient,
+    isUserAgent,
     lastActivity,
     showWarning,
     extendSession,
-    trackActivity
+    trackActivity,
+    setUser
   };
 
   // Inactivity warning modal styles
