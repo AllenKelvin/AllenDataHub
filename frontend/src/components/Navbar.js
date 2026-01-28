@@ -60,16 +60,6 @@ const Navbar = () => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Dashboard link based on user role
-  const getDashboardLink = () => {
-    if (!user) return '/login';
-    switch (user.role) {
-      case 'admin': return '/admin-dashboard';
-      case 'agent': return '/agent-dashboard';
-      default: return '/client-dashboard';
-    }
-  };
-
   return (
     <nav className={`navbar ${darkMode ? 'dark' : ''}`}>
       <div className="navbar-container">
@@ -81,92 +71,57 @@ const Navbar = () => {
           </Link>
         </div>
 
-        {/* Mobile Menu Toggle */}
-        <button 
-          className="menu-toggle"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          aria-label="Toggle menu"
-        >
-          {mobileMenuOpen ? '✕' : '☰'}
-        </button>
-
         {/* Desktop Navigation */}
-        <div className="navbar-right desktop-nav">
-          {/* Theme Toggle */}
-          <button 
-            onClick={toggleTheme} 
-            className="theme-toggle-btn"
-            aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
+        <div className="navbar-right">
+          {/* Cart Button - Only visible to clients on their dashboard */}
+          {showCart && (
+            <button 
+              onClick={() => navigate('/cart')}
+              className="cart-button"
+              aria-label="Cart"
+            >
+              🛒
+              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+            </button>
+          )}
 
-          {/* User Profile Dropdown or Login/Signup */}
           {user ? (
-            <div className="profile-dropdown" ref={dropdownRef}>
-              {/* Cart Button - Only visible to clients on their dashboard */}
-              {showCart && (
-                <Link to="/cart" className="nav-link cart-link">
-                  <span className="nav-icon">🛒</span>
-                  {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
-                </Link>
-              )}
-              
-              {/* Profile Avatar */}
+            <div className="user-menu-container" ref={dropdownRef}>
+              {/* User Initials Button */}
               <button 
-                className="nav-link profile-link"
+                className="user-initials-btn"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 aria-label="User menu"
                 aria-expanded={dropdownOpen}
               >
-                <span className="user-avatar">{getInitials(getDisplayName())}</span>
+                {getInitials(getDisplayName())}
               </button>
               
               {/* Dropdown Menu */}
               {dropdownOpen && (
                 <div className="dropdown-menu" role="menu">
-                  <div className="dropdown-header">
-                    <p className="user-name">{getDisplayName()}</p>
-                    <p className="user-email">{user.email}</p>
-                    {user.role === 'agent' && (
-                      <p className="user-balance">Wallet: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
-                    )}
-                  </div>
-                  
-                  <Link 
-                    to={getDashboardLink()} 
-                    className="dropdown-item"
-                    onClick={() => setDropdownOpen(false)}
-                    role="menuitem"
-                  >
-                    <span className="dropdown-icon">📊</span>
-                    Dashboard
-                  </Link>
-                  
-                  {user.role === 'agent' && (
-                    <Link 
-                      to="/agent-wallet" 
-                      className="dropdown-item"
-                      onClick={() => setDropdownOpen(false)}
-                      role="menuitem"
-                    >
-                      <span className="dropdown-icon">💰</span>
-                      My Wallet
-                    </Link>
-                  )}
-                  
+                  {/* Profile */}
                   <Link 
                     to="/profile" 
                     className="dropdown-item"
                     onClick={() => setDropdownOpen(false)}
                     role="menuitem"
                   >
-                    <span className="dropdown-icon">⚙️</span>
-                    Profile Settings
+                    <span className="dropdown-icon">👤</span>
+                    Profile
                   </Link>
                   
-                  <hr />
+                  {/* Theme Toggle */}
+                  <button 
+                    className="dropdown-item theme-toggle-dropdown"
+                    onClick={toggleTheme}
+                    role="menuitem"
+                  >
+                    <span className="dropdown-icon">{darkMode ? '☀️' : '🌙'}</span>
+                    {darkMode ? 'Light Mode' : 'Dark Mode'}
+                  </button>
                   
+                  {/* Logout */}
                   <button 
                     className="dropdown-item logout-btn"
                     onClick={handleLogout}
@@ -179,94 +134,103 @@ const Navbar = () => {
               )}
             </div>
           ) : (
-            <>
-              <Link to="/login" className="nav-link">
-                <span className="nav-icon">🔐</span>
+            <div className="auth-buttons">
+              <Link to="/login" className="login-link">
+                <span>🔐</span>
                 Login
               </Link>
-              <Link to="/signup" className="nav-link signup-btn">
-                <span className="nav-icon">✨</span>
+              <Link to="/signup" className="signup-btn">
+                <span>✨</span>
                 Sign Up
               </Link>
-            </>
+            </div>
           )}
+
+          {/* Mobile Menu Toggle */}
+          <button 
+            className="menu-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? '✕' : '☰'}
+          </button>
         </div>
       </div>
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="mobile-menu">
-          {/* User Info in Mobile */}
-          {user && (
-            <div className="mobile-user-info">
-              <div className="mobile-user-avatar">{getInitials(getDisplayName())}</div>
-              <div className="mobile-user-details">
-                <p className="mobile-user-name">{getDisplayName()}</p>
-                <p className="mobile-user-email">{user.email}</p>
-                {user.role === 'agent' && (
-                  <p className="mobile-user-balance">Balance: GH₵{user.walletBalance?.toFixed(2) || '0.00'}</p>
-                )}
-              </div>
-            </div>
+          {/* Cart in Mobile - Only visible to clients on their dashboard */}
+          {showCart && (
+            <button 
+              onClick={() => {
+                navigate('/cart');
+                setMobileMenuOpen(false);
+              }}
+              className="dropdown-item"
+              style={{width: '100%'}}
+            >
+              <span className="dropdown-icon">🛒</span>
+              Cart
+              {totalItems > 0 && <span className="cart-badge" style={{marginLeft: 'auto'}}>{totalItems}</span>}
+            </button>
           )}
 
-          {/* Mobile Links */}
-          {user && (
+          {user ? (
             <>
-              <Link to={getDashboardLink()} className="mobile-link">
-                <span className="mobile-icon">📊</span>
-                Dashboard
+              {/* Profile */}
+              <Link 
+                to="/profile" 
+                className="dropdown-item"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="dropdown-icon">👤</span>
+                Profile
               </Link>
               
-              {user.role === 'agent' && (
-                <Link to="/agent-wallet" className="mobile-link">
-                  <span className="mobile-icon">💰</span>
-                  My Wallet
-                </Link>
-              )}
+              {/* Theme Toggle */}
+              <button 
+                className="dropdown-item theme-toggle-dropdown"
+                onClick={toggleTheme}
+              >
+                <span className="dropdown-icon">{darkMode ? '☀️' : '🌙'}</span>
+                {darkMode ? 'Light Mode' : 'Dark Mode'}
+              </button>
               
-              {/* Cart in Mobile - Only visible to clients on their dashboard */}
-              {showCart && (
-                <Link to="/cart" className="mobile-link">
-                  <span className="mobile-icon">🛒</span>
-                  Cart
-                  {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
-                </Link>
-              )}
-              
-              <Link to="/profile" className="mobile-link">
-                <span className="mobile-icon">⚙️</span>
-                Profile Settings
-              </Link>
+              {/* Logout */}
+              <button 
+                className="dropdown-item logout-btn"
+                onClick={handleLogout}
+              >
+                <span className="dropdown-icon">🚪</span>
+                Logout
+              </button>
             </>
-          )}
-
-          {!user && (
+          ) : (
             <>
-              <Link to="/login" className="mobile-link">
-                <span className="mobile-icon">🔐</span>
+              <Link 
+                to="/login" 
+                className="dropdown-item"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span className="dropdown-icon">🔐</span>
                 Login
               </Link>
-              <Link to="/signup" className="mobile-link">
-                <span className="mobile-icon">✨</span>
+              <Link 
+                to="/signup" 
+                className="dropdown-item"
+                onClick={() => setMobileMenuOpen(false)}
+                style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  justifyContent: 'center',
+                  fontWeight: '600'
+                }}
+              >
+                <span className="dropdown-icon">✨</span>
                 Sign Up
               </Link>
             </>
-          )}
-
-          {/* Theme Toggle Mobile */}
-          <div className="mobile-theme-toggle">
-            <button onClick={toggleTheme} className="mobile-theme-btn">
-              {darkMode ? '☀️ Switch to Light Mode' : '🌙 Switch to Dark Mode'}
-            </button>
-          </div>
-
-          {/* Logout Button */}
-          {user && (
-            <button onClick={handleLogout} className="mobile-link logout-btn">
-              <span className="mobile-icon">🚪</span>
-              Logout
-            </button>
           )}
         </div>
       )}
