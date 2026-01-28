@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authAPI } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
 import './Login.css';
 
 const Login = () => {
@@ -15,7 +15,7 @@ const Login = () => {
   const [showSessionExpired, setShowSessionExpired] = useState(false);
   
   const { darkMode } = useTheme();
-  const { login, isAuthenticated } = useAuth(); 
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   // Check for session expired parameter
@@ -26,25 +26,6 @@ const Login = () => {
       setShowSessionExpired(true);
     }
   }, []);
-
-  // Handle monkey animation based on password focus
-  useEffect(() => {
-    if (showPassword) {
-      setMonkeyEyesClosed(false);
-    }
-  }, [showPassword]);
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      if (user?.role === 'admin') {
-        navigate('/admin-dashboard', { replace: true });
-      } else {
-        navigate('/client-dashboard', { replace: true });
-      }
-    }
-  }, [isAuthenticated, navigate]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -63,18 +44,23 @@ const Login = () => {
     }
 
     try {
+      console.log('Attempting login with email:', formData.email);
+      
       // Call the API to authenticate
       const response = await authAPI.login(formData);
-      console.log('Login API response:', response.data);
+      console.log('API Response received:', response.data);
       
-      if (!response.data || !response.data.user) {
+      if (!response.data || !response.data.user || !response.data.token) {
         throw new Error('Invalid response from server');
       }
 
       // Extract user data and token from response
       const { user, token } = response.data;
       
-      // Store remember me preference BEFORE calling login
+      console.log('User data received:', user);
+      console.log('Token received:', token ? 'Yes' : 'No');
+      
+      // Store remember me preference
       if (rememberMe) {
         localStorage.setItem('rememberMe', 'true');
         localStorage.setItem('userEmail', formData.email);
@@ -84,47 +70,38 @@ const Login = () => {
       }
 
       // Call the auth context login function
-      console.log('Calling auth context login with:', { user, token });
-      login(user, token);
+      console.log('Calling auth context login...');
+      const loginResult = login(user, token);
+      console.log('Auth context login result:', loginResult);
       
-      // Wait a moment for the auth state to update
-      setTimeout(() => {
-        // Check localStorage to confirm login was successful
-        const storedUser = localStorage.getItem('user');
-        const storedToken = localStorage.getItem('token');
-        
-        console.log('After login - localStorage user:', storedUser);
-        console.log('After login - localStorage token:', storedToken);
-        
-        if (storedUser && storedToken) {
-          // Redirect based on user role
-          const userData = JSON.parse(storedUser);
-          console.log('Redirecting user with role:', userData.role);
-          
-          if (userData.role === 'admin') {
-            navigate('/admin-dashboard', { replace: true });
-          } else if (userData.role === 'agent') {
-            navigate('/agent-dashboard', { replace: true });
-          } else {
-            navigate('/client-dashboard', { replace: true });
-          }
-        } else {
-          setError('Login failed. Unable to store session.');
-        }
-      }, 100);
+      // Verify login was successful
+      const storedUser = localStorage.getItem('user');
+      const storedToken = localStorage.getItem('token');
+      
+      if (!storedUser || !storedToken) {
+        throw new Error('Failed to store authentication data');
+      }
+      
+      console.log('✅ Login successful! Redirecting to client dashboard...');
+      
+      // Always redirect to client dashboard after successful login
+      navigate('/client-dashboard', { replace: true });
         
     } catch (err) {
-      console.error('Login error details:', err);
-      console.error('Error response:', err.response?.data);
+      console.error('❌ Login error:', err);
+      console.error('Error details:', {
+        response: err.response?.data,
+        status: err.response?.status,
+        message: err.message
+      });
       
-      // Handle specific error cases
       let errorMessage = 'Login failed. Please check your credentials and try again.';
       
       if (err.response) {
         if (err.response.status === 401) {
           errorMessage = 'Invalid email or password';
         } else if (err.response.status === 403) {
-          errorMessage = 'Account is not active or verified';
+          errorMessage = 'Account is disabled or not verified';
         } else if (err.response.status === 404) {
           errorMessage = 'User not found';
         } else if (err.response.data?.error) {
@@ -133,7 +110,7 @@ const Login = () => {
           errorMessage = err.response.data.message;
         }
       } else if (err.request) {
-        errorMessage = 'Unable to connect to server. Please try again.';
+        errorMessage = 'Unable to connect to server. Please check your internet connection.';
       } else if (err.message) {
         errorMessage = err.message;
       }
@@ -159,6 +136,13 @@ const Login = () => {
     }
   }, []);
 
+  // Handle monkey animation based on password focus
+  useEffect(() => {
+    if (showPassword) {
+      setMonkeyEyesClosed(false);
+    }
+  }, [showPassword]);
+
   return (
     <div className={`login-container ${darkMode ? 'dark' : 'light'}`}>
       <div className="login-card">
@@ -177,6 +161,7 @@ const Login = () => {
           <p className="logo-subtitle">Data Bundle Management Portal</p>
         </div>
 
+        {/* Monkey Animation */}
         <div className="monkey-container">
           <div className="monkey-emoji"></div>
           <div className={`monkey-eyes ${monkeyEyesClosed ? 'closed' : ''}`}>
@@ -315,9 +300,9 @@ const Login = () => {
       <div className="login-footer">
         <p>AllenDataHub © {new Date().getFullYear()} - All rights reserved</p>
         <div className="footer-links">
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Service</a>
-          <a href="/contact">Contact Us</a>
+          <Link to="/privacy">Privacy Policy</Link>
+          <Link to="/terms">Terms of Service</Link>
+          <Link to="/contact">Contact Us</Link>
         </div>
       </div>
     </div>
