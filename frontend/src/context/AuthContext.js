@@ -5,10 +5,10 @@ const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true); // Start as true
+  const [loading, setLoading] = useState(true); // MUST BE TRUE INITIALLY
 
   useEffect(() => {
-    const loadStoredAuth = () => {
+    const initializeAuth = () => {
       try {
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
@@ -17,27 +17,28 @@ export const AuthProvider = ({ children }) => {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
         }
-      } catch (error) {
-        console.error("Error loading auth:", error);
+      } catch (err) {
+        console.error("Auth initialization error:", err);
+        localStorage.clear();
       } finally {
-        setLoading(false); // Only stop loading after checking storage
+        // Only set loading to false after we are 100% sure we checked storage
+        setLoading(false);
       }
     };
-    loadStoredAuth();
+    initializeAuth();
   }, []);
 
   const login = (userData, userToken) => {
-    setUser(userData);
     setToken(userToken);
+    setUser(userData);
     localStorage.setItem('token', userToken);
     localStorage.setItem('user', JSON.stringify(userData));
   };
 
   const logout = () => {
-    setUser(null);
     setToken(null);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    setUser(null);
+    localStorage.clear();
   };
 
   return (

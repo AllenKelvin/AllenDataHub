@@ -6,13 +6,18 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
-  // If we are still checking localStorage, don't redirect yet!
+  // If the AuthProvider is still reading from localStorage, DO NOT REDIRECT
   if (loading) {
-    return <div className="full-page-loader">Loading...</div>;
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <div className="loading-spinner"></div> {/* Ensure this CSS exists or use text */}
+        <p>Verifying Access...</p>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
-    // Redirect to login but save where they were going
+    // Save the location they tried to access so we can redirect them back after login
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
