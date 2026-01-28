@@ -1,109 +1,54 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './Login.css';
 
 const Login = () => {
-  const [formData, setFormData] = useState({ email: '', password: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  
-  const { darkMode } = useTheme();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (error) setError('');
-  };
+  // If the user was redirected here, we know where to send them back
+  const from = location.state?.from?.pathname || "/client-dashboard";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    
+    const userData = { email, name: email.split('@')[0], role: 'client' };
+    const token = 'user-token-' + Date.now();
 
-    try {
-      // Logic for client login
-      const clientUser = {
-        _id: `user-${Date.now()}`,
-        email: formData.email,
-        name: formData.email.split('@')[0],
-        role: 'client',
-      };
-      const token = 'client-token-' + Date.now();
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
 
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(clientUser));
-      
-      await login(clientUser, token);
-      navigate('/client-dashboard', { replace: true });
-    } catch (err) {
-      setError('Invalid email or password. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    await login(userData, token);
+    
+    // Use 'replace' to prevent going back to login screen with back button
+    navigate(from, { replace: true });
   };
 
   return (
-    <div className={`login-page ${darkMode ? 'dark' : ''}`}>
+    <div className="login-page">
       <div className="login-container">
         <div className="login-header">
           <h1>Welcome Back</h1>
-          <p>Login to manage your data bundles</p>
+          <p>Login to your client dashboard</p>
         </div>
-
-        {error && <div className="error-message">{error}</div>}
-
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
             <label>Email Address</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="name@example.com"
-              required
-            />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
-
           <div className="form-group">
             <label>Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="••••••••"
-              required
-            />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
-
-          <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login to Dashboard'}
-          </button>
+          <button type="submit" className="login-btn">Login to Account</button>
         </form>
-
         <div className="special-login-links">
-          <p>Are you an admin or agent?</p>
-          <div className="special-login-buttons">
-            <Link to="/admin-login" className="special-login-btn admin-login-btn">
-              <span className="special-login-icon">👑</span>
-              Admin Login
-            </Link>
-            <Link to="/agent-login" className="special-login-btn agent-login-btn">
-              <span className="special-login-icon">👤</span>
-              Agent Login
-            </Link>
-          </div>
-        </div>
-
-        <div className="signup-prompt">
-          <p>Don't have an account?</p>
-          <Link to="/signup" className="signup-link">
-            Create New Account
-          </Link>
+           <Link to="/admin-login" className="special-login-btn admin-login-btn">👑 Admin</Link>
+           <Link to="/agent-login" className="special-login-btn agent-login-btn">👤 Agent</Link>
         </div>
       </div>
     </div>

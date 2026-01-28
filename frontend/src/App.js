@@ -1,25 +1,20 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { CartProvider } from './context/CartContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { CartProvider } from './context/CartContext';
+
+// Components & Pages
 import Navbar from './components/Navbar';
-import Footer from './components/Footer';
-import Cart from './pages/Cart';
+import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Checkout from './pages/Checkout';
-import Payment from './pages/Payment';
-import PaymentReturn from './components/PaymentReturn';
-import PaymentSuccess from './pages/PaymentSuccess';
-import AdminDashboard from './pages/AdminDashboard';
-import UserProfile from './pages/UserProfile';
-import ClientDashboard from './pages/ClientDashboard';
-import ProtectedRoute from './components/ProtectedRoute';
-import './App.css';
-import './responsive.css';
 import AdminLogin from './pages/AdminLogin';
 import AgentLogin from './pages/AgentLogin';
+import ClientDashboard from './pages/ClientDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import AgentDashboard from './pages/AgentDashboard';
+import UserProfile from './pages/UserProfile';
 
 function App() {
   return (
@@ -27,79 +22,38 @@ function App() {
       <AuthProvider>
         <CartProvider>
           <Router>
-            <div className="App">
-              <Navbar />
-              <main>
-                <Routes>
-                  {/* Public Routes */}
-                  <Route path="/client-dashboard" element={<ClientDashboard />} />
-                  <Route path="/cart" element={<Cart />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/admin-login" element={<AdminLogin />} />
-                  <Route path="/agent-login" element={<AgentLogin />} />
-                  
-                  {/* Protected Routes */}
-                  <Route 
-                    path="/checkout" 
-                    element={
-                      <ProtectedRoute>
-                        <Checkout />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment" 
-                    element={
-                      <ProtectedRoute>
-                        <Payment />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment-return" 
-                    element={
-                      <ProtectedRoute>
-                        <PaymentReturn />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/payment-success" 
-                    element={
-                      <ProtectedRoute>
-                        <PaymentSuccess />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/admin-dashboard" 
-                    element={
-                      <ProtectedRoute requireAdmin={true}>
-                        <AdminDashboard />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/client-dashboard" 
-                    element={
-                      <ProtectedRoute>
-                        <ClientDashboard />
-                      </ProtectedRoute>
-                    } 
-                  />
-                  <Route 
-                    path="/profile" 
-                    element={
-                      <ProtectedRoute>
-                        <UserProfile />
-                      </ProtectedRoute>
-                    } 
-                  />
-                </Routes>
-              </main>
-              <Footer />
-            </div>
+            <Navbar />
+            <main className="main-content">
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/admin-login" element={<AdminLogin />} />
+                <Route path="/agent-login" element={<AgentLogin />} />
+
+                {/* Protected Client Routes */}
+                <Route path="/client-dashboard" element={
+                  <ProtectedRoute><ClientDashboard /></ProtectedRoute>
+                } />
+                
+                <Route path="/profile" element={
+                  <ProtectedRoute><UserProfile /></ProtectedRoute>
+                } />
+
+                {/* Protected Admin Routes */}
+                <Route path="/admin-dashboard" element={
+                  <ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>
+                } />
+
+                {/* Protected Agent Routes */}
+                <Route path="/agent-dashboard" element={
+                  <ProtectedRoute><AgentDashboard /></ProtectedRoute>
+                } />
+
+                {/* Default Redirect */}
+                <Route path="/" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </main>
           </Router>
         </CartProvider>
       </AuthProvider>
