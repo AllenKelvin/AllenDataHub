@@ -1,58 +1,23 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
-
-// Components
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-import PaymentReturn from './components/PaymentReturn';
-
-// Pages
-import Login from './pages/Login';
-import AdminLogin from './pages/AdminLogin';
-import AgentLogin from './pages/AgentLogin';
-import Signup from './pages/Signup';
 import Cart from './pages/Cart';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 import Checkout from './pages/Checkout';
 import Payment from './pages/Payment';
+import PaymentReturn from './components/PaymentReturn';
 import PaymentSuccess from './pages/PaymentSuccess';
 import AdminDashboard from './pages/AdminDashboard';
-import AgentDashboard from './pages/AgentDashboard';
-import ClientDashboard from './pages/ClientDashboard';
 import UserProfile from './pages/UserProfile';
-
+import ClientDashboard from './pages/ClientDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
-
-const AppRoutes = () => {
-  return (
-    <Routes>
-      {/* Auth Routes */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/admin-login" element={<AdminLogin />} />
-      <Route path="/agent-login" element={<AgentLogin />} />
-      <Route path="/signup" element={<Signup />} />
-      
-      {/* Dashboard Routes (No longer wrapped in ProtectedRoute) */}
-      <Route path="/client-dashboard" element={<ClientDashboard />} />
-      <Route path="/admin-dashboard" element={<AdminDashboard />} />
-      <Route path="/agent-dashboard" element={<AgentDashboard />} />
-      
-      {/* Feature Routes */}
-      <Route path="/cart" element={<Cart />} />
-      <Route path="/checkout" element={<Checkout />} />
-      <Route path="/payment" element={<Payment />} />
-      <Route path="/profile" element={<UserProfile />} />
-      <Route path="/payment-return" element={<PaymentReturn />} />
-      <Route path="/payment-success" element={<PaymentSuccess />} />
-
-      {/* Redirects */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
-  );
-};
+import './responsive.css';
 
 function App() {
   return (
@@ -62,8 +27,72 @@ function App() {
           <Router>
             <div className="App">
               <Navbar />
-              <main className="main-content">
-                <AppRoutes />
+              <main>
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/client-dashboard" element={<ClientDashboard />} />
+                  <Route path="/cart" element={<Cart />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Signup />} />
+                  
+                  {/* Protected Routes */}
+                  <Route 
+                    path="/checkout" 
+                    element={
+                      <ProtectedRoute>
+                        <Checkout />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/payment" 
+                    element={
+                      <ProtectedRoute>
+                        <Payment />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/payment-return" 
+                    element={
+                      <ProtectedRoute>
+                        <PaymentReturn />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/payment-success" 
+                    element={
+                      <ProtectedRoute>
+                        <PaymentSuccess />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/admin-dashboard" 
+                    element={
+                      <ProtectedRoute requireAdmin={true}>
+                        <AdminDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/client-dashboard" 
+                    element={
+                      <ProtectedRoute>
+                        <ClientDashboard />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/profile" 
+                    element={
+                      <ProtectedRoute>
+                        <UserProfile />
+                      </ProtectedRoute>
+                    } 
+                  />
+                </Routes>
               </main>
               <Footer />
             </div>
