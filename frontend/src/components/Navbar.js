@@ -41,7 +41,7 @@ const Navbar = () => {
 
   // Helper to get initials (e.g., "Allen Kelvin" -> "AK")
   const getInitials = (name) => {
-    if (!name) return '👤';
+    if (!name) return 'U';
     const parts = name.split(' ');
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -73,21 +73,21 @@ const Navbar = () => {
 
         {/* Desktop Navigation */}
         <div className="navbar-right">
-          {/* Cart Button - Only visible to clients on their dashboard */}
-          {showCart && (
-            <button 
-              onClick={() => navigate('/cart')}
-              className="cart-button"
-              aria-label="Cart"
-            >
-              🛒
-              {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
-            </button>
-          )}
-
           {user ? (
             <div className="user-menu-container" ref={dropdownRef}>
-              {/* User Initials Button */}
+              {/* Cart Button - Only visible to clients on their dashboard */}
+              {showCart && (
+                <button 
+                  onClick={() => navigate('/cart')}
+                  className="cart-button"
+                  aria-label="Cart"
+                >
+                  🛒
+                  {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+                </button>
+              )}
+              
+              {/* User Initials Button - This IS the menu */}
               <button 
                 className="user-initials-btn"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -99,33 +99,30 @@ const Navbar = () => {
               
               {/* Dropdown Menu */}
               {dropdownOpen && (
-                <div className="dropdown-menu" role="menu">
-                  {/* Profile */}
+                <div className="dropdown-menu">
                   <Link 
                     to="/profile" 
                     className="dropdown-item"
                     onClick={() => setDropdownOpen(false)}
-                    role="menuitem"
                   >
                     <span className="dropdown-icon">👤</span>
                     Profile
                   </Link>
                   
-                  {/* Theme Toggle */}
                   <button 
-                    className="dropdown-item theme-toggle-dropdown"
-                    onClick={toggleTheme}
-                    role="menuitem"
+                    className="dropdown-item"
+                    onClick={() => {
+                      toggleTheme();
+                      setDropdownOpen(false);
+                    }}
                   >
                     <span className="dropdown-icon">{darkMode ? '☀️' : '🌙'}</span>
                     {darkMode ? 'Light Mode' : 'Dark Mode'}
                   </button>
                   
-                  {/* Logout */}
                   <button 
                     className="dropdown-item logout-btn"
                     onClick={handleLogout}
-                    role="menuitem"
                   >
                     <span className="dropdown-icon">🚪</span>
                     Logout
@@ -136,11 +133,9 @@ const Navbar = () => {
           ) : (
             <div className="auth-buttons">
               <Link to="/login" className="login-link">
-                <span>🔐</span>
                 Login
               </Link>
               <Link to="/signup" className="signup-btn">
-                <span>✨</span>
                 Sign Up
               </Link>
             </div>
@@ -156,84 +151,6 @@ const Navbar = () => {
           </button>
         </div>
       </div>
-
-      {/* Mobile Menu */}
-      {mobileMenuOpen && (
-        <div className="mobile-menu">
-          {/* Cart in Mobile - Only visible to clients on their dashboard */}
-          {showCart && (
-            <button 
-              onClick={() => {
-                navigate('/cart');
-                setMobileMenuOpen(false);
-              }}
-              className="dropdown-item"
-              style={{width: '100%'}}
-            >
-              <span className="dropdown-icon">🛒</span>
-              Cart
-              {totalItems > 0 && <span className="cart-badge" style={{marginLeft: 'auto'}}>{totalItems}</span>}
-            </button>
-          )}
-
-          {user ? (
-            <>
-              {/* Profile */}
-              <Link 
-                to="/profile" 
-                className="dropdown-item"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <span className="dropdown-icon">👤</span>
-                Profile
-              </Link>
-              
-              {/* Theme Toggle */}
-              <button 
-                className="dropdown-item theme-toggle-dropdown"
-                onClick={toggleTheme}
-              >
-                <span className="dropdown-icon">{darkMode ? '☀️' : '🌙'}</span>
-                {darkMode ? 'Light Mode' : 'Dark Mode'}
-              </button>
-              
-              {/* Logout */}
-              <button 
-                className="dropdown-item logout-btn"
-                onClick={handleLogout}
-              >
-                <span className="dropdown-icon">🚪</span>
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link 
-                to="/login" 
-                className="dropdown-item"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <span className="dropdown-icon">🔐</span>
-                Login
-              </Link>
-              <Link 
-                to="/signup" 
-                className="dropdown-item"
-                onClick={() => setMobileMenuOpen(false)}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  justifyContent: 'center',
-                  fontWeight: '600'
-                }}
-              >
-                <span className="dropdown-icon">✨</span>
-                Sign Up
-              </Link>
-            </>
-          )}
-        </div>
-      )}
     </nav>
   );
 };
