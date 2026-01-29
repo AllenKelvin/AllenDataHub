@@ -1,21 +1,24 @@
 /* Navbar Container */
 .navbar {
+  background: white;
+  padding: 0 20px;
+  height: 64px;
+  border-bottom: 1px solid #e5e7eb;
   position: sticky;
   top: 0;
-  z-index: 1000;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 0.75rem 1.5rem;
+  z-index: 100;
 }
 
 .navbar.dark {
-  background: #1a202c;
-  border-bottom: 1px solid #4a5568;
+  background: #1f2937;
+  border-bottom: 1px solid #374151;
 }
 
+/* Navbar Container Layout */
 .navbar-container {
-  max-width: 1280px;
+  max-width: 1200px;
   margin: 0 auto;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -23,75 +26,70 @@
 
 /* Brand/Logo */
 .navbar-brand {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #1f2937;
+  text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  text-decoration: none;
-  font-weight: 800;
-  font-size: 1.5rem;
-  color: #1a202c;
+  gap: 8px;
 }
 
-.dark .navbar-brand {
-  color: #ffffff;
-}
-
-.brand-icon {
-  font-size: 1.75rem;
+.navbar.dark .navbar-brand {
+  color: white;
 }
 
 .brand-name {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
-/* Right Section */
+/* Right Side Container */
 .navbar-right {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 12px;
 }
 
 /* Cart Button */
-.cart-button {
-  position: relative;
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+.cart-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   border: none;
-  background: #f7fafc;
-  color: #4a5568;
-  font-size: 1.2rem;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 1.1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   transition: all 0.2s ease;
 }
 
-.dark .cart-button {
-  background: #2d3748;
-  color: #cbd5e0;
+.navbar.dark .cart-btn {
+  background: #374151;
+  color: #d1d5db;
 }
 
-.cart-button:hover {
-  background: #edf2f7;
+.cart-btn:hover {
+  background: #e5e7eb;
 }
 
-.dark .cart-button:hover {
-  background: #4a5568;
+.navbar.dark .cart-btn:hover {
+  background: #4b5563;
 }
 
 .cart-badge {
   position: absolute;
-  top: -5px;
-  right: -5px;
-  background: #e53e3e;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
   color: white;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: bold;
   min-width: 18px;
   height: 18px;
   border-radius: 9px;
@@ -103,19 +101,19 @@
 
 /* User Initials Button (This is the menu) */
 .user-initials-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   border: none;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  font-weight: 700;
+  font-weight: bold;
   font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .user-initials-btn:hover {
@@ -123,137 +121,96 @@
 }
 
 /* Dropdown Menu */
+.dropdown-container {
+  position: relative;
+}
+
 .dropdown-menu {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 180px;
-  background: #ffffff;
+  width: 200px;
+  background: white;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  border: 1px solid #e2e8f0;
-  padding: 0.5rem 0;
-  z-index: 1001;
-  display: flex;
-  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  padding: 8px 0;
+  z-index: 1000;
 }
 
-.dark .dropdown-menu {
-  background: #2d3748;
-  border-color: #4a5568;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+.navbar.dark .dropdown-menu {
+  background: #374151;
+  border: 1px solid #4b5563;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 /* Dropdown Items */
 .dropdown-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  text-decoration: none;
-  color: #4a5568;
-  font-size: 0.9rem;
+  gap: 12px;
+  padding: 12px 16px;
+  width: 100%;
   border: none;
   background: transparent;
-  cursor: pointer;
+  color: #374151;
+  font-size: 0.9rem;
   text-align: left;
+  cursor: pointer;
   transition: background 0.2s ease;
+  text-decoration: none;
 }
 
 .dropdown-item:hover {
-  background: #f7fafc;
+  background: #f3f4f6;
 }
 
-.dark .dropdown-item {
-  color: #cbd5e0;
+.navbar.dark .dropdown-item {
+  color: #d1d5db;
 }
 
-.dark .dropdown-item:hover {
-  background: #4a5568;
+.navbar.dark .dropdown-item:hover {
+  background: #4b5563;
 }
 
-.dropdown-icon {
-  font-size: 1rem;
-  width: 20px;
-}
-
-.logout-btn {
-  color: #e53e3e !important;
-  font-weight: 600;
-}
-
-.logout-btn:hover {
-  background: #fed7d7 !important;
-}
-
-.dark .logout-btn:hover {
-  background: #742a2a !important;
-}
-
-/* Auth Buttons for non-logged in users */
+/* Login/Signup buttons for non-logged in users */
 .auth-buttons {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 16px;
 }
 
-.login-link {
+.login-btn {
+  color: #4b5563;
   text-decoration: none;
-  color: #4a5568;
   font-weight: 500;
-  font-size: 0.95rem;
-  padding: 0.5rem 1rem;
+  padding: 8px 16px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
 }
 
-.dark .login-link {
-  color: #cbd5e0;
+.login-btn:hover {
+  background: #f3f4f6;
+}
+
+.navbar.dark .login-btn {
+  color: #d1d5db;
+}
+
+.navbar.dark .login-btn:hover {
+  background: #374151;
 }
 
 .signup-btn {
-  text-decoration: none;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  text-decoration: none;
   font-weight: 600;
-  font-size: 0.95rem;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  transition: transform 0.2s ease;
 }
 
-/* Mobile Menu Toggle */
-.menu-toggle {
-  display: none;
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #4a5568;
-}
-
-.dark .menu-toggle {
-  color: #cbd5e0;
-}
-
-/* Mobile Menu */
-.mobile-menu {
-  display: none;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .navbar {
-    padding: 0.75rem 1rem;
-  }
-  
-  .auth-buttons {
-    display: none;
-  }
-  
-  .cart-button,
-  .user-initials-btn {
-    display: none;
-  }
-  
-  .menu-toggle {
-    display: block;
-  }
+.signup-btn:hover {
+  transform: translateY(-1px);
 }
