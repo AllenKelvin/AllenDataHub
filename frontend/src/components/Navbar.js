@@ -49,6 +49,16 @@ const Navbar = () => {
     return user.name || user.username || user.email.split('@')[0];
   };
 
+  // Dashboard link based on user role
+  const getDashboardLink = () => {
+    if (!user) return '/login';
+    switch (user.role) {
+      case 'admin': return '/admin-dashboard';
+      case 'agent': return '/agent-dashboard';
+      default: return '/client-dashboard';
+    }
+  };
+
   return (
     <nav className={`navbar ${darkMode ? 'dark' : ''}`}>
       <div className="navbar-container">
@@ -90,6 +100,17 @@ const Navbar = () => {
                 {/* Dropdown Menu */}
                 {dropdownOpen && (
                   <div className="dropdown-menu">
+                    {/* Dashboard Link - First Item */}
+                    <Link
+                      to="/client-dashboard" 
+                      className="dropdown-item"
+                      onClick={() => setDropdownOpen(false)}
+                    >
+                      <span>📊</span>
+                      Dashboard
+                    </Link>
+
+                    {/* Profile Link */}
                     <Link
                       to="/profile"
                       className="dropdown-item"
@@ -99,6 +120,7 @@ const Navbar = () => {
                       Profile
                     </Link>
 
+                    {/* Theme Toggle */}
                     <button
                       className="dropdown-item"
                       onClick={() => {
@@ -110,6 +132,7 @@ const Navbar = () => {
                       {darkMode ? 'Light Mode' : 'Dark Mode'}
                     </button>
 
+                    {/* Logout Button */}
                     <button
                       className="dropdown-item"
                       onClick={handleLogout}
