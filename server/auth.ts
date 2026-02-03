@@ -9,10 +9,42 @@ import bcrypt from "bcryptjs";
 
 const scryptAsync = promisify(scrypt);
 
-// Normalize numeric fields from database (which may be stored as strings)
+// 1. EXPORT hashPassword (This fixes your current error)
+export async function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+// 2. EXPORT comparePassword
+async function comparePassword(supplied: string, stored: string) {
+  if (!stored) return false;
+
+  if (stored.includes('.')) {
+    try {
+      const [hashed, salt] = stored.split(".");
+      const hashedPasswordBuf = Buffer.from(hashed, "hex");
+      const suppliedPasswordBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+      return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (/^\$2[aby]\$/.test(stored)) {
+    try {
+      return await bcrypt.compare(supplied, stored);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  return supplied === stored;
+}
+
+// 3. EXPORT normalizeUser
 export function normalizeUser(user: any) {
   if (!user) return user;
-  // Map imported 'client' role to 'user'
   let role = user.role;
   if (role === 'client') role = 'user';
   return {
@@ -26,43 +58,9 @@ export function normalizeUser(user: any) {
   };
 }
 
-export async function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-async function comparePassword(supplied: string, stored: string) {
-  if (!stored) return false;
-
-  // Current hashed format: <hexhash>.<salt>
-  if (stored.includes('.')) {
-    try {
-      const [hashed, salt] = stored.split(".");
-      const hashedPasswordBuf = Buffer.from(hashed, "hex");
-      const suppliedPasswordBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-      return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // If stored looks like a bcrypt hash ($2a$, $2b$, $2y$), use bcrypt compare (imported data)
-  if (/^\$2[aby]\$/.test(stored)) {
-    try {
-      return await bcrypt.compare(supplied, stored);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Legacy fallback: if stored passwords were imported in plaintext,
-  // accept exact match and allow migration elsewhere.
-  return supplied === stored;
-}
-
 export function setupAuth(app: Express) {
   const sessionSettings: session.SessionOptions = {
+    // Uses the env variable, but has a fallback so it doesn't crash
     secret: process.env.SESSION_SECRET || "r8q,+&1LM3)CD*zAGpx1xm{NeQhc;#",
     resave: false,
     saveUninitialized: false,
@@ -86,58 +84,51 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy({ usernameField: "identifier" }, async (identifier, password, done) => {
-      const trimmedId = typeof identifier === 'string' ? identifier.trim() : '';
-      if (!trimmedId) return done(null, false);
-      const user = await storage.getUserByUsername(trimmedId);
-      console.log('[Auth] Looking up user:', trimmedId, '| Found:', !!user);
-      if (!user) return done(null, false);
-
-      console.log('[Auth] User found. Stored password hash:', user.password?.substring(0, 20) + '...');
-      const matched = await comparePassword(password, user.password);
-      console.log('[Auth] Password match result:', matched);
-      if (!matched) return done(null, false);
-
-      // If the stored password was legacy plaintext (no dot separator),
-      // migrate it to the new scrypt format for future logins.
       try {
+        const trimmedId = typeof identifier === 'string' ? identifier.trim() : '';
+        if (!trimmedId) return done(null, false);
+        const user = await storage.getUserByUsername(trimmedId);
+        if (!user) return done(null, false);
+
+        const matched = await comparePassword(password, user.password);
+        if (!matched) return done(null, false);
+
+        // Auto-migrate legacy passwords
         if (typeof user.password === 'string' && !user.password.includes('.')) {
           const newHash = await hashPassword(password);
           const uid = (user as any).id || (user as any)._id?.toString();
           if (uid) await storage.updatePassword(uid, newHash);
-          // update local user object to use new hash
           (user as any).password = newHash;
         }
-      } catch (e) {
-        // migration failure shouldn't block login
-        console.warn('Password migration failed for user', (user as any).id, e);
-      }
 
-      return done(null, user);
+        return done(null, user);
+      } catch (err) {
+        return done(err);
+      }
     }),
   );
 
-  passport.serializeUser((user, done) => {
-    const uid = (user as any)._id ? (user as any)._id.toString() : (user as any).id;
+  passport.serializeUser((user: any, done) => {
+    const uid = user._id ? user._id.toString() : user.id;
     done(null, uid);
   });
 
-  passport.deserializeUser(async (id, done) => {
-    const user = await storage.getUser(id as string);
-    done(null, user);
+  passport.deserializeUser(async (id: string, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user);
+    } catch (err) {
+      done(err);
+    }
   });
 
+  // Auth Endpoints
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
-      if (err) {
-        return next(err);
-      }
-      if (!user) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
+    passport.authenticate("local", (err: any, user: any) => {
+      if (err) return next(err);
+      if (!user) return res.status(401).json({ message: "Invalid username or password" });
       req.logIn(user, (err) => {
-        if (err) {
-          return next(err);
-        }
+        if (err) return next(err);
         return res.json(normalizeUser(user));
       });
     })(req, res, next);
