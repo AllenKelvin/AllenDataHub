@@ -3,6 +3,8 @@ import { api, type InsertOrder } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/hooks/use-auth";
 
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+
 function getUserId(user: any): string | null {
   if (!user) return null;
   return (user as any).id ?? (user as any)._id?.toString() ?? null;
@@ -15,7 +17,7 @@ export function useMyOrders(page = 1, limit = 10) {
   return useQuery({
     queryKey: [api.orders.listMyOrders.path, userId ?? "anonymous", page, limit],
     queryFn: async () => {
-      const res = await fetch(`${api.orders.listMyOrders.path}?page=${page}&limit=${limit}`, { credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}${api.orders.listMyOrders.path}?page=${page}&limit=${limit}`, { credentials: 'include' });
       if (res.status === 401) return { orders: [], pagination: { total: 0, page: 1, limit, pages: 0 } };
       if (!res.ok) throw new Error("Failed to fetch orders");
       const data = await res.json();
@@ -32,7 +34,7 @@ export function useCreateOrder() {
 
   return useMutation({
     mutationFn: async (data: InsertOrder) => {
-      const res = await fetch(api.orders.create.path, {
+      const res = await fetch(`${BACKEND_URL}${api.orders.create.path}`, {
         method: "POST",
         credentials: 'include',
         headers: { "Content-Type": "application/json" },
