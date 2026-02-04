@@ -97,7 +97,10 @@ export async function registerRoutes(
   // === PRODUCT ROUTES ===
 
   // Paystack initialize (wallet funding or payment)
-  app.post("/api/paystack/initialize", async (req, res) => {
+  app.post("/api/paystack/initialize", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    
     const { amount, email, metadata } = req.body;
     if (typeof amount !== "number" || !email) return res.status(400).json({ message: "Invalid payload" });
     const secret = process.env.PAYSTACK_SECRET_KEY;

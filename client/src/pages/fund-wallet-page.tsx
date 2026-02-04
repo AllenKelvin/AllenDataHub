@@ -20,10 +20,9 @@ export default function FundWalletPage() {
   async function fundWallet() {
     if (amount <= 0) return toast({ title: 'Invalid amount', variant: 'destructive' });
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/paystack/initialize`, {
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const resp = await fetchWithAuth('/api/paystack/initialize', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: Math.round(amount * 100), email: user.email || user.username || '', metadata: { type: 'wallet', agentId: user.id } }),
       });
       const data = await resp.json();
