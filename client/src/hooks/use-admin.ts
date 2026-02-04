@@ -9,7 +9,8 @@ export function useUnverifiedAgents() {
   return useQuery({
     queryKey: [api.users.listUnverifiedAgents.path],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}${api.users.listUnverifiedAgents.path}`, { credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth(api.users.listUnverifiedAgents.path);
       if (!res.ok) throw new Error("Failed to fetch unverified agents");
       return api.users.listUnverifiedAgents.responses[200].parse(await res.json());
     },
@@ -23,7 +24,8 @@ export function useVerifyAgent() {
   return useMutation({
     mutationFn: async (id: string) => {
       const url = buildUrl(api.users.verifyAgent.path, { id });
-      const res = await fetch(`${BACKEND_URL}${url}`, { method: "PATCH", credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth(url, { method: "PATCH" });
 
       if (!res.ok) throw new Error("Failed to verify agent");
       return api.users.verifyAgent.responses[200].parse(await res.json());
@@ -42,7 +44,8 @@ export function useAgents() {
   return useQuery({
     queryKey: ["/api/users/agents"],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/users/agents`, { credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth('/api/users/agents');
       if (!res.ok) throw new Error("Failed to fetch agents");
       return res.json();
     },
@@ -55,7 +58,8 @@ export function useCreditAgent() {
 
   return useMutation({
     mutationFn: async ({ id, amount }: { id: string; amount: number }) => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/wallet/${id}/load`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }), credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth(`/api/admin/wallet/${id}/load`, { method: "POST", body: JSON.stringify({ amount }) });
       if (!res.ok) throw new Error("Failed to credit agent");
       return res.json();
     },

@@ -16,11 +16,12 @@ export function useCart() {
   return useQuery({
     queryKey: ["/api/cart", userId ?? "anonymous"],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/cart`, { credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth("/api/cart");
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem('pendingCart') || '[]') as Array<{ productId: string; quantity?: number }>;
         if (pending.length === 0) return [];
-        const prodRes = await fetch(`${BACKEND_URL}/api/products`, { credentials: 'include' });
+        const prodRes = await fetchWithAuth('/api/products');
         if (!prodRes.ok) return [];
         const products = await prodRes.json();
         return pending.map((it) => ({ product: products.find((p: any) => (p.id || p._id?.toString()) === it.productId) || null, quantity: it.quantity || 1 })).filter((i: any) => i.product);
@@ -37,7 +38,8 @@ export function useAddToCart() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ productId, quantity = 1, phoneNumber }: { productId: string; quantity?: number; phoneNumber?: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/add`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, quantity, phoneNumber }) });
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const res = await fetchWithAuth('/api/cart/add', { method: 'POST', body: JSON.stringify({ productId, quantity, phoneNumber }) });
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem('pendingCart') || '[]');
         pending.push({ productId, quantity });
@@ -61,7 +63,8 @@ export function useRemoveFromCart() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ productId }: { productId: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/remove`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId }) });
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const res = await fetchWithAuth('/api/cart/remove', { method: 'POST', body: JSON.stringify({ productId }) });
       if (!res.ok) throw new Error('Failed to remove from cart');
       return res.json();
     },
@@ -74,12 +77,8 @@ export function useCheckout() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ paymentMethod = 'paystack' }: { paymentMethod?: 'wallet' | 'paystack' }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/checkout`, { 
-        method: 'POST', 
-        credentials: 'include', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ paymentMethod }) 
-      });
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const res = await fetchWithAuth('/api/cart/checkout', { method: 'POST', body: JSON.stringify({ paymentMethod }) });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.message || 'Checkout failed');

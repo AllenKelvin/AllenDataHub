@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useState as useStateLocal } from "react";
 
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const { data: user } = useUser();
@@ -181,17 +182,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
 
-      {/* Floating chat CTA */}
-      <div className="fixed right-6 bottom-6 z-50">
-        <a href="https://wa.me/qr/KFPAZ35ZMR3XG1" target="_blank" rel="noreferrer" className="flex items-center gap-3 bg-green-500 text-white px-4 py-3 rounded-full shadow-lg hover:shadow-xl">
-          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">💬</div>
-          <div className="text-sm text-left">
-            <div className="font-semibold">Chat Admin</div>
-            <div className="text-xs opacity-90">We are available 8am–10pm</div>
-          </div>
-        </a>
-        <a href="https://chat.whatsapp.com/JaqjPu6Yhp453JVtKeII2z" target="_blank" rel="noreferrer" className="block mt-2 text-xs text-muted-foreground text-right underline">Join Community</a>
-      </div>
+      {/* Floating chat CTA (small icon with popup) */}
+      <FloatingChat />
 
       {/* Overlay for mobile sidebar */}
       {isMobileMenuOpen && (
@@ -199,6 +191,29 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           className="fixed inset-0 bg-black/50 z-30 md:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
+      )}
+    </div>
+  );
+}
+
+function FloatingChat() {
+  const [open, setOpen] = useStateLocal(false);
+  return (
+    <div className="fixed right-6 bottom-6 z-50">
+      <button
+        aria-label="Open chat"
+        onClick={() => setOpen((s) => !s)}
+        className="w-12 h-12 rounded-full bg-green-500 text-white flex items-center justify-center shadow-lg hover:shadow-xl"
+      >
+        💬
+      </button>
+      {open && (
+        <div className="mt-2 w-64 p-3 bg-white border border-border rounded-lg shadow-lg">
+          <div className="font-semibold">Chat Admin</div>
+          <div className="text-xs text-muted-foreground mb-2">We are available 8am–10pm</div>
+          <a href="https://wa.me/qr/KFPAZ35ZMR3XG1" target="_blank" rel="noreferrer" className="block text-sm text-green-600">Chat (quick link)</a>
+          <a href="https://chat.whatsapp.com/JaqjPu6Yhp453JVtKeII2z" target="_blank" rel="noreferrer" className="block text-sm mt-1 text-muted-foreground underline">Join Community</a>
+        </div>
       )}
     </div>
   );

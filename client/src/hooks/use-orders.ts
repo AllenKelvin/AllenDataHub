@@ -17,7 +17,8 @@ export function useMyOrders(page = 1, limit = 10) {
   return useQuery({
     queryKey: [api.orders.listMyOrders.path, userId ?? "anonymous", page, limit],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}${api.orders.listMyOrders.path}?page=${page}&limit=${limit}`, { credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth(`${api.orders.listMyOrders.path}?page=${page}&limit=${limit}`);
       if (res.status === 401) return { orders: [], pagination: { total: 0, page: 1, limit, pages: 0 } };
       if (!res.ok) throw new Error("Failed to fetch orders");
       const data = await res.json();
