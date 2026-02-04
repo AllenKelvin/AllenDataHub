@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist/public",
+  "outputDirectory": "./dist/public",
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
