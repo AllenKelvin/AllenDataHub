@@ -59,18 +59,21 @@ export function normalizeUser(user: any) {
 }
 
 export function setupAuth(app: Express) {
+  // 1. Tell Express to trust the Render proxy (Required for secure cookies)
+  app.set("trust proxy", 1);
+
   const sessionSettings: session.SessionOptions = {
-    // Uses the env variable, but has a fallback so it doesn't crash
     secret: process.env.SESSION_SECRET || "r8q,+&1LM3)CD*zAGpx1xm{NeQhc;#",
     resave: false,
     saveUninitialized: false,
-    store: sessionStore || undefined,
+    store: sessionStore,
     name: "allendatahub.sid",
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      sameSite: "lax",
-      secure: app.get("env") === "production",
+      // 2. These two settings allow Vercel and Render to talk to each other
+      secure: true, // Must be true for SameSite: 'none'
+      sameSite: "none", // Allows cross-site cookie usage
     },
   };
 
