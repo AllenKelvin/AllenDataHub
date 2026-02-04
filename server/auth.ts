@@ -71,9 +71,9 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      // Vercel rewrite makes cookies first-party, so we can use strict SameSite
-      secure: true, // Required for HTTPS in production
-      sameSite: "lax", // Safer than 'none', works with first-party cookies
+      // Cross-domain requests need sameSite: "none" (frontend: Vercel, backend: Render)
+      secure: true, // HTTPS only
+      sameSite: "none", // Required for cross-domain cookie transmission
     },
   };
 
