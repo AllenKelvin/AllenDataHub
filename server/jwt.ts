@@ -15,14 +15,16 @@ export interface JWTPayload {
  * Generate access token (short-lived, in memory)
  */
 export function generateAccessToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role };
+  return jwt.sign(clean, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
 }
 
 /**
  * Generate refresh token (long-lived, stored in httpOnly cookie)
  */
 export function generateRefreshToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role };
+  return jwt.sign(clean, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 }
 
 /**
@@ -71,10 +73,11 @@ export function verifyJWT(req: Request, res: Response, next: NextFunction) {
  * Set refresh token in httpOnly secure cookie
  */
 export function setRefreshCookie(res: Response, token: string) {
+  const isProd = process.env.NODE_ENV === "production";
   res.cookie("refresh_token", token, {
     httpOnly: true,
-    secure: true, // HTTPS only
-    sameSite: "none", // Allow cross-domain
+    secure: isProd, // Only require HTTPS in production
+    sameSite: isProd ? "none" : "lax", // cross-domain in prod, lax locally
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 }
@@ -83,9 +86,10 @@ export function setRefreshCookie(res: Response, token: string) {
  * Clear refresh token cookie
  */
 export function clearRefreshCookie(res: Response) {
+  const isProd = process.env.NODE_ENV === "production";
   res.clearCookie("refresh_token", {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
   });
 }

@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { connectDb } from "./db";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 const app = express();
 const httpServer = createServer(app);
@@ -34,6 +35,9 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Parse cookies so handlers can access req.cookies (needed for refresh token)
+app.use(cookieParser());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
