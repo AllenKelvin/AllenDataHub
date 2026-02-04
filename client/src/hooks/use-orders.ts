@@ -70,16 +70,15 @@ export function usePayForOrder() {
 
   return useMutation({
     mutationFn: async ({ productId, useWallet }: { productId: string; useWallet?: boolean }) => {
-      const res = await fetch('/api/orders/pay', {
-        method: "POST",
-        credentials: 'include',
-        headers: { "Content-Type": "application/json" },
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const res = await fetchWithAuth('/api/orders/pay', {
+        method: 'POST',
         body: JSON.stringify({ productId, useWallet }),
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: "Failed to initiate payment" }));
-        throw new Error(err.message || "Failed to initiate payment");
+        const err = await res.json().catch(() => ({ message: 'Failed to initiate payment' }));
+        throw new Error(err.message || 'Failed to initiate payment');
       }
       return res.json();
     },
@@ -87,6 +86,15 @@ export function usePayForOrder() {
       // Invalidate both user orders and admin orders
       queryClient.invalidateQueries({ queryKey: [api.orders.listMyOrders.path] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/orders"] });
+      // If the payment initialization returned a Paystack url, redirect
+      (async () => {
+        try {
+          const last = queryClient.getQueryData(['/api/orders/pay']);
+          // Not reliable to read cache here; payment redirects are handled by callers that await the mutation result.
+        } catch (e) {
+          // ignore
+        }
+      })();
     },
     onError: (error: Error) => {
       toast({ title: "Payment Failed", description: error.message, variant: "destructive" });

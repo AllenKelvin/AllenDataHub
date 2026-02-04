@@ -91,9 +91,13 @@ export function useCheckout() {
       qc.invalidateQueries({ queryKey: ['/api/user'] });
       qc.refetchQueries({ queryKey: ['/api/user'] });
       if (data.data?.authorization_url) {
-        window.location.href = data.data.authorization_url;
+        const url = data.data.authorization_url;
+        toast({ title: 'Redirecting', description: 'Redirecting to Paystack...', variant: 'default' });
+        setTimeout(() => { window.location.href = url; }, 200);
       } else if (data.authorization_url) {
-        window.location.href = data.authorization_url;
+        const url = data.authorization_url;
+        toast({ title: 'Redirecting', description: 'Redirecting to Paystack...', variant: 'default' });
+        setTimeout(() => { window.location.href = url; }, 200);
       } else if (data.status === 'ok') {
         toast({ title: 'Success', description: 'Order completed successfully' });
       }

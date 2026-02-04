@@ -31,7 +31,9 @@ export default function ProfilePage() {
       const data = await resp.json();
       if (data && (data.data?.authorization_url || data.authorization_url)) {
         const url = data.data?.authorization_url || data.authorization_url;
-        window.location.href = url;
+        toast({ title: 'Redirecting', description: 'Redirecting to Paystack...', variant: 'default' });
+        // small delay to allow toast to show briefly
+        setTimeout(() => { window.location.href = url; }, 200);
       } else {
         toast({ title: 'Payment init failed', description: 'Could not initialize Paystack', variant: 'destructive' });
       }
