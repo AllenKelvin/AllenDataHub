@@ -343,6 +343,20 @@ export async function registerRoutes(
     res.json(cart);
   });
 
+  // Clear Cart (private: clear all items for current user)
+  app.post('/api/cart/clear', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    const userId = user.id;
+    try {
+      await storage.clearCart(userId);
+      res.json({ status: 'ok', message: 'Cart cleared' });
+    } catch (err) {
+      console.error('[Cart/Clear] Error clearing cart:', err);
+      res.status(500).json({ message: 'Failed to clear cart' });
+    }
+  });
+
   app.post('/api/cart/checkout', verifyJWT, async (req, res) => {
     const user = (req as any).user as any;
     const userId = user.id;
