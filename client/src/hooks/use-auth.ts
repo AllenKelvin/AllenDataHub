@@ -3,6 +3,8 @@ import { api, type InsertUser } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+
 // Helper for type-safe logging
 function logError(label: string, error: unknown) {
   console.error(`[Auth Hook] ${label} error:`, error);
@@ -13,7 +15,7 @@ export function useUser() {
   return useQuery({
     queryKey: [api.auth.me.path],
     queryFn: async () => {
-      const res = await fetch(api.auth.me.path, { credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}${api.auth.me.path}`, { credentials: 'include' });
       if (res.status === 401) return null;
       if (!res.ok) throw new Error("Failed to fetch user");
       const data = await res.json();
@@ -33,7 +35,7 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: async (credentials: { identifier: string; password: string }) => {
-      const res = await fetch(api.auth.login.path, {
+      const res = await fetch(`${BACKEND_URL}${api.auth.login.path}`, {
         method: "POST",
         credentials: 'include',
         headers: { "Content-Type": "application/json" },
@@ -81,7 +83,7 @@ export function useRegister() {
 
   return useMutation({
     mutationFn: async (data: InsertUser) => {
-      const res = await fetch(api.auth.register.path, {
+      const res = await fetch(`${BACKEND_URL}${api.auth.register.path}`, {
         method: "POST",
         credentials: 'include',
         headers: { "Content-Type": "application/json" },
