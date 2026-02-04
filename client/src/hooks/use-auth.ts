@@ -5,18 +5,74 @@ import { useLocation } from "wouter";
 
 const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 
+// Access token stored in memory (React context/hook)
+let accessToken: string | null = null;
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
 // Helper for type-safe logging
 function logError(label: string, error: unknown) {
   console.error(`[Auth Hook] ${label} error:`, error);
 }
 
-// Fetch current user (session persists on refresh; credentials: include sends cookie)
+// Helper to get auth headers
+function getAuthHeaders(): HeadersInit {
+  const token = getAccessToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+}
+
+// Fetch current user (using JWT from Authorization header)
 export function useUser() {
   return useQuery({
     queryKey: [api.auth.me.path],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}${api.auth.me.path}`, { credentials: 'include' });
-      if (res.status === 401) return null;
+      const token = getAccessToken();
+      if (!token) return null;
+
+      const res = await fetch(`${BACKEND_URL}${api.auth.me.path}`, {
+        credentials: "include", // for refresh token cookie
+        headers: getAuthHeaders(),
+      });
+
+      if (res.status === 401) {
+        // Try to refresh token
+        try {
+          const refreshRes = await fetch(`${BACKEND_URL}/api/refresh`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+          });
+          if (refreshRes.ok) {
+            const { accessToken: newToken } = await refreshRes.json();
+            setAccessToken(newToken);
+            // Retry user fetch with new token
+            const retryRes = await fetch(`${BACKEND_URL}${api.auth.me.path}`, {
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${newToken}`,
+              },
+            });
+            if (!retryRes.ok) return null;
+            const data = await retryRes.json();
+            const users = Array.isArray(data) ? data : [data];
+            return users[0] || null;
+          }
+        } catch (e) {
+          console.error("Token refresh failed", e);
+        }
+        return null;
+      }
+
       if (!res.ok) throw new Error("Failed to fetch user");
       const data = await res.json();
       const users = Array.isArray(data) ? data : [data];
@@ -37,7 +93,7 @@ export function useLogin() {
     mutationFn: async (credentials: { identifier: string; password: string }) => {
       const res = await fetch(`${BACKEND_URL}${api.auth.login.path}`, {
         method: "POST",
-        credentials: 'include',
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),
       });
@@ -46,25 +102,37 @@ export function useLogin() {
         if (res.status === 401) throw new Error("Invalid username or password");
         throw new Error("Login failed");
       }
-      return api.auth.login.responses[200].parse(await res.json());
+
+      const response = await res.json();
+      // Extract accessToken from response and store it in memory
+      if (response.accessToken) {
+        setAccessToken(response.accessToken);
+      }
+      return api.auth.login.responses[200].parse(response);
     },
-    onSuccess: (user) => {
+    onSuccess: (data: any) => {
+      const user = data.user || data;
       queryClient.setQueryData([api.auth.me.path], user);
       toast({ title: "Welcome back!", description: `Logged in as ${user.username}` });
       // If there was a pending cart saved before login, push it to server
       (async () => {
         try {
-          const pending = localStorage.getItem('pendingCart');
+          const pending = localStorage.getItem("pendingCart");
           if (pending) {
             const items = JSON.parse(pending) as Array<{ productId: string; quantity?: number }>;
             for (const it of items) {
-              await fetch(`${BACKEND_URL}/api/cart/add`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(it) });
+              await fetch(`${BACKEND_URL}/api/cart/add`, {
+                method: "POST",
+                credentials: "include",
+                headers: getAuthHeaders(),
+                body: JSON.stringify(it),
+              });
             }
-            localStorage.removeItem('pendingCart');
-            queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
+            localStorage.removeItem("pendingCart");
+            queryClient.invalidateQueries({ queryKey: ["/api/cart"] });
           }
         } catch (e) {
-          console.error('Failed to push pending cart after login', e);
+          console.error("Failed to push pending cart after login", e);
         }
       })();
       setLocation("/");
@@ -85,7 +153,7 @@ export function useRegister() {
     mutationFn: async (data: InsertUser) => {
       const res = await fetch(`${BACKEND_URL}${api.auth.register.path}`, {
         method: "POST",
-        credentials: 'include',
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
@@ -97,9 +165,16 @@ export function useRegister() {
         }
         throw new Error("Registration failed");
       }
-      return api.auth.register.responses[201].parse(await res.json());
+
+      const response = await res.json();
+      // Extract accessToken from response and store it in memory
+      if (response.accessToken) {
+        setAccessToken(response.accessToken);
+      }
+      return api.auth.register.responses[201].parse(response);
     },
-    onSuccess: (user) => {
+    onSuccess: (data: any) => {
+      const user = data.user || data;
       queryClient.setQueryData([api.auth.me.path], user);
       toast({ title: "Account created", description: "Welcome to AllenDataHub!" });
       setLocation("/");
@@ -119,12 +194,19 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${BACKEND_URL}${api.auth.logout.path}`, { method: "POST", credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}${api.auth.logout.path}`, {
+        method: "POST",
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) throw new Error("Logout failed");
+      // Clear access token
+      setAccessToken(null);
     },
     onSuccess: () => {
+      setAccessToken(null);
       queryClient.setQueryData([api.auth.me.path], null);
-      queryClient.removeQueries({ queryKey: ['/api/cart'] });
+      queryClient.removeQueries({ queryKey: ["/api/cart"] });
       queryClient.removeQueries({ queryKey: [api.orders.listMyOrders.path] });
       toast({ title: "Logged out", description: "See you next time!" });
       setLocation("/auth");

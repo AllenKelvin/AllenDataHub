@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, hashPassword, normalizeUser } from "./auth";
+import { verifyJWT } from "./jwt";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -9,50 +10,15 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // Setup Authentication (Passport)
+  // Setup Authentication (JWT)
   await setupAuth(app);
-
-  // === AUTH ROUTES ===
-
-  // Register
-  app.post(api.auth.register.path, async (req, res) => {
-    try {
-      const userData = api.auth.register.input.parse(req.body);
-      
-      // Check for existing username or email
-      const lookupKey = userData.username || userData.email!;
-      const existingUser = await storage.getUserByUsername(lookupKey);
-      if (existingUser) {
-        return res.status(400).json({ message: "Username or email already exists" });
-      }
-
-      // Handle Role Restrictions
-      if (userData.role === 'admin') {
-         return res.status(403).json({ message: "Admin registration is disabled" });
-      }
-
-      const hashedPassword = await hashPassword(userData.password);
-      const newUser = await storage.createUser({
-        ...userData,
-        password: hashedPassword,
-        isVerified: userData.role === 'user' // Users auto-verified, Agents need approval
-      });
-
-      req.login(newUser, (err) => {
-        if (err) return res.status(500).json({ message: "Login failed after registration" });
-        res.status(201).json(normalizeUser(newUser));
-      });
-    } catch (e) {
-      if (e instanceof z.ZodError) return res.status(400).json(e.errors);
-      res.status(500).json({ message: "Internal Server Error" });
-    }
-  });
 
   // === USER & AGENT ROUTES ===
   
   // List unverified agents (Admin only)
-  app.get(api.users.listUnverifiedAgents.path, async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.get(api.users.listUnverifiedAgents.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     const agents = await storage.getUnverifiedAgents();
@@ -60,8 +26,9 @@ export async function registerRoutes(
   });
 
   // List all agents (Admin only)
-  app.get("/api/users/agents", async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.get("/api/users/agents", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     const agents = await storage.getAllAgents();
@@ -69,8 +36,9 @@ export async function registerRoutes(
   });
 
   // Admin totals across platform (Admin only)
-  app.get("/api/admin/totals", async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.get("/api/admin/totals", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     // Sum totals across users
@@ -97,8 +65,9 @@ export async function registerRoutes(
 
   // Admin wallet manager: credit an agent's wallet (Admin only)
   // Amount is in GHS: entering 1 credits 1 GHS (not 100 or 1000)
-  app.post("/api/admin/wallet/:id/load", async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.post("/api/admin/wallet/:id/load", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     try {
@@ -114,8 +83,9 @@ export async function registerRoutes(
   });
 
   // Verify Agent (Admin only)
-  app.patch(api.users.verifyAgent.path, async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.patch(api.users.verifyAgent.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     const userId = req.params.id;
@@ -305,9 +275,18 @@ export async function registerRoutes(
   });
 
   // List products (Public/User)
-  app.get(api.products.list.path, async (req, res) => {
+  app.get(api.products.list.path, (req, res, next) => {
+    // Optional JWT check - only verify if agent
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      verifyJWT(req, res, next);
+    } else {
+      next();
+    }
+  }, async (req, res) => {
     // Prevent unverified agents from browsing products
-    if (req.isAuthenticated() && req.user?.role === 'agent' && !req.user?.isVerified) {
+    const user = (req as any).user;
+    if (user?.role === 'agent' && !user?.isVerified) {
       return res.status(403).json({ message: 'Agent not verified' });
     }
     const products = await storage.getProducts();
@@ -317,9 +296,10 @@ export async function registerRoutes(
   // === CART ROUTES ===
 
   // Cart and orders are private: always scoped to the authenticated user (Account A cannot see Account B's data)
-  app.get('/api/cart', async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: 'Unauthorized' });
-    const userId = (req.user as any)._id?.toString() || (req.user as any).id;
+  app.get('/api/cart', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    const userId = user.id;
     const cart = await storage.getCart(userId);
     const populated = await Promise.all(
       cart.map(async (item: any) => {
@@ -330,9 +310,10 @@ export async function registerRoutes(
     res.json(populated.filter((i: any) => i.product));
   });
 
-  app.post('/api/cart/add', async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: 'Unauthorized' });
-    const userId = (req.user as any)._id?.toString() || (req.user as any).id;
+  app.post('/api/cart/add', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    const userId = user.id;
     const { productId, quantity, phoneNumber } = req.body;
     console.log(`[Cart/Add] Request - userId: ${userId}, productId: ${productId}, quantity: ${quantity}, phoneNumber: ${phoneNumber}`);
     if (!productId) return res.status(400).json({ message: 'productId required' });
@@ -348,9 +329,10 @@ export async function registerRoutes(
     res.json(populated.filter((i: any) => i.product));
   });
 
-  app.post('/api/cart/remove', async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: 'Unauthorized' });
-    const userId = (req.user as any)._id?.toString() || (req.user as any).id;
+  app.post('/api/cart/remove', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    const userId = user.id;
     const { productId } = req.body;
     if (!productId) return res.status(400).json({ message: 'productId required' });
     await storage.removeFromCart(userId, productId);
@@ -358,10 +340,9 @@ export async function registerRoutes(
     res.json(cart);
   });
 
-  app.post('/api/cart/checkout', async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: 'Unauthorized' });
-    const user = req.user as any;
-    const userId = user._id?.toString() || user.id;
+  app.post('/api/cart/checkout', verifyJWT, async (req, res) => {
+    const user = (req as any).user as any;
+    const userId = user.id;
     const { paymentMethod = 'paystack' } = req.body;
 
     const cart = await storage.getCart(userId);
@@ -493,8 +474,9 @@ export async function registerRoutes(
   });
 
   // Create Product (Admin only) - user and agent prices must differ
-  app.post(api.products.create.path, async (req, res) => {
-    if (!req.isAuthenticated() || req.user?.role !== "admin") {
+  app.post(api.products.create.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     try {
@@ -515,11 +497,12 @@ export async function registerRoutes(
   // === ORDER ROUTES ===
 
   // Create Order (User/Agent)
-  app.post(api.orders.create.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).send({ message: "Unauthorized" });
+  app.post(api.orders.create.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).send({ message: "Unauthorized" });
 
     // If agent, check verification
-    if (req.user.role === 'agent' && !req.user.isVerified) {
+    if (user.role === 'agent' && !user.isVerified) {
        return res.status(403).send({ message: "Agent not verified" });
     }
 
@@ -530,7 +513,7 @@ export async function registerRoutes(
       const prod = await (await import('./models/product')).Product.findById(orderData.productId).lean();
       const userRole = (req.user as any).role;
       const priceForRole = userRole === 'agent' ? prod?.agentPrice : prod?.userPrice;
-      const order = await storage.createOrder({ ...orderData, userId: (req.user as any)._id.toString(), priceOverride: priceForRole });
+      const order = await storage.createOrder({ ...orderData, userId: user.id, priceOverride: priceForRole });
       res.status(201).json(order);
     } catch (e) {
       if (e instanceof z.ZodError) return res.status(400).json(e.errors);
@@ -539,9 +522,9 @@ export async function registerRoutes(
   });
 
   // Pay for order (wallet or Paystack init)
-  app.post("/api/orders/pay", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).send({ message: "Unauthorized" });
-    const user = req.user as any;
+  app.post("/api/orders/pay", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).send({ message: "Unauthorized" });
     const { productId, useWallet } = req.body;
     if (!productId) return res.status(400).json({ message: "productId required" });
 
@@ -583,9 +566,10 @@ export async function registerRoutes(
   });
 
   // List My Orders (private: only current user's orders; 10 per page for user/agent)
-  app.get(api.orders.listMyOrders.path, async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).send({ message: "Unauthorized" });
-    const userId = (req.user as any)._id?.toString() || (req.user as any).id;
+  app.get(api.orders.listMyOrders.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).send({ message: "Unauthorized" });
+    const userId = user.id;
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit)) || 10));
     const { orders, pagination, completedCount } = await storage.getOrdersByUser(userId, page, limit);
@@ -613,8 +597,9 @@ export async function registerRoutes(
   });
 
   // Admin: list ALL orders (50 per page)
-  app.get("/api/admin/orders", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+  app.get("/api/admin/orders", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);

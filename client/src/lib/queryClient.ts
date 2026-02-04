@@ -9,8 +9,23 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+// Import getAccessToken from auth hook
+let getAccessTokenFn: (() => string | null) | null = null;
+
+export function setGetAccessTokenFn(fn: () => string | null) {
+  getAccessTokenFn = fn;
+}
+
+function getAuthHeaders(): HeadersInit {
+  const token = getAccessTokenFn?.() || null;
+  return {
+    "Content-Type": "application/json",
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+}
+
 /**
- * Custom apiRequest that uses explicit BACKEND_URL
+ * Custom apiRequest that uses explicit BACKEND_URL with JWT auth
  */
 export async function apiRequest(
   method: string,
@@ -22,9 +37,12 @@ export async function apiRequest(
 
   const res = await fetch(fullUrl, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...getAuthHeaders(),
+      ...(data && { "Content-Type": "application/json" }),
+    },
     body: data ? JSON.stringify(data) : undefined,
-    // Required to send cookies to a different domain (Render)
+    // Required to send cookies to a different domain (Render) - for refresh token
     credentials: "include", 
   });
 
@@ -35,7 +53,7 @@ export async function apiRequest(
 type UnauthorizedBehavior = "returnNull" | "throw";
 
 /**
- * Custom getQueryFn that prepends the BACKEND_URL for data fetching
+ * Custom getQueryFn that prepends the BACKEND_URL for data fetching with JWT auth
  */
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
@@ -47,7 +65,9 @@ export const getQueryFn: <T>(options: {
     const fullUrl = `${BACKEND_URL}/${path.startsWith("/") ? path.slice(1) : path}`;
 
     const res = await fetch(fullUrl, {
-      // Required for session persistence across domains
+      // Add JWT Authorization header
+      headers: getAuthHeaders(),
+      // Required for refresh token cookie across domains
       credentials: "include", 
     });
 

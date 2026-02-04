@@ -1,23 +1,28 @@
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
-import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { storage, sessionStore } from "./storage";
+import { storage } from "./storage";
 import bcrypt from "bcryptjs";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+  setRefreshCookie,
+  clearRefreshCookie,
+  type JWTPayload,
+} from "./jwt";
 
 const scryptAsync = promisify(scrypt);
 
-// 1. EXPORT hashPassword (This fixes your current error)
+// EXPORT hashPassword
 export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
-// 2. EXPORT comparePassword
-async function comparePassword(supplied: string, stored: string) {
+// EXPORT comparePassword
+export async function comparePassword(supplied: string, stored: string) {
   if (!stored) return false;
 
   if (stored.includes('.')) {
@@ -42,7 +47,7 @@ async function comparePassword(supplied: string, stored: string) {
   return supplied === stored;
 }
 
-// 3. EXPORT normalizeUser
+// EXPORT normalizeUser
 export function normalizeUser(user: any) {
   if (!user) return user;
   let role = user.role;
@@ -59,94 +64,136 @@ export function normalizeUser(user: any) {
 }
 
 export function setupAuth(app: Express) {
-  // 1. Tell Express to trust the Render proxy (Required for secure cookies)
+  // Trust the proxy (needed for secure cookies)
   app.set("trust proxy", 1);
 
-  const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "r8q,+&1LM3)CD*zAGpx1xm{NeQhc;#",
-    resave: false,
-    saveUninitialized: false,
-    store: sessionStore || undefined,
-    name: "allendatahub.sid",
-    cookie: {
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      httpOnly: true,
-      // Cross-domain requests need sameSite: "none" (frontend: Vercel, backend: Render)
-      secure: true, // HTTPS only
-      sameSite: "none", // Required for cross-domain cookie transmission
-    },
-  };
-
-  if (app.get("env") === "production") {
-    app.set("trust proxy", 1);
-  }
-
-  app.use(session(sessionSettings));
-  app.use(passport.initialize());
-  app.use(passport.session());
-
-  passport.use(
-    new LocalStrategy({ usernameField: "identifier" }, async (identifier, password, done) => {
-      try {
-        const trimmedId = typeof identifier === 'string' ? identifier.trim() : '';
-        if (!trimmedId) return done(null, false);
-        const user = await storage.getUserByUsername(trimmedId);
-        if (!user) return done(null, false);
-
-        const matched = await comparePassword(password, user.password);
-        if (!matched) return done(null, false);
-
-        // Auto-migrate legacy passwords
-        if (typeof user.password === 'string' && !user.password.includes('.')) {
-          const newHash = await hashPassword(password);
-          const uid = (user as any).id || (user as any)._id?.toString();
-          if (uid) await storage.updatePassword(uid, newHash);
-          (user as any).password = newHash;
-        }
-
-        return done(null, user);
-      } catch (err) {
-        return done(err);
-      }
-    }),
-  );
-
-  passport.serializeUser((user: any, done) => {
-    const uid = user._id ? user._id.toString() : user.id;
-    done(null, uid);
-  });
-
-  passport.deserializeUser(async (id: string, done) => {
+  // Login endpoint - return access token + refresh token in httpOnly cookie
+  app.post("/api/login", async (req, res) => {
     try {
-      const user = await storage.getUser(id);
-      done(null, user);
-    } catch (err) {
-      done(err);
+      const { identifier, password } = req.body;
+      if (!identifier || !password) {
+        return res.status(400).json({ message: "Missing identifier or password" });
+      }
+
+      const user = await storage.getUserByUsername(identifier);
+      if (!user) return res.status(401).json({ message: "Invalid username or password" });
+
+      const matched = await comparePassword(password, user.password);
+      if (!matched) return res.status(401).json({ message: "Invalid username or password" });
+
+      // Auto-migrate legacy passwords
+      if (typeof user.password === 'string' && !user.password.includes('.')) {
+        const newHash = await hashPassword(password);
+        const uid = (user as any).id || (user as any)._id?.toString();
+        if (uid) await storage.updatePassword(uid, newHash);
+      }
+
+      // Generate tokens
+      const uid = (user as any).id || (user as any)._id?.toString();
+      const payload: JWTPayload = {
+        id: uid,
+        username: user.username,
+        role: user.role === 'client' ? 'user' : user.role,
+      };
+
+      const accessToken = generateAccessToken(payload);
+      const refreshToken = generateRefreshToken(payload);
+
+      // Set refresh token in httpOnly cookie
+      setRefreshCookie(res, refreshToken);
+
+      // Return user data + access token
+      return res.json({
+        user: normalizeUser(user),
+        accessToken,
+      });
+    } catch (e) {
+      res.status(500).json({ message: "Internal Server Error" });
     }
   });
 
-  // Auth Endpoints
-  app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ message: "Invalid username or password" });
-      req.logIn(user, (err) => {
-        if (err) return next(err);
-        return res.json(normalizeUser(user));
+  // Register endpoint
+  app.post("/api/register", async (req, res) => {
+    try {
+      const userData = req.body;
+
+      // Check for existing user
+      const existing = await storage.getUserByUsername(userData.username || userData.email);
+      if (existing) {
+        return res.status(400).json({ message: "Username or email already exists" });
+      }
+
+      // Admin registration disabled
+      if (userData.role === 'admin') {
+        return res.status(403).json({ message: "Admin registration is disabled" });
+      }
+
+      // Hash password and create user
+      const hashedPassword = await hashPassword(userData.password);
+      const newUser = await storage.createUser({
+        ...userData,
+        password: hashedPassword,
+        isVerified: userData.role === 'user',
       });
-    })(req, res, next);
+
+      // Generate tokens
+      const uid = (newUser as any).id || (newUser as any)._id?.toString();
+      const payload: JWTPayload = {
+        id: uid,
+        username: newUser.username,
+        role: newUser.role === 'client' ? 'user' : newUser.role,
+      };
+
+      const accessToken = generateAccessToken(payload);
+      const refreshToken = generateRefreshToken(payload);
+
+      // Set refresh token in httpOnly cookie
+      setRefreshCookie(res, refreshToken);
+
+      // Return user data + access token
+      return res.status(201).json({
+        user: normalizeUser(newUser),
+        accessToken,
+      });
+    } catch (e) {
+      res.status(500).json({ message: "Internal Server Error" });
+    }
   });
 
-  app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
-      if (err) return next(err);
-      res.sendStatus(200);
-    });
+  // Logout endpoint - clear refresh token
+  app.post("/api/logout", (req, res) => {
+    clearRefreshCookie(res);
+    res.json({ message: "Logged out" });
   });
 
+  // Get current user endpoint
   app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const user = normalizeUser(req.user);
-    res.json(Array.isArray(user) ? user : [user]);
+    const payload = (req as any).user as JWTPayload | undefined;
+    if (!payload) return res.sendStatus(401);
+
+    // Fetch fresh user data from database
+    (async () => {
+      try {
+        const user = await storage.getUser(payload.id);
+        if (!user) return res.sendStatus(401);
+        const normalized = normalizeUser(user);
+        res.json(Array.isArray(normalized) ? normalized : [normalized]);
+      } catch (e) {
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    })();
+  });
+
+  // Refresh token endpoint - issue new access token
+  app.post("/api/refresh", (req, res) => {
+    const refreshToken = req.cookies.refresh_token;
+    if (!refreshToken) return res.status(401).json({ message: "Missing refresh token" });
+
+    const payload = verifyRefreshToken(refreshToken);
+    if (!payload) return res.status(401).json({ message: "Invalid refresh token" });
+
+    // Issue new access token
+    const accessToken = generateAccessToken(payload);
+    res.json({ accessToken });
   });
 }

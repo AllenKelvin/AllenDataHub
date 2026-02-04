@@ -1,10 +1,10 @@
 import { Switch, Route, useLocation } from "wouter";
-import { queryClient } from "./lib/queryClient";
+import { queryClient, setGetAccessTokenFn } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CartProvider } from "@/context/CartContext";
-import { useUser } from "@/hooks/use-auth";
+import { useUser, getAccessToken } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { LayoutShell } from "@/components/layout-shell";
 
@@ -17,6 +17,9 @@ import CartPage from "@/pages/cart-page";
 import ProfilePage from "@/pages/profile-page";
 import FundWalletPage from "@/pages/fund-wallet-page";
 import PaymentReturnPage from "@/pages/payment-return-page";
+
+// Initialize JWT token getter for queryClient
+setGetAccessTokenFn(getAccessToken);
 
 function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType, adminOnly?: boolean }) {
   const { data: user, isLoading } = useUser();
