@@ -16,8 +16,20 @@ declare module "http" {
   }
 }
 
+const allowedOrigins = [
+  "https://allen-data-hub.vercel.app",
+  "http://localhost:5173", // Dev
+  process.env.FRONTEND_URL, // For Vercel deployment
+].filter(Boolean);
+
 app.use(cors({
-  origin: "https://allen-data-hub.vercel.app", // Replace with your ACTUAL Vercel URL
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true, // Crucial for allowing cookies to be sent
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
