@@ -66,7 +66,7 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET || "r8q,+&1LM3)CD*zAGpx1xm{NeQhc;#",
     resave: false,
     saveUninitialized: false,
-    store: sessionStore,
+    store: sessionStore || undefined,
     name: "allendatahub.sid",
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
