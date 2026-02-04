@@ -71,9 +71,9 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      // 2. These two settings allow Vercel and Render to talk to each other
-      secure: true, // Must be true for SameSite: 'none'
-      sameSite: "none", // Allows cross-site cookie usage
+      // Vercel rewrite makes cookies first-party, so we can use strict SameSite
+      secure: true, // Required for HTTPS in production
+      sameSite: "lax", // Safer than 'none', works with first-party cookies
     },
   };
 
