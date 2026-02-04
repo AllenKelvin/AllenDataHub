@@ -5,8 +5,16 @@ import { useLocation } from "wouter";
 
 const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 
-// Access token stored in memory (React context/hook)
+// Access token stored in memory and sessionStorage (survives reloads during a session)
 let accessToken: string | null = null;
+
+try {
+  if (typeof window !== "undefined") {
+    accessToken = sessionStorage.getItem("access_token");
+  }
+} catch (e) {
+  accessToken = null;
+}
 
 export function getAccessToken(): string | null {
   return accessToken;
@@ -14,6 +22,14 @@ export function getAccessToken(): string | null {
 
 function setAccessToken(token: string | null) {
   accessToken = token;
+  try {
+    if (typeof window !== "undefined") {
+      if (token) sessionStorage.setItem("access_token", token);
+      else sessionStorage.removeItem("access_token");
+    }
+  } catch (e) {
+    // ignore storage errors
+  }
 }
 
 // Helper for type-safe logging
@@ -35,16 +51,10 @@ export function useUser() {
   return useQuery({
     queryKey: [api.auth.me.path],
     queryFn: async () => {
-      const token = getAccessToken();
-      if (!token) return null;
+      let token = getAccessToken();
 
-      const res = await fetch(`${BACKEND_URL}${api.auth.me.path}`, {
-        credentials: "include", // for refresh token cookie
-        headers: getAuthHeaders(),
-      });
-
-      if (res.status === 401) {
-        // Try to refresh token
+      // If no access token in memory/session, attempt refresh using cookie
+      if (!token) {
         try {
           const refreshRes = await fetch(`${BACKEND_URL}/api/refresh`, {
             method: "POST",
@@ -54,7 +64,31 @@ export function useUser() {
           if (refreshRes.ok) {
             const { accessToken: newToken } = await refreshRes.json();
             setAccessToken(newToken);
-            // Retry user fetch with new token
+            token = newToken;
+          }
+        } catch (e) {
+          console.error("Token refresh failed", e);
+        }
+      }
+
+      if (!token) return null;
+
+      const res = await fetch(`${BACKEND_URL}${api.auth.me.path}`, {
+        credentials: "include", // for refresh token cookie
+        headers: getAuthHeaders(),
+      });
+
+      if (res.status === 401) {
+        // Try to refresh token and retry once
+        try {
+          const refreshRes = await fetch(`${BACKEND_URL}/api/refresh`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+          });
+          if (refreshRes.ok) {
+            const { accessToken: newToken } = await refreshRes.json();
+            setAccessToken(newToken);
             const retryRes = await fetch(`${BACKEND_URL}${api.auth.me.path}`, {
               credentials: "include",
               headers: {
