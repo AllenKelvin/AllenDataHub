@@ -3,8 +3,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/hooks/use-auth";
 import { api } from "@shared/routes";
 
-const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
-
 function getUserId(user: any): string | null {
   if (!user) return null;
   return (user as any).id ?? (user as any)._id?.toString() ?? null;
@@ -16,11 +14,11 @@ export function useCart() {
   return useQuery({
     queryKey: ["/api/cart", userId ?? "anonymous"],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/cart`, { credentials: 'include' });
+      const res = await fetch('/api/cart', { credentials: 'include' });
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem('pendingCart') || '[]') as Array<{ productId: string; quantity?: number }>;
         if (pending.length === 0) return [];
-        const prodRes = await fetch(`${BACKEND_URL}/api/products`, { credentials: 'include' });
+        const prodRes = await fetch('/api/products', { credentials: 'include' });
         if (!prodRes.ok) return [];
         const products = await prodRes.json();
         return pending.map((it) => ({ product: products.find((p: any) => (p.id || p._id?.toString()) === it.productId) || null, quantity: it.quantity || 1 })).filter((i: any) => i.product);
@@ -37,7 +35,7 @@ export function useAddToCart() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ productId, quantity = 1, phoneNumber }: { productId: string; quantity?: number; phoneNumber?: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/add`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, quantity, phoneNumber }) });
+      const res = await fetch('/api/cart/add', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId, quantity, phoneNumber }) });
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem('pendingCart') || '[]');
         pending.push({ productId, quantity });
@@ -61,7 +59,7 @@ export function useRemoveFromCart() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ productId }: { productId: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/remove`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId }) });
+      const res = await fetch('/api/cart/remove', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId }) });
       if (!res.ok) throw new Error('Failed to remove from cart');
       return res.json();
     },
@@ -74,7 +72,7 @@ export function useCheckout() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ paymentMethod = 'paystack' }: { paymentMethod?: 'wallet' | 'paystack' }) => {
-      const res = await fetch(`${BACKEND_URL}/api/cart/checkout`, { 
+      const res = await fetch('/api/cart/checkout', { 
         method: 'POST', 
         credentials: 'include', 
         headers: { 'Content-Type': 'application/json' }, 

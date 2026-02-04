@@ -8,8 +8,6 @@ import { NetworkCard } from "@/components/network-card";
 import { Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 import {
   Dialog,
   DialogContent,

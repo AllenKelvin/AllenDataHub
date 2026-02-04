@@ -1,8 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// 1. Update this with your actual Render backend URL (no trailing slash)
-const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
-
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -11,15 +8,15 @@ async function throwIfResNotOk(res: Response) {
 }
 
 /**
- * Custom apiRequest that prepends the BACKEND_URL to all API calls
+ * Custom apiRequest that uses relative paths (Vercel rewrite handles routing to backend)
  */
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Prepend the backend URL if the path starts with /api
-  const fullUrl = url.startsWith("/api") ? `${BACKEND_URL}${url}` : url;
+  // Use relative path directly (Vercel rewrite proxy handles backend routing)
+  const fullUrl = url;
 
   const res = await fetch(fullUrl, {
     method,
@@ -43,9 +40,9 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Construct the path and prepend the backend URL
+    // Construct the path (Vercel rewrite proxy handles backend routing)
     const path = queryKey.join("/");
-    const fullUrl = `${BACKEND_URL}/${path.startsWith("/") ? path.slice(1) : path}`;
+    const fullUrl = `/${path.startsWith("/") ? path.slice(1) : path}`;
 
     const res = await fetch(fullUrl, {
       // Required for session persistence across domains
