@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// 1. Define your Render Backend URL here (No trailing slash)
-const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+// 1. Update this with your actual Render backend URL (no trailing slash)
+const BACKEND_URL = "https://your-render-app-name.onrender.com";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -11,21 +11,22 @@ async function throwIfResNotOk(res: Response) {
 }
 
 /**
- * Enhanced apiRequest that prepends the Backend URL
+ * Custom apiRequest that prepends the BACKEND_URL to all API calls
  */
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Ensure the URL points to Render if it starts with /api
-  const fullUrl = url.startsWith("/") ? `${BACKEND_URL}${url}` : `${BACKEND_URL}/${url}`;
+  // Prepend the backend URL if the path starts with /api
+  const fullUrl = url.startsWith("/api") ? `${BACKEND_URL}${url}` : url;
 
   const res = await fetch(fullUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include", // Required to send/receive cookies across domains
+    // Required to send cookies to a different domain (Render)
+    credentials: "include", 
   });
 
   await throwIfResNotOk(res);
@@ -35,19 +36,20 @@ export async function apiRequest(
 type UnauthorizedBehavior = "returnNull" | "throw";
 
 /**
- * Enhanced getQueryFn that prepends the Backend URL
+ * Custom getQueryFn that prepends the BACKEND_URL for data fetching
  */
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Construct the path from the queryKey array
+    // Construct the path and prepend the backend URL
     const path = queryKey.join("/");
     const fullUrl = `${BACKEND_URL}/${path.startsWith("/") ? path.slice(1) : path}`;
 
     const res = await fetch(fullUrl, {
-      credentials: "include", // Required for session persistence
+      // Required for session persistence across domains
+      credentials: "include", 
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
