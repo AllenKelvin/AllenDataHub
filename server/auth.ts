@@ -90,10 +90,11 @@ export function setupAuth(app: Express) {
 
       // Generate tokens
       const uid = (user as any).id || (user as any)._id?.toString();
+      const userRole = user.role === 'user' ? 'user' : user.role;
       const payload: JWTPayload = {
         id: uid,
         username: user.username,
-        role: user.role === 'client' ? 'user' : user.role,
+        role: userRole,
       };
 
       const accessToken = generateAccessToken(payload);
@@ -138,10 +139,11 @@ export function setupAuth(app: Express) {
 
       // Generate tokens
       const uid = (newUser as any).id || (newUser as any)._id?.toString();
+      const newUserRole = newUser.role === 'user' ? 'user' : newUser.role;
       const payload: JWTPayload = {
         id: uid,
         username: newUser.username,
-        role: newUser.role === 'client' ? 'user' : newUser.role,
+        role: newUserRole,
       };
 
       const accessToken = generateAccessToken(payload);

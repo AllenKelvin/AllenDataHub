@@ -88,7 +88,7 @@ export async function registerRoutes(
     if (user?.role !== "admin") {
       return res.status(403).send({ message: "Forbidden" });
     }
-    const userId = req.params.id;
+    const userId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const updatedUser = await storage.updateUserVerification(userId, true);
     if (!updatedUser) return res.status(404).send({ message: "User not found" });
     res.json(normalizeUser(updatedUser));
@@ -511,8 +511,8 @@ export async function registerRoutes(
       // Force userId to be current user
       // Determine role-specific price override if available
       const prod = await (await import('./models/product')).Product.findById(orderData.productId).lean();
-      const userRole = (req.user as any).role;
-      const priceForRole = userRole === 'agent' ? prod?.agentPrice : prod?.userPrice;
+
+      const priceForRole = user.role === 'agent' ? prod?.agentPrice : prod?.userPrice;
       const order = await storage.createOrder({ ...orderData, userId: user.id, priceOverride: priceForRole });
       res.status(201).json(order);
     } catch (e) {
@@ -539,7 +539,7 @@ export async function registerRoutes(
       // user.balance is stored as integer smallest unit? ensure it's number
       const balance = (user.balance || 0);
       const priceForRole = (user.role === 'agent') ? p.agentPrice : p.userPrice;
-      if (balance < priceForRole) return res.status(400).json({ message: "Insufficient wallet balance" });
+      if (!priceForRole || balance < priceForRole) return res.status(400).json({ message: "Insufficient wallet balance" });
 
       // Deduct and create completed order
       await (storage as any).deductAgentBalance(user._id.toString(), priceForRole);

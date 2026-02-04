@@ -39,7 +39,7 @@ export async function apiRequest(
     method,
     headers: {
       ...getAuthHeaders(),
-      ...(data && { "Content-Type": "application/json" }),
+      ...(data ? { "Content-Type": "application/json" } : {}),
     },
     body: data ? JSON.stringify(data) : undefined,
     // Required to send cookies to a different domain (Render) - for refresh token
