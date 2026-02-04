@@ -17,6 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+
 export default function BuyDataPage() {
   const { data: products = [], isLoading } = useProducts();
   const { data: user } = useUser();

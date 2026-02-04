@@ -77,7 +77,8 @@ export function useAdminTotals() {
   return useQuery({
     queryKey: ["/api/admin/totals"],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/totals`, { credentials: 'include' });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth('/api/admin/totals');
       if (!res.ok) throw new Error("Failed to fetch totals");
       return res.json();
     },
@@ -88,7 +89,8 @@ export function useAdminAllOrders(page = 1, limit = 50) {
   return useQuery({
     queryKey: ["/api/admin/orders", page, limit],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/orders?page=${page}&limit=${limit}`, { credentials: "include" });
+      const { fetchWithAuth } = await import("@/lib/fetchWithAuth");
+      const res = await fetchWithAuth(`/api/admin/orders?page=${page}&limit=${limit}`);
       if (!res.ok) throw new Error("Failed to fetch orders");
       const data = await res.json();
       return { ...data, pagination: data.pagination || { total: 0, page: 1, limit, pages: 0 } };

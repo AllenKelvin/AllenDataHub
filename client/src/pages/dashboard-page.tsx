@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUser } from "@/hooks/use-auth";
 import { useMyOrders } from "../hooks/use-orders";
+import { useOrderPolling } from "../hooks/use-order-polling";
 import { format } from "date-fns";
 import { Loader2, TrendingUp, Wallet, Wifi, CheckCircle2, Clock, Cog, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
@@ -15,6 +16,10 @@ export default function DashboardPage() {
   const orders = ordersData?.orders ?? [];
   const pagination = ordersData?.pagination ?? { total: 0, page: 1, limit, pages: 0 };
   const completedCount = ordersData?.completedCount ?? 0;
+
+  // Poll the first pending/processing order for status updates
+  const pendingOrder = orders.find((o: any) => o.status === "processing" || o.status === "pending");
+  useOrderPolling(pendingOrder?.id, !!pendingOrder);
 
   if (isUserLoading || isOrdersLoading) {
     return (

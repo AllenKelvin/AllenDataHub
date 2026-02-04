@@ -629,6 +629,38 @@ export async function registerRoutes(
     res.json({ orders: enriched, totalSpent, pagination });
   });
 
+  // Get single order by ID (for polling status updates)
+  app.get("/api/orders/:id", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).send({ message: "Unauthorized" });
+    const orderId = req.params.id;
+    
+    try {
+      const { Order } = await import('./models/order');
+      const { Product } = await import('./models/product');
+      const order = await Order.findById(orderId).lean();
+      
+      if (!order) return res.status(404).json({ message: "Order not found" });
+      
+      // Only allow user to see their own order, admins can see all
+      if (user.role !== 'admin' && order.userId.toString() !== user.id && order.userId !== user.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const product = await Product.findById(order.productId).lean();
+      const enriched = {
+        ...order,
+        productName: order.productName || product?.name || 'Unknown',
+        productNetwork: product?.network || '',
+        dataAmount: order.dataAmount || product?.dataAmount,
+      };
+      
+      res.json(enriched);
+    } catch (err) {
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  });
+
   // Seed Data function
   await seedDatabase();
 
