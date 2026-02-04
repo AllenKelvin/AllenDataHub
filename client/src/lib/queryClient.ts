@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { setAccessToken } from "@/hooks/use-auth";
 
 const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 
@@ -46,6 +47,34 @@ export async function apiRequest(
     credentials: "include", 
   });
 
+  // If unauthorized, try refreshing the access token using the refresh cookie and retry once
+  if (res.status === 401) {
+    try {
+      const refreshRes = await fetch(`${BACKEND_URL}/api/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (refreshRes.ok) {
+        const { accessToken: newToken } = await refreshRes.json();
+        if (newToken) setAccessToken(newToken);
+        const retryRes = await fetch(fullUrl, {
+          method,
+          headers: {
+            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
+            ...(data ? { "Content-Type": "application/json" } : {}),
+          },
+          body: data ? JSON.stringify(data) : undefined,
+          credentials: "include",
+        });
+        await throwIfResNotOk(retryRes);
+        return retryRes;
+      }
+    } catch (e) {
+      // fall through to throwing original error
+    }
+  }
+
   await throwIfResNotOk(res);
   return res;
 }
@@ -64,12 +93,36 @@ export const getQueryFn: <T>(options: {
     const path = queryKey.join("/");
     const fullUrl = `${BACKEND_URL}/${path.startsWith("/") ? path.slice(1) : path}`;
 
-    const res = await fetch(fullUrl, {
+    let res = await fetch(fullUrl, {
       // Add JWT Authorization header
       headers: getAuthHeaders(),
       // Required for refresh token cookie across domains
-      credentials: "include", 
+      credentials: "include",
     });
+
+    // If unauthorized, try refresh once
+    if (res.status === 401) {
+      try {
+        const refreshRes = await fetch(`${BACKEND_URL}/api/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (refreshRes.ok) {
+          const { accessToken: newToken } = await refreshRes.json();
+          if (newToken) setAccessToken(newToken);
+          res = await fetch(fullUrl, {
+            headers: {
+              ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+          });
+        }
+      } catch (e) {
+        // ignore and continue to handle res below
+      }
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

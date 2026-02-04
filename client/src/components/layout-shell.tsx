@@ -58,16 +58,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
           {isMobileMenuOpen ? <X /> : <Menu />}
         </button>
         <h1 className="text-xl font-bold font-display text-primary">AllenDataHub</h1>
-        <Link href="/cart">
-          <button aria-label="Cart" className="relative p-2 rounded-md hover:bg-gray-100">
-            <ShoppingBag className="w-5 h-5" />
-            {cartCount > 0 && (
-              <span className="absolute top-0 right-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
-                {cartCount}
-              </span>
-            )}
-          </button>
-        </Link>
+        {/* Cart icon removed from mobile header to avoid duplicate */}
       </div>
 
       {/* Sidebar Navigation */}

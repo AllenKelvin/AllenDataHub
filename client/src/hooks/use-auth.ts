@@ -20,7 +20,7 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-function setAccessToken(token: string | null) {
+export function setAccessToken(token: string | null) {
   accessToken = token;
   try {
     if (typeof window !== "undefined") {
