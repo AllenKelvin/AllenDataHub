@@ -7,6 +7,7 @@ import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  verifyAccessToken,
   setRefreshCookie,
   clearRefreshCookie,
   type JWTPayload,
@@ -168,18 +169,24 @@ export function setupAuth(app: Express) {
     res.json({ message: "Logged out" });
   });
 
-  // Get current user endpoint
+  // Get current user endpoint (optional auth - returns null if not logged in)
   app.get("/api/user", (req, res) => {
-    const payload = (req as any).user as JWTPayload | undefined;
-    if (!payload) return res.sendStatus(401);
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.json(null); // Not authenticated
+    }
+
+    const token = authHeader.slice(7);
+    const payload = verifyAccessToken(token);
+    if (!payload) return res.json(null); // Invalid token
 
     // Fetch fresh user data from database
     (async () => {
       try {
         const user = await storage.getUser(payload.id);
-        if (!user) return res.sendStatus(401);
+        if (!user) return res.json(null);
         const normalized = normalizeUser(user);
-        res.json(Array.isArray(normalized) ? normalized : [normalized]);
+        res.json(Array.isArray(normalized) ? normalized[0] : normalized);
       } catch (e) {
         res.status(500).json({ message: "Internal Server Error" });
       }
