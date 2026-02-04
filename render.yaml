@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: allen-data-hub-backend
+    env: node
+    plan: standard
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        scope: build
+      - key: JWT_SECRET
+        scope: build
+      - key: PAYSTACK_SECRET_KEY
+        scope: build
+      - key: PAYSTACK_PUBLIC_KEY
+        scope: build
+      - key: PORTAL02_API_KEY
+        scope: build
+      - key: PORTAL02_BASE_URL
+        scope: build
