@@ -119,7 +119,7 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      const res = await fetch(api.auth.logout.path, { method: "POST", credentials: 'include' });
+      const res = await fetch(`${BACKEND_URL}${api.auth.logout.path}`, { method: "POST", credentials: 'include' });
       if (!res.ok) throw new Error("Logout failed");
     },
     onSuccess: () => {
