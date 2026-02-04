@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 // 1. Define your Render Backend URL here (No trailing slash)
-const BACKEND_URL = "https://your-render-app-name.onrender.com";
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
