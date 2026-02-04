@@ -1,47 +1,74 @@
- // queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// Replace this with your actual Render Backend URL
-const API_BASE_URL = "https://allen-data-hub-backend.onrender.com"; 
+// 1. Define your Render Backend URL here (No trailing slash)
+const BACKEND_URL = "https://your-render-app-name.onrender.com";
 
+async function throwIfResNotOk(res: Response) {
+  if (!res.ok) {
+    const text = (await res.text()) || res.statusText;
+    throw new Error(`${res.status}: ${text}`);
+  }
+}
+
+/**
+ * Enhanced apiRequest that prepends the Backend URL
+ */
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Prepend the Render URL if it's an API call
-  const fullUrl = url.startsWith("/api") ? `${API_BASE_URL}${url}` : url;
+  // Ensure the URL points to Render if it starts with /api
+  const fullUrl = url.startsWith("/") ? `${BACKEND_URL}${url}` : `${BACKEND_URL}/${url}`;
 
   const res = await fetch(fullUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include", // CRITICAL: Sends the cookie to Render
+    credentials: "include", // Required to send/receive cookies across domains
   });
 
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
-  }
+  await throwIfResNotOk(res);
   return res;
 }
 
-export const getQueryFn: <T>(options: { on401: "returnNull" | "throw" }) => QueryFunction<T> =
+type UnauthorizedBehavior = "returnNull" | "throw";
+
+/**
+ * Enhanced getQueryFn that prepends the Backend URL
+ */
+export const getQueryFn: <T>(options: {
+  on401: UnauthorizedBehavior;
+}) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    // Construct the path from the queryKey array
     const path = queryKey.join("/");
-    const fullUrl = path.startsWith("api") ? `${API_BASE_URL}/${path}` : `/${path}`;
+    const fullUrl = `${BACKEND_URL}/${path.startsWith("/") ? path.slice(1) : path}`;
 
     const res = await fetch(fullUrl, {
-      credentials: "include", // CRITICAL
+      credentials: "include", // Required for session persistence
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
     }
 
-    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    await throwIfResNotOk(res);
     return await res.json();
   };
 
-export const queryClient = new QueryClient({ /* ... existing options ... */ });
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      queryFn: getQueryFn({ on401: "throw" }),
+      refetchInterval: false,
+      refetchOnWindowFocus: false,
+      staleTime: Infinity,
+      retry: false,
+    },
+    mutations: {
+      retry: false,
+    },
+  },
+});
