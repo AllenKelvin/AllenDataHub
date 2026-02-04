@@ -111,7 +111,7 @@ export default function BuyDataPage() {
         });
       } else {
         // Invalidate cart query so cart shows instantly (same key as useCart)
-        qc.invalidateQueries({ queryKey: [`${BACKEND_URL}/api/cart`] });
+        qc.invalidateQueries({ queryKey: ['/api/cart'] });
       }
 
       // Close modal and show toast after successful add

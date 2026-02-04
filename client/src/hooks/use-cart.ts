@@ -20,7 +20,7 @@ export function useCart() {
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem('pendingCart') || '[]') as Array<{ productId: string; quantity?: number }>;
         if (pending.length === 0) return [];
-        const prodRes = await fetch(`${BACKEND_URL}/api/products`);
+        const prodRes = await fetch(`${BACKEND_URL}/api/products`, { credentials: 'include' });
         if (!prodRes.ok) return [];
         const products = await prodRes.json();
         return pending.map((it) => ({ product: products.find((p: any) => (p.id || p._id?.toString()) === it.productId) || null, quantity: it.quantity || 1 })).filter((i: any) => i.product);
