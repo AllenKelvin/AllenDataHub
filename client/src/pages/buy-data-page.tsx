@@ -8,6 +8,8 @@ import { NetworkCard } from "@/components/network-card";
 import { Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
 import {
   Dialog,
   DialogContent,
@@ -57,7 +59,7 @@ export default function BuyDataPage() {
   // Returns true if added to server, false if saved as pending (unauthenticated)
   const addToCart = async (product: any, phoneNumber: string) => {
     try {
-      const res = await fetch("/api/cart/add", {
+      const res = await fetch(`${BACKEND_URL}/api/cart/add`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -109,7 +111,7 @@ export default function BuyDataPage() {
         });
       } else {
         // Invalidate cart query so cart shows instantly (same key as useCart)
-        qc.invalidateQueries({ queryKey: ['/api/cart'] });
+        qc.invalidateQueries({ queryKey: [`${BACKEND_URL}/api/cart`] });
       }
 
       // Close modal and show toast after successful add

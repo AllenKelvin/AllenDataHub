@@ -58,7 +58,7 @@ export function useLogin() {
           if (pending) {
             const items = JSON.parse(pending) as Array<{ productId: string; quantity?: number }>;
             for (const it of items) {
-              await fetch('/api/cart/add', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(it) });
+              await fetch(`${BACKEND_URL}/api/cart/add`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(it) });
             }
             localStorage.removeItem('pendingCart');
             queryClient.invalidateQueries({ queryKey: ['/api/cart'] });

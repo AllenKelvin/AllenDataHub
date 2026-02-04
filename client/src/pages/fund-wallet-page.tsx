@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useLocation } from 'wouter';
 
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+
 export default function FundWalletPage() {
   const { data: user, isLoading } = useUser();
   const [amount, setAmount] = useState<number>(0);
@@ -18,7 +20,7 @@ export default function FundWalletPage() {
   async function fundWallet() {
     if (amount <= 0) return toast({ title: 'Invalid amount', variant: 'destructive' });
     try {
-      const resp = await fetch('/api/paystack/initialize', {
+      const resp = await fetch(`${BACKEND_URL}/api/paystack/initialize`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

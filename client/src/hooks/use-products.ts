@@ -2,12 +2,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type InsertProduct } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
+const BACKEND_URL = "https://allen-data-hub-backend.onrender.com";
+
 // Fetch all products
 export function useProducts() {
   return useQuery({
     queryKey: [api.products.list.path],
     queryFn: async () => {
-      const res = await fetch(api.products.list.path);
+      const res = await fetch(`${BACKEND_URL}${api.products.list.path}`, { credentials: 'include' });
       if (!res.ok) throw new Error("Failed to fetch products");
       return api.products.list.responses[200].parse(await res.json());
     },
@@ -21,8 +23,9 @@ export function useCreateProduct() {
 
   return useMutation({
     mutationFn: async (data: InsertProduct) => {
-      const res = await fetch(api.products.create.path, {
+      const res = await fetch(`${BACKEND_URL}${api.products.create.path}`, {
         method: "POST",
+        credentials: 'include',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
