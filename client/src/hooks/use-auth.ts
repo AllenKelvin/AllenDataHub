@@ -108,10 +108,12 @@ export function useLogin() {
       if (response.accessToken) {
         setAccessToken(response.accessToken);
       }
-      return api.auth.login.responses[200].parse(response);
+      // Parse and return the response object which has { user, accessToken }
+      const parsed = api.auth.login.responses[200].parse(response);
+      return parsed;
     },
     onSuccess: (data: any) => {
-      const user = data.user || data;
+      const user = data.user;
       queryClient.setQueryData([api.auth.me.path], user);
       toast({ title: "Welcome back!", description: `Logged in as ${user.username}` });
       // If there was a pending cart saved before login, push it to server
@@ -171,10 +173,12 @@ export function useRegister() {
       if (response.accessToken) {
         setAccessToken(response.accessToken);
       }
-      return api.auth.register.responses[201].parse(response);
+      // Parse and return the response object which has { user, accessToken }
+      const parsed = api.auth.register.responses[201].parse(response);
+      return parsed;
     },
     onSuccess: (data: any) => {
-      const user = data.user || data;
+      const user = data.user;
       queryClient.setQueryData([api.auth.me.path], user);
       toast({ title: "Account created", description: "Welcome to AllenDataHub!" });
       setLocation("/");

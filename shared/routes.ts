@@ -31,7 +31,10 @@ export const api = {
       path: '/api/register',
       input: insertUserSchema,
       responses: {
-        201: userResponseSchema,
+        201: z.object({
+          user: userResponseSchema,
+          accessToken: z.string(),
+        }),
         400: errorSchemas.validation,
       },
     },
@@ -41,7 +44,10 @@ export const api = {
       // Accept `identifier` which can be username or email
       input: z.object({ identifier: z.string(), password: z.string() }),
       responses: {
-        200: userResponseSchema,
+        200: z.object({
+          user: userResponseSchema,
+          accessToken: z.string(),
+        }),
         401: errorSchemas.unauthorized,
       },
     },
