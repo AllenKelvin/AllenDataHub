@@ -9,13 +9,14 @@ export interface JWTPayload {
   id: string;
   username: string;
   role: string;
+  email?: string;
 }
 
 /**
  * Generate access token (short-lived, in memory)
  */
 export function generateAccessToken(payload: JWTPayload): string {
-  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role };
+  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role, email: payload.email };
   return jwt.sign(clean, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
 }
 
@@ -23,7 +24,7 @@ export function generateAccessToken(payload: JWTPayload): string {
  * Generate refresh token (long-lived, stored in httpOnly cookie)
  */
 export function generateRefreshToken(payload: JWTPayload): string {
-  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role };
+  const clean: JWTPayload = { id: payload.id, username: payload.username, role: payload.role, email: payload.email };
   return jwt.sign(clean, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 }
 

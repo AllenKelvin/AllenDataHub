@@ -96,6 +96,7 @@ export function setupAuth(app: Express) {
         id: uid,
         username: user.username,
         role: userRole,
+        email: user.email,
       };
 
       const accessToken = generateAccessToken(payload);
@@ -160,6 +161,7 @@ export function setupAuth(app: Express) {
         id: uid,
         username: newUser.username,
         role: newUserRole,
+        email: newUser.email,
       };
 
       const accessToken = generateAccessToken(payload);
