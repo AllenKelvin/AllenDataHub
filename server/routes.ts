@@ -468,16 +468,25 @@ export async function registerRoutes(
     const secret = process.env.PAYSTACK_SECRET_KEY;
     if (!secret) return res.status(500).json({ message: 'Paystack not configured' });
 
+    // Validate email for Paystack
+    const email = user.email || user.username;
+    if (!email || !email.includes('@')) {
+      console.error(`[Paystack] Invalid email: "${email}" for user ${userId}`);
+      return res.status(400).json({ message: 'User email is required for Paystack payment. Please update your profile with a valid email address.' });
+    }
+
     const baseUrl = process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host') || 'http://localhost:5000');
     const callbackUrl = `${baseUrl}/payment-return`;
 
     try {
+      const amountInPesewas = Math.round(total * 100);
+      console.log(`[Paystack] Initializing with amount: ${total} GHS = ${amountInPesewas} pesewas, email: ${email}`);
       const resp = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
         headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: total * 100,
-          email: user.email || user.username || '',
+          amount: amountInPesewas,
+          email: email,
           currency: 'GHS',
           callback_url: callbackUrl,
           metadata: { type: 'order', userId, cart },
