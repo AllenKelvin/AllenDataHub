@@ -161,8 +161,10 @@ export async function registerRoutes(
     const crypto = await import("crypto");
     const hmac = crypto.createHmac("sha512", secret).update(raw).digest("hex");
 
+    console.log(`[Webhook] Paystack webhook received. Signature match: ${signature === hmac}`);
+    
     if (!signature || signature !== hmac) {
-      console.warn("Invalid Paystack webhook signature");
+      console.warn(`[Webhook] Invalid Paystack webhook signature. Expected: ${hmac}, Got: ${signature}`);
       return res.status(400).send("Invalid signature");
     }
 
@@ -171,12 +173,17 @@ export async function registerRoutes(
       const event = payload.event;
       const data = payload.data;
 
+      console.log(`[Webhook] Event: ${event}, Amount: ${data.amount}, Status: ${data.status}`);
+
       if (event === "charge.success") {
         const metadata = data.metadata || {};
         const amount = data.amount; // in smallest currency unit (pesewas)
+        console.log(`[Webhook] Charge success. Metadata type: ${metadata.type}, UserId: ${metadata.userId}`);
+        
         if (metadata.type === "wallet") {
           const agentId = metadata.agentId;
           if (agentId) {
+            console.log(`[Webhook] Crediting wallet for agent ${agentId} with ${amount / 100} GHS`);
             // Credit agent balance by amount (pesewas converted to main currency)
             await (storage as any).creditAgentBalance(agentId, amount / 100);
           }
@@ -185,12 +192,14 @@ export async function registerRoutes(
         if (metadata.type === "order") {
           const userId = metadata.userId;
           const cart = metadata.cart || [];
+          console.log(`[Webhook] Processing order for user ${userId}. Cart items: ${cart.length}`);
           
           if (userId && cart.length > 0) {
             const { Product } = await import("./models/product");
             const { Order } = await import("./models/order");
             const portal02Service = (await import("./services/portal02Service")).default;
 
+            let createdOrdersCount = 0;
             for (const item of cart) {
               const qty = item.quantity || 1;
               for (let i = 0; i < qty; i++) {
@@ -198,6 +207,8 @@ export async function registerRoutes(
                 const phoneNumber = item.phoneNumber || "";
                 const orderRef = `ORD-${Date.now()}-${i}`;
 
+                console.log(`[Webhook] Creating order for product ${item.productId}, phone: ${phoneNumber}, network: ${p?.network}`);
+                
                 const order = await (storage as any).createCompletedOrder({
                   productId: item.productId,
                   userId,
@@ -206,15 +217,19 @@ export async function registerRoutes(
                   productName: p?.name,
                   statusOverride: p && phoneNumber ? "processing" : undefined,
                 });
+                createdOrdersCount++;
 
                 if (p && phoneNumber && portal02Service) {
                   try {
+                    console.log(`[Webhook] Calling vendor for ${phoneNumber}, ${p.dataAmount}GB ${p.network}`);
                     const vendorResult = await portal02Service.purchaseDataBundleWithRetry(
                       phoneNumber,
                       p.dataAmount,
                       p.network,
                       orderRef
                     );
+                    console.log(`[Webhook] Vendor result - Success: ${vendorResult.success}, Message: ${vendorResult.message}`);
+                    
                     await Order.findByIdAndUpdate(order.id, {
                       $set: {
                         vendorOrderId: vendorResult.transactionId || vendorResult.reference,
@@ -231,7 +246,7 @@ export async function registerRoutes(
                       },
                     });
                   } catch (vendorErr: any) {
-                    console.error("[Webhook] Portal-02 failed:", vendorErr?.message);
+                    console.error(`[Webhook] Portal-02 failed: ${vendorErr?.message}`);
                     await Order.findByIdAndUpdate(order.id, {
                       $set: {
                         status: "failed",
@@ -243,6 +258,7 @@ export async function registerRoutes(
                 }
               }
             }
+            console.log(`[Webhook] Created ${createdOrdersCount} orders. Clearing cart for user ${userId}`);
             await (storage as any).clearCart(userId);
           }
         }
@@ -250,7 +266,7 @@ export async function registerRoutes(
 
       res.json({ status: true });
     } catch (err) {
-      console.error("Webhook processing error:", err);
+      console.error(`[Webhook] Processing error: ${err}`);
       res.status(500).send("Webhook error");
     }
   });

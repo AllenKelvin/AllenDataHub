@@ -133,6 +133,8 @@ export default function CartPage() {
                         }
                         // Clear local cart after syncing
                         clearCart();
+                        // Wait a moment for server to persist items
+                        await new Promise(r => setTimeout(r, 500));
                       } catch (err) {
                         toast({ title: 'Sync Error', description: 'Failed to sync cart items to server', variant: 'destructive' });
                         setIsSyncing(false);
