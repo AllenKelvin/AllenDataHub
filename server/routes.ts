@@ -94,6 +94,35 @@ export async function registerRoutes(
     res.json(normalizeUser(updatedUser));
   });
 
+  // Update user profile (email, phoneNumber) - User can update own profile
+  app.patch('/api/user/profile', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+    
+    const { email, phoneNumber } = req.body;
+    try {
+      const { User } = await import('./models/user');
+      const updates: any = {};
+      if (email && typeof email === 'string' && email.includes('@')) {
+        updates.email = email;
+      }
+      if (phoneNumber && typeof phoneNumber === 'string') {
+        updates.phoneNumber = phoneNumber;
+      }
+      
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: 'No valid fields to update' });
+      }
+      
+      const updated = await User.findByIdAndUpdate(user.id, updates, { new: true }).lean();
+      if (!updated) return res.status(404).json({ message: 'User not found' });
+      res.json(normalizeUser(updated));
+    } catch (err: any) {
+      console.error('[Profile] Update error:', err.message);
+      res.status(500).json({ message: 'Failed to update profile' });
+    }
+  });
+
   // === PRODUCT ROUTES ===
 
   // Paystack initialize (wallet funding or payment)
@@ -493,7 +522,8 @@ export async function registerRoutes(
         }),
       });
       const data = await resp.json();
-      console.log(`[Paystack] Initialize response status=${resp.status}, data=${JSON.stringify(data)}`);
+      console.log(`[Paystack] Full response:`, JSON.stringify(data, null, 2));
+      console.log(`[Paystack] Initialize response status=${resp.status}, success=${data.status}, message=${data.message}`);
       if (!resp.ok) {
         console.error(`[Paystack] Initialize failed: ${resp.statusText}`);
         return res.status(400).json({ message: 'Paystack initialization failed', details: data });
