@@ -193,9 +193,9 @@ export default function AuthPage() {
                         name="email"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Email (optional)</FormLabel>
+                            <FormLabel>Email <span className="text-red-500">*</span></FormLabel>
                             <FormControl>
-                              <Input placeholder="you@example.com" className="h-12" {...field} />
+                              <Input placeholder="you@example.com" type="email" className="h-12" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

@@ -119,6 +119,21 @@ export function setupAuth(app: Express) {
     try {
       const userData = req.body;
 
+      // Validate email is provided and in correct format
+      if (!userData.email || !userData.email.includes('@') || !userData.email.includes('.')) {
+        return res.status(400).json({ message: "Valid email address is required" });
+      }
+
+      // Validate password is provided
+      if (!userData.password || userData.password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      // Validate username is provided
+      if (!userData.username || userData.username.length < 3) {
+        return res.status(400).json({ message: "Username must be at least 3 characters" });
+      }
+
       // Check for existing user
       const existing = await storage.getUserByUsername(userData.username || userData.email);
       if (existing) {

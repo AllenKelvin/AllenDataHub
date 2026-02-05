@@ -497,12 +497,12 @@ export async function registerRoutes(
     const secret = process.env.PAYSTACK_SECRET_KEY;
     if (!secret) return res.status(500).json({ message: 'Paystack not configured' });
 
-    // Validate email for Paystack
-    const email = user.email || user.username;
-    if (!email || !email.includes('@')) {
-      console.error(`[Paystack] Invalid email: "${email}" for user ${userId}`);
+    // Validate email for Paystack - ONLY use email, never fall back to username
+    if (!user.email || typeof user.email !== 'string' || !user.email.includes('@')) {
+      console.error(`[Paystack] Invalid email: "${user.email}" for user ${userId}`);
       return res.status(400).json({ message: 'User email is required for Paystack payment. Please update your profile with a valid email address.' });
     }
+    const email = user.email;
 
     const baseUrl = process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host') || 'http://localhost:5000');
     const callbackUrl = `${baseUrl}/payment-return`;

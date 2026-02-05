@@ -2,13 +2,12 @@ import { z } from "zod";
 
 export const insertUserSchema = z
   .object({
-    username: z.string().optional(),
-    email: z.string().email().optional(),
-    password: z.string(),
+    username: z.string().min(3, "Username must be at least 3 characters"),
+    email: z.string().email("Valid email address is required"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
     phoneNumber: z.string().regex(/^\d{10}$/, 'Phone number must be 10 digits').optional(),
     role: z.enum(["admin", "agent", "user"]).optional(),
-  })
-  .refine((v) => !!(v.username || v.email), { message: "username or email required" });
+  });
 
 export const userResponseSchema = z.object({
   id: z.string(),
