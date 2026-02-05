@@ -32,7 +32,7 @@ app.use(cors({
     }
   },
   credentials: true, // Crucial for allowing cookies to be sent
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
