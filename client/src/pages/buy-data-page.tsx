@@ -105,7 +105,7 @@ export default function BuyDataPage() {
           dataAmount: selectedProduct.dataAmount,
           name: selectedProduct.name,
           network: selectedNetwork || '',
-          price: selectedProduct.price,
+          price: getPriceForUser(selectedProduct),
           phoneNumber: phoneNumber,
           quantity: 1,
         });

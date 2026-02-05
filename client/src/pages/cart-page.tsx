@@ -21,7 +21,7 @@ export default function CartPage() {
 
   // Map local context items into the same shape as server cart entries so we can render them together
   const localMapped = (localItems || []).map((it: any) => ({
-    product: { id: it.productId, dataAmount: it.dataAmount, name: it.name, price: it.price },
+    product: { id: it.productId, dataAmount: it.dataAmount, name: it.name, network: it.network, agentPrice: it.price, userPrice: it.price },
     quantity: it.quantity || 1,
     __local: true,
     phoneNumber: it.phoneNumber,
