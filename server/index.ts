@@ -8,6 +8,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 const app = express();
+let isReady = false;
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -63,6 +64,9 @@ export function log(message: string, source = "express") {
 }
 
 app.use((req, res, next) => {
+  if (!isReady && req.path.startsWith('/api')) {
+    return res.status(503).json({ message: 'Server initializing' });
+  }
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
@@ -100,6 +104,8 @@ app.use((req, res, next) => {
   try {
     await connectDb();
     await registerRoutes(httpServer, app);
+    // mark ready so API requests are served (prevents early 404s)
+    isReady = true;
 
     app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;

@@ -59,17 +59,14 @@ export default function BuyDataPage() {
   // Returns true if added to server, false if saved as pending (unauthenticated)
   const addToCart = async (product: any, phoneNumber: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/cart/add`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({ productId: product.id, quantity: 1, phoneNumber }),
-      });
+      const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+      const res = await fetchWithAuth('/api/cart/add', { method: 'POST', body: JSON.stringify({ productId: product.id, quantity: 1, phoneNumber }) });
       if (res.status === 401) {
         const pending = JSON.parse(localStorage.getItem("pendingCart") || "[]");
         const existing = pending.find((p: any) => p.productId === product.id);
         if (existing) {
            existing.quantity = (existing.quantity || 1) + 1;
+           existing.phoneNumber = phoneNumber;
         } else {
            pending.push({ productId: product.id, quantity: 1, phoneNumber });
         }

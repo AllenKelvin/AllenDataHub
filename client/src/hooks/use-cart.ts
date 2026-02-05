@@ -86,6 +86,9 @@ export function useCheckout() {
       return res.json();
     },
     onSuccess: (data) => {
+      // Helpful debug logging
+      // eslint-disable-next-line no-console
+      console.log('[useCheckout] onSuccess data:', data);
       qc.invalidateQueries({ queryKey: ['/api/cart'] });
       qc.invalidateQueries({ queryKey: [api.orders.listMyOrders.path] });
       qc.invalidateQueries({ queryKey: ['/api/user'] });
@@ -93,16 +96,32 @@ export function useCheckout() {
       if (data.data?.authorization_url) {
         const url = data.data.authorization_url;
         toast({ title: 'Redirecting', description: 'Redirecting to Paystack...', variant: 'default' });
-        setTimeout(() => { window.location.href = url; }, 200);
+        setTimeout(() => {
+          try {
+            // Try navigate in current tab first
+            window.location.assign(url);
+          } catch (e) {
+            // Fallback to opening new tab
+            window.open(url, '_blank');
+          }
+        }, 200);
       } else if (data.authorization_url) {
         const url = data.authorization_url;
         toast({ title: 'Redirecting', description: 'Redirecting to Paystack...', variant: 'default' });
-        setTimeout(() => { window.location.href = url; }, 200);
+        setTimeout(() => {
+          try {
+            window.location.assign(url);
+          } catch (e) {
+            window.open(url, '_blank');
+          }
+        }, 200);
       } else if (data.status === 'ok') {
         toast({ title: 'Success', description: 'Order completed successfully' });
       }
     },
     onError: (err: any) => {
+      // eslint-disable-next-line no-console
+      console.error('[useCheckout] error:', err);
       toast({ title: 'Error', description: err?.message || 'Checkout failed', variant: 'destructive' });
     }
   });

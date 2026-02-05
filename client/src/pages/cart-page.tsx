@@ -3,12 +3,14 @@ import { useUser } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { useCartContext } from '@/context/CartContext';
 import { useToast } from '@/hooks/use-toast';
 
 export default function CartPage() {
   const { data: cart, isLoading } = useCart();
   const { data: user } = useUser();
+  const [, setLocation] = useLocation();
   const remove = useRemoveFromCart();
   const addToServer = useAddToCart();
   const checkout = useCheckout();
@@ -51,11 +53,11 @@ export default function CartPage() {
                   <div className="text-sm text-muted-foreground">GHS {Number(priceFor(it.product)).toFixed(2)} x {it.quantity}{it.phoneNumber ? ` • To: ${it.phoneNumber}` : ''}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {it.__local ? (
-                    <Button variant="ghost" onClick={() => removeLocal(it.product.id)}>Remove</Button>
-                  ) : (
-                    <Button variant="ghost" onClick={() => remove.mutate({ productId: it.product.id })}>Remove</Button>
-                  )}
+                    {it.__local ? (
+                      <Button variant="ghost" onClick={() => removeLocal(it.cartId)}>Remove</Button>
+                    ) : (
+                      <Button variant="ghost" onClick={() => remove.mutate({ productId: it.product.id })}>Remove</Button>
+                    )}
                 </div>
               </div>
             ))}
@@ -86,13 +88,37 @@ export default function CartPage() {
               <div className="flex items-center gap-2">
                 <Button 
                   variant="outline"
-                  onClick={() => clearCart()}
+                  onClick={async () => {
+                    // Clear server cart for authenticated users, always clear local cart
+                    try {
+                      if (user) {
+                        const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
+                        const resp = await fetchWithAuth('/api/cart/clear', { method: 'POST' });
+                        if (!resp.ok) {
+                          // ignore server clear failure but notify
+                          // eslint-disable-next-line no-console
+                          console.warn('Server clear cart failed');
+                        }
+                        // Invalidate server cart query
+                      }
+                    } catch (e) {
+                      console.error('Failed to clear server cart', e);
+                    }
+                    clearCart();
+                  }}
                   disabled={merged.length === 0}
                 >
                   Clear Cart
                 </Button>
                 <Button 
                   onClick={async () => {
+                    // Require authentication before checkout
+                    if (!user) {
+                      toast({ title: 'Login required', description: 'Please log in to checkout', variant: 'default' });
+                      setLocation('/auth');
+                      return;
+                    }
+
                     // Sync local items to server before checkout
                     if (localItems.length > 0) {
                       setIsSyncing(true);
@@ -109,6 +135,7 @@ export default function CartPage() {
                       }
                       setIsSyncing(false);
                     }
+
                     checkout.mutate({ paymentMethod });
                   }}
                   disabled={isSyncing || checkout.isLoading || merged.length === 0}
