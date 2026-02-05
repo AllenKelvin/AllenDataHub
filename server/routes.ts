@@ -358,16 +358,16 @@ export async function registerRoutes(
   });
 
   app.post('/api/cart/checkout', verifyJWT, async (req, res) => {
-    const user = (req as any).user as any;
-    const userId = user.id;
-    const { paymentMethod = 'paystack' } = req.body;
+    try {
+      const user = (req as any).user as any;
+      const userId = user.id;
+      const { paymentMethod = 'paystack' } = req.body;
 
-    const cart = await storage.getCart(userId);
-    console.log(`[Checkout] ===== CHECKOUT START =====`);
-    console.log(`[Checkout] User: ${userId}, Cart items: ${cart.length}`);
-    console.log(`[Checkout] Full cart: ${JSON.stringify(cart)}`);
-    
-    if (!cart || cart.length === 0) return res.status(400).json({ message: 'Cart is empty' });
+      console.log(`[Checkout] ===== CHECKOUT START =====`);
+      console.log(`[Checkout] User: ${userId}, Role: ${user.role}, paymentMethod: ${paymentMethod}`);
+      
+      const cart = await storage.getCart(userId);
+      console.log(`[Checkout] Cart items: ${cart.length}, Full cart: ${JSON.stringify(cart)}`);
 
     // compute total with role-specific pricing
     let total = 0;
@@ -484,9 +484,23 @@ export async function registerRoutes(
         }),
       });
       const data = await resp.json();
+      console.log(`[Paystack] Initialize response status=${resp.status}, data=${JSON.stringify(data)}`);
+      if (!resp.ok) {
+        console.error(`[Paystack] Initialize failed: ${resp.statusText}`);
+        return res.status(400).json({ message: 'Paystack initialization failed', details: data });
+      }
+      if (data.status === false) {
+        console.error(`[Paystack] API returned error: ${data.message}`);
+        return res.status(400).json({ message: data.message || 'Paystack initialization failed', details: data });
+      }
       return res.json(data);
-    } catch (err) {
-      return res.status(500).json({ message: 'Paystack initialization failed' });
+    } catch (err: any) {
+      console.error(`[Paystack] Exception: ${err.message}`);
+      return res.status(500).json({ message: 'Paystack initialization failed', error: err.message });
+    }
+    } catch (err: any) {
+      console.error(`[Checkout] Outer catch - Exception: ${err.message}, Stack: ${err.stack}`);
+      return res.status(500).json({ message: 'Checkout failed', error: err.message });
     }
   });
 

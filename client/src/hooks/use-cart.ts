@@ -81,9 +81,14 @@ export function useCheckout() {
       const res = await fetchWithAuth('/api/cart/checkout', { method: 'POST', body: JSON.stringify({ paymentMethod }) });
       if (!res.ok) {
         const err = await res.json();
+        // eslint-disable-next-line no-console
+        console.error('[checkout] HTTP error:', res.status, err);
         throw new Error(err.message || 'Checkout failed');
       }
-      return res.json();
+      const data = await res.json();
+      // eslint-disable-next-line no-console
+      console.log('[checkout] success response:', data);
+      return data;
     },
     onSuccess: (data) => {
       // Helpful debug logging
@@ -117,6 +122,10 @@ export function useCheckout() {
         }, 200);
       } else if (data.status === 'ok') {
         toast({ title: 'Success', description: 'Order completed successfully' });
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[useCheckout] response has no authorization_url or status ok:', data);
+        toast({ title: 'Checkout', description: 'Proceeding with payment', variant: 'default' });
       }
     },
     onError: (err: any) => {

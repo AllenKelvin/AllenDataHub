@@ -148,14 +148,24 @@ export function useLogin() {
     },
     onSuccess: (data: any) => {
       const user = data.user;
+      const userId = (user as any).id || (user as any)._id?.toString();
       queryClient.setQueryData([api.auth.me.path], user);
       toast({ title: "Welcome back!", description: `Logged in as ${user.username}` });
+      
+      // Clear old local cart for this user to prevent old items from reappearing
+      try {
+        const cartKey = userId ? `cart_${userId}` : 'cart_guest';
+        localStorage.removeItem(cartKey);
+      } catch (e) {
+        // ignore cleanup errors
+      }
+      
       // If there was a pending cart saved before login, push it to server
       (async () => {
         try {
           const pending = localStorage.getItem("pendingCart");
           if (pending) {
-            const items = JSON.parse(pending) as Array<{ productId: string; quantity?: number }>;
+            const items = JSON.parse(pending) as Array<{ productId: string; quantity?: number; phoneNumber?: string }>;
             for (const it of items) {
               await fetch(`${BACKEND_URL}/api/cart/add`, {
                 method: "POST",

@@ -119,12 +119,17 @@ export default function CartPage() {
                       return;
                     }
 
-                    // Sync local items to server before checkout
+                    // Sync local items to server silently before checkout
                     if (localItems.length > 0) {
                       setIsSyncing(true);
                       try {
+                        const { fetchWithAuth } = await import('@/lib/fetchWithAuth');
                         for (const item of localItems) {
-                          await addToServer.mutateAsync({ productId: item.productId, quantity: item.quantity || 1, phoneNumber: item.phoneNumber });
+                          const res = await fetchWithAuth('/api/cart/add', { 
+                            method: 'POST', 
+                            body: JSON.stringify({ productId: item.productId, quantity: item.quantity || 1, phoneNumber: item.phoneNumber }) 
+                          });
+                          if (!res.ok) throw new Error('Failed to sync cart item');
                         }
                         // Clear local cart after syncing
                         clearCart();
