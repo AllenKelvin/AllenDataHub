@@ -18,6 +18,7 @@ declare module "http" {
 }
 
 const allowedOrigins = [
+  "https://allendatahub-two.vercel.app",
   "https://allen-data-hub.vercel.app",
   "http://localhost:5173", // Dev
   process.env.FRONTEND_URL, // For Vercel deployment
