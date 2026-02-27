@@ -118,31 +118,7 @@ class Portal02Service {
     }
   }
 
-  async purchaseDataBundleWithRetry(
-    phoneNumber: string,
-    bundleSize: string | number,
-    network: string,
-    orderReference?: string | null,
-    maxRetries = 2
-  ) {
-    let lastResult: any;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const result = await this.purchaseDataBundle(phoneNumber, bundleSize, network, orderReference);
-      lastResult = result;
-      if (result.success) return result;
-      if (
-        result.error?.includes?.("not available") ||
-        result.error?.includes?.("Invalid") ||
-        result.error?.includes?.("must be")
-      )
-        break;
-      if (attempt < maxRetries) {
-        const wait = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    }
-    return lastResult || { success: false, error: "All purchase attempts failed" };
-  }
+
 
   processWebhookPayload(payload: any) {
     const event = payload.event || payload.event_type;

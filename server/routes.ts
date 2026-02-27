@@ -183,9 +183,12 @@ export async function registerRoutes(
         if (metadata.type === "wallet") {
           const agentId = metadata.agentId;
           if (agentId) {
-            console.log(`[Webhook] Crediting wallet for agent ${agentId} with ${amount / 100} GHS`);
-            // Credit agent balance by amount (pesewas converted to main currency)
-            await (storage as any).creditAgentBalance(agentId, amount / 100);
+            const amountInGHS = amount / 100; // Convert pesewas to GHS
+            const adminFee = amountInGHS * 0.04; // 4% admin fee
+            const amountAfterFee = amountInGHS - adminFee;
+            console.log(`[Webhook] Wallet topup for agent ${agentId}. Amount: ${amountInGHS} GHS, Admin Fee (4%): ${adminFee.toFixed(2)} GHS, Net Credit: ${amountAfterFee.toFixed(2)} GHS`);
+            // Credit agent balance with amount minus 4% admin fee
+            await (storage as any).creditAgentBalance(agentId, amountAfterFee);
           }
         }
 
@@ -197,7 +200,12 @@ export async function registerRoutes(
           if (userId && cart.length > 0) {
             const { Product } = await import("./models/product");
             const { Order } = await import("./models/order");
+            const { User } = await import("./models/user");
             const portal02Service = (await import("./services/portal02Service")).default;
+
+            // Get user role for pricing
+            const webhookUser = await User.findById(userId).lean();
+            const userRole = webhookUser?.role;
 
             let createdOrdersCount = 0;
             for (const item of cart) {
@@ -206,6 +214,11 @@ export async function registerRoutes(
                 const p = await Product.findById(item.productId).lean();
                 const phoneNumber = item.phoneNumber || "";
                 const orderRef = `ORD-${Date.now()}-${i}`;
+
+                // Use role-specific price, fallback to base price if not set
+                const priceForRole = userRole === 'agent' 
+                  ? (p?.agentPrice ?? p?.price) 
+                  : (p?.userPrice ?? p?.price);
 
                 console.log(`[Webhook] Creating order for product ${item.productId}, phone: ${phoneNumber}, network: ${p?.network}`);
                 
@@ -216,13 +229,14 @@ export async function registerRoutes(
                   paymentStatus: "success",
                   productName: p?.name,
                   statusOverride: p && phoneNumber ? "processing" : undefined,
+                  priceOverride: priceForRole,
                 });
                 createdOrdersCount++;
 
                 if (p && phoneNumber && portal02Service) {
                   try {
                     console.log(`[Webhook] Calling vendor for ${phoneNumber}, ${p.dataAmount}GB ${p.network}`);
-                    const vendorResult = await portal02Service.purchaseDataBundleWithRetry(
+                    const vendorResult = await portal02Service.purchaseDataBundle(
                       phoneNumber,
                       p.dataAmount,
                       p.network,
@@ -422,7 +436,8 @@ export async function registerRoutes(
       const p = await (await import('./models/product')).Product.findById(item.productId).lean();
       if (!p) continue;
       productsMap[item.productId] = p;
-      const perItemPrice = role === 'agent' ? p.agentPrice : p.userPrice;
+      // Use role-specific price, fallback to base price if not set
+      const perItemPrice = role === 'agent' ? (p.agentPrice ?? p.price) : (p.userPrice ?? p.price);
       total += (perItemPrice || 0) * (item.quantity || 1);
     }
     console.log(`[Checkout] Total price calculated: ${total}, Payment method: ${paymentMethod}`);
@@ -451,7 +466,8 @@ export async function registerRoutes(
       for (const item of cart) {
         console.log(`[Checkout] Processing cart item: ${JSON.stringify(item)}`);
         const p = productsMap[item.productId];
-        const perItemPrice = (role === 'agent') ? p.agentPrice : p.userPrice;
+        // Use role-specific price, fallback to base price if not set
+        const perItemPrice = (role === 'agent') ? (p.agentPrice ?? p.price) : (p.userPrice ?? p.price);
         const phoneNumber = item.phoneNumber || "";
         console.log(`[Checkout] Item has quantity: ${item.quantity}, will create ${item.quantity || 1} orders`);
         for (let i = 0; i < (item.quantity || 1); i++) {
@@ -469,7 +485,7 @@ export async function registerRoutes(
             created.push(order);
             if (p && phoneNumber && portal02Service) {
               try {
-                const vendorResult = await portal02Service.purchaseDataBundleWithRetry(
+                const vendorResult = await portal02Service.purchaseDataBundle(
                   phoneNumber,
                   p.dataAmount,
                   p.network,
@@ -598,7 +614,10 @@ export async function registerRoutes(
       // Determine role-specific price override if available
       const prod = await (await import('./models/product')).Product.findById(orderData.productId).lean();
 
-      const priceForRole = user.role === 'agent' ? prod?.agentPrice : prod?.userPrice;
+      // Use role-specific price, fallback to base price if not set
+      const priceForRole = user.role === 'agent' 
+        ? (prod?.agentPrice ?? prod?.price) 
+        : (prod?.userPrice ?? prod?.price);
       const order = await storage.createOrder({ ...orderData, userId: user.id, priceOverride: priceForRole });
       res.status(201).json(order);
     } catch (e) {
@@ -624,7 +643,10 @@ export async function registerRoutes(
     if (useWallet && (user.role === 'agent' || user.role === 'admin')) {
       // user.balance is stored as integer smallest unit? ensure it's number
       const balance = (user.balance || 0);
-      const priceForRole = (user.role === 'agent') ? p.agentPrice : p.userPrice;
+      // Use role-specific price, fallback to base price if not set
+      const priceForRole = (user.role === 'agent') 
+        ? (p.agentPrice ?? p.price) 
+        : (p.userPrice ?? p.price);
       if (!priceForRole || balance < priceForRole) return res.status(400).json({ message: "Insufficient wallet balance" });
 
       // Deduct and create completed order

@@ -168,10 +168,13 @@ export class DatabaseStorage implements IStorage {
     const p = await Product.findById(order.productId).lean();
     if (!p) throw new Error("Product not found");
 
+    // Use priceOverride if provided and is a number, otherwise use base price
+    const finalPrice = typeof order.priceOverride === 'number' ? order.priceOverride : (p.price ?? 0);
+
     const newOrder = new Order({
       userId: order.userId,
       productId: order.productId,
-      price: typeof order.priceOverride === 'number' ? order.priceOverride : p.price,
+      price: finalPrice,
       dataAmount: p.dataAmount,
       status: "pending",
     });
@@ -203,10 +206,13 @@ export class DatabaseStorage implements IStorage {
       const p = await Product.findById(order.productId).lean();
       if (!p) throw new Error("Product not found");
 
+      // Use priceOverride if provided and is a number, otherwise use base price
+      const finalPrice = typeof order.priceOverride === 'number' ? order.priceOverride : (p.price ?? 0);
+
       const newOrder = new Order({
         userId: order.userId,
         productId: order.productId,
-        price: typeof order.priceOverride === 'number' ? order.priceOverride : p.price,
+        price: finalPrice,
         dataAmount: p.dataAmount,
         status: order.statusOverride || "completed",
         paymentStatus: order.paymentStatus || "success",
