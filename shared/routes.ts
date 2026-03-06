@@ -66,6 +66,25 @@ export const api = {
         403: errorSchemas.unauthorized,
       },
     },
+    forgotPassword: {
+      method: 'POST' as const,
+      path: '/api/forgot-password',
+      input: z.object({ email: z.string().email() }),
+      responses: {
+        200: z.object({ message: z.string(), testToken: z.string().optional() }),
+        400: errorSchemas.validation,
+      },
+    },
+    resetPassword: {
+      method: 'POST' as const,
+      path: '/api/reset-password',
+      input: z.object({ email: z.string(), token: z.string(), newPassword: z.string() }),
+      responses: {
+        200: z.object({ message: z.string() }),
+        401: errorSchemas.unauthorized,
+        400: errorSchemas.validation,
+      },
+    },
   },
   users: {
     listUnverifiedAgents: {
