@@ -20,3 +20,5 @@ services:
         scope: build
       - key: PORTAL02_BASE_URL
         scope: build
+      - key: BREVO_API_KEY
+        scope: build
