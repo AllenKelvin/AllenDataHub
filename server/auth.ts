@@ -258,7 +258,7 @@ export function setupAuth(app: Express) {
             "api-key": process.env.BREVO_API_KEY || "",
           },
           body: JSON.stringify({
-            sender: { name: "AllenDataHub", email: "noreply@allendatahub.com" },
+            sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
             to: [{ email, name: username }],
             subject: "Password Reset Request - AllenDataHub",
             htmlContent: `
