@@ -226,6 +226,45 @@ export function setupAuth(app: Express) {
     res.json({ accessToken });
   });
 
+  // Test Brevo email configuration (DEBUG ONLY)
+  app.post("/api/test-email", async (req, res) => {
+    const { testEmail = "test@example.com" } = req.body;
+    console.log(`[Email Debug] Testing Brevo with recipient: ${testEmail}`);
+    
+    try {
+      const brevoResponse = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": process.env.BREVO_API_KEY || "NOT_SET",
+        },
+        body: JSON.stringify({
+          sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
+          to: [{ email: testEmail, name: "Test User" }],
+          subject: "Test Email - AllenDataHub",
+          htmlContent: "<h1>Test Email</h1><p>If you see this, Brevo is working!</p>",
+        }),
+      });
+
+      const responseData = await brevoResponse.json();
+      console.log(`[Email Debug] Status: ${brevoResponse.status}, Response:`, responseData);
+      
+      return res.json({
+        success: brevoResponse.ok,
+        status: brevoResponse.status,
+        response: responseData,
+        apiKeySet: !!process.env.BREVO_API_KEY,
+      });
+    } catch (err: any) {
+      console.error("[Email Debug] Exception:", err.message);
+      return res.status(500).json({
+        success: false,
+        error: err.message,
+        apiKeySet: !!process.env.BREVO_API_KEY,
+      });
+    }
+  });
+
   // Forgot Password endpoint - send reset link via email
   app.post("/api/forgot-password", async (req, res) => {
     try {
@@ -251,53 +290,75 @@ export function setupAuth(app: Express) {
 
       // Send email via Brevo API
       try {
-        const brevoResponse = await fetch("https://api.brevo.com/v3/smtp/email", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "api-key": process.env.BREVO_API_KEY || "",
-          },
-          body: JSON.stringify({
-            sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
-            to: [{ email, name: username }],
-            subject: "Password Reset Request - AllenDataHub",
-            htmlContent: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background-color: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-                  <h1 style="margin: 0;">AllenDataHub</h1>
-                </div>
-                <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
-                  <p style="font-size: 16px; color: #1f2937; margin: 0 0 20px 0;">Hi ${username},</p>
-                  
-                  <p style="font-size: 16px; color: #1f2937; margin: 0 0 20px 0;">We received a request to reset your password. Here is your reset token:</p>
-                  
-                  <div style="background-color: #fff; border: 2px dashed #3b82f6; padding: 20px; text-align: center; margin: 30px 0; border-radius: 6px;">
-                    <p style="font-size: 12px; color: #6b7280; margin: 0 0 10px 0;">Reset Token (Valid for 1 hour)</p>
-                    <p style="font-size: 18px; font-weight: bold; color: #3b82f6; margin: 0; word-break: break-all; font-family: monospace;">${resetToken}</p>
-                  </div>
-                  
-                  <p style="font-size: 14px; color: #1f2937; margin: 0 0 20px 0;">Go to the password reset page and paste this token along with your new password to complete the reset process.</p>
-                  
-                  <p style="font-size: 14px; color: #666; margin: 0 0 20px 0;">This token will expire in 1 hour for security reasons.</p>
-                  
-                  <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                  
-                  <p style="font-size: 12px; color: #6b7280; margin: 0;">If you didn't request a password reset, please ignore this email. Your account remains secure.</p>
-                </div>
-              </div>
-            `,
-          }),
-        });
-
-        if (!brevoResponse.ok) {
-          const error = await brevoResponse.json();
-          console.error("Brevo email error:", error);
-          // Don't fail the request, just log the error
+        const brevoApiKey = process.env.BREVO_API_KEY;
+        if (!brevoApiKey) {
+          console.error("[Password Reset] BREVO_API_KEY not set in environment");
+          // Continue without email - token is stored
         } else {
-          console.log(`[Password Reset] Email sent to ${email}`);
+          console.log(`[Password Reset] Sending email to ${email} via Brevo...`);
+          const brevoResponse = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "api-key": brevoApiKey,
+            },
+            body: JSON.stringify({
+              sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
+              to: [{ email, name: username }],
+              subject: "Password Reset Request - AllenDataHub",
+              htmlContent: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <div style="background-color: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0;">AllenDataHub</h1>
+                  </div>
+                  <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+                    <p style="font-size: 16px; color: #1f2937; margin: 0 0 20px 0;">Hi ${username},</p>
+                    
+                    <p style="font-size: 16px; color: #1f2937; margin: 0 0 20px 0;">We received a request to reset your password. Here is your reset token:</p>
+                    
+                    <div style="background-color: #fff; border: 2px dashed #3b82f6; padding: 20px; text-align: center; margin: 30px 0; border-radius: 6px;">
+                      <p style="font-size: 12px; color: #6b7280; margin: 0 0 10px 0;">Reset Token (Valid for 1 hour)</p>
+                      <p style="font-size: 18px; font-weight: bold; color: #3b82f6; margin: 0; word-break: break-all; font-family: monospace;">${resetToken}</p>
+                    </div>
+                    
+                    <p style="font-size: 14px; color: #1f2937; margin: 0 0 20px 0;">Go to the password reset page and paste this token along with your new password to complete the reset process.</p>
+                    
+                    <p style="font-size: 14px; color: #666; margin: 0 0 20px 0;">This token will expire in 1 hour for security reasons.</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                    
+                    <p style="font-size: 12px; color: #6b7280; margin: 0;">If you didn't request a password reset, please ignore this email. Your account remains secure.</p>
+                  </div>
+                </div>
+              `,
+            }),
+          });
+
+          const statusCode = brevoResponse.status;
+          const responseData = await brevoResponse.json();
+          console.log(`[Password Reset] Brevo response status: ${statusCode}`);
+          console.log(`[Password Reset] Full response:`, JSON.stringify(responseData, null, 2));
+
+          if (!brevoResponse.ok) {
+            console.error("❌ [Password Reset] BREVO FAILED");
+            console.error("Status:", statusCode);
+            console.error("Error details:", responseData);
+            console.error("Common causes:");
+            console.error("  1. Sender email 'allendatahub@gmail.com' is NOT verified in Brevo");
+            console.error("  2. Invalid or expired API key");
+            console.error("  3. Recipient email is on suppression list");
+            // Return error to frontend so user knows
+            return res.status(500).json({ 
+              message: "Email service error. Contact support.",
+              error: statusCode === 400 ? "Sender email not verified in Brevo" : responseData.message 
+            });
+          } else {
+            console.log(`[Password Reset] ✓ Email successfully sent to ${email}`);
+            console.log(`[Password Reset] Message ID: ${responseData.messageId || 'N/A'}`);
+          }
         }
-      } catch (emailError) {
-        console.error("Failed to send email via Brevo:", emailError);
+      } catch (emailError: any) {
+        console.error("[Password Reset] Network error sending email:", emailError.message);
         // Continue anyway - token is still stored
       }
 
