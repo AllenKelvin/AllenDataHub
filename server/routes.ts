@@ -228,7 +228,7 @@ export async function registerRoutes(
                   phoneNumber,
                   paymentStatus: "success",
                   productName: p?.name,
-                  statusOverride: p && phoneNumber ? "processing" : undefined,
+                  statusOverride: p && phoneNumber ? "pending" : "completed",
                   priceOverride: priceForRole,
                 });
                 createdOrdersCount++;
@@ -479,7 +479,7 @@ export async function registerRoutes(
               priceOverride: perItemPrice,
               phoneNumber,
               productName: p?.name,
-              statusOverride: p && phoneNumber ? "processing" : undefined,
+              statusOverride: p && phoneNumber ? "pending" : "completed",
             });
             console.log(`[Checkout] Created order: ${JSON.stringify(order)}`);
             created.push(order);
