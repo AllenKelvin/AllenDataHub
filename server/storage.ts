@@ -13,14 +13,17 @@ export interface IStorage {
   getUnverifiedAgents(): Promise<any[]>;
   updatePassword(id: string, newPassword: string): Promise<any | null>;
   // Paginated orders for a user: returns orders array, pagination info and completed count
-  getOrdersByUser(userId: string, page?: number, limit?: number): Promise<{ orders: any[]; pagination: { total: number; page: number; limit: number; pages: number }; completedCount: number }>;
+  getOrdersByUser(
+    userId: string,
+    page?: number,
+    limit?: number,
+    opts?: { orderSource?: "web" | "api" },
+  ): Promise<{ orders: any[]; pagination: { total: number; page: number; limit: number; pages: number }; completedCount: number }>;
 
   getProducts(): Promise<any[]>;
   createProduct(product: InsertProduct): Promise<any>;
 
   createOrder(order: InsertOrder & { userId: string }): Promise<any>;
-  // Implementation below provides pagination and counts
-  getOrdersByUser(userId: string, page?: number, limit?: number): Promise<{ orders: any[]; pagination: { total: number; page: number; limit: number; pages: number }; completedCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -201,7 +204,7 @@ export class DatabaseStorage implements IStorage {
     return { ...obj, id: (obj as any)._id?.toString() };
   }
 
-  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string }) {
+  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string; orderSource?: "web" | "api"; walletBalanceBefore?: number; walletBalanceAfter?: number }) {
     try {
       const p = await Product.findById(order.productId).lean();
       if (!p) throw new Error("Product not found");
@@ -218,6 +221,9 @@ export class DatabaseStorage implements IStorage {
         paymentStatus: order.paymentStatus || "success",
         phoneNumber: order.phoneNumber || undefined,
         productName: order.productName || p.name,
+        orderSource: order.orderSource || "web",
+        walletBalanceBefore: typeof order.walletBalanceBefore === "number" ? order.walletBalanceBefore : undefined,
+        walletBalanceAfter: typeof order.walletBalanceAfter === "number" ? order.walletBalanceAfter : undefined,
       });
 
       console.log(`[Order] Attempting to save order: ${JSON.stringify(newOrder.toObject())}`);
@@ -264,12 +270,14 @@ export class DatabaseStorage implements IStorage {
     return { ...updated, id: updated._id?.toString(), balance: typeof updated.balance === 'string' ? parseFloat(updated.balance) : updated.balance };
   }
 
-  async getOrdersByUser(userId: string, page = 1, limit = 10) {
+  async getOrdersByUser(userId: string, page = 1, limit = 10, opts?: { orderSource?: "web" | "api" }) {
     const skip = (page - 1) * limit;
+    const filter: Record<string, unknown> = { userId };
+    if (opts?.orderSource) filter.orderSource = opts.orderSource;
     const [docs, total, completedCount] = await Promise.all([
-      Order.find({ userId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-      Order.countDocuments({ userId }),
-      Order.countDocuments({ userId, status: { $in: ['completed', 'delivered'] } }),
+      Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Order.countDocuments(filter),
+      Order.countDocuments({ ...filter, status: { $in: ["completed", "delivered"] } }),
     ]);
     const orders = docs.map((d: any) => ({ ...d, id: d._id?.toString(), userId: d.userId?.toString() }));
     return { orders, pagination: { total, page, limit, pages: Math.ceil(total / limit) }, completedCount };

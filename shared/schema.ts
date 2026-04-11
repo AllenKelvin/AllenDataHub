@@ -61,6 +61,14 @@ export const orderResponseSchema = z.object({
   dataAmount: z.string().optional(),
   phoneNumber: z.string().optional(),
   productNetwork: z.string().optional(),
+  orderSource: z.enum(["web", "api"]).optional(),
+  walletBalanceBefore: z.number().optional(),
+  walletBalanceAfter: z.number().optional(),
+  lastStatusUpdateAt: z.string().nullable().optional(),
+  lastVendorWebhook: z
+    .object({ vendorStatus: z.string().optional(), at: z.string().optional() })
+    .nullable()
+    .optional(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;

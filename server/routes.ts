@@ -5,6 +5,13 @@ import { verifyJWT } from "./jwt";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import {
+  verifyApiKeyMiddleware,
+  generateApiKeyPlaintext,
+  hashApiKey,
+  productPricesToRecord,
+  resolveApiPrice,
+} from "./apiKeyAuth";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -82,6 +89,133 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: list API access requests and configs
+  app.get("/api/admin/api-access", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    try {
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const { User } = await import("./models/user");
+      const { Product } = await import("./models/product");
+      const configs = await AgentApiConfig.find().sort({ requestedAt: -1 }).lean();
+      const products = await Product.find().lean();
+      const productList = products.map((p: any) => ({
+        id: p._id?.toString(),
+        name: p.name,
+        network: p.network,
+        dataAmount: p.dataAmount,
+        agentPrice: p.agentPrice ?? p.price,
+      }));
+      const out = await Promise.all(
+        configs.map(async (c: any) => {
+          const u = await User.findById(c.userId).select("username email role isVerified balance").lean();
+          return {
+            userId: c.userId?.toString(),
+            username: u?.username,
+            email: u?.email,
+            role: u?.role,
+            isVerified: u?.isVerified,
+            balance: u?.balance,
+            status: c.status,
+            requestedAt: c.requestedAt,
+            lastUsedAt: c.lastUsedAt,
+            productPrices: productPricesToRecord(c.productPrices),
+            products: productList,
+          };
+        }),
+      );
+      res.json(out);
+    } catch (err: any) {
+      console.error("[admin api-access list]", err?.message);
+      res.status(500).json({ message: "Failed to list API access" });
+    }
+  });
+
+  app.patch("/api/admin/api-access/:userId/pricing", verifyJWT, async (req, res) => {
+    const admin = (req as any).user;
+    if (admin?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const targetUserId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    const prices = req.body?.prices;
+    if (!prices || typeof prices !== "object") {
+      return res.status(400).json({ message: "Body must include prices object: { [productId]: number }" });
+    }
+    try {
+      const mongoose = await import("mongoose");
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const { Product } = await import("./models/product");
+      const config = await AgentApiConfig.findOne({ userId: targetUserId });
+      if (!config) return res.status(404).json({ message: "No API access request for this agent" });
+      const merged: Record<string, number> = { ...productPricesToRecord(config.productPrices) };
+      for (const [k, v] of Object.entries(prices as Record<string, unknown>)) {
+        if (!mongoose.default.Types.ObjectId.isValid(k)) continue;
+        const num = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
+        if (!Number.isFinite(num) || num <= 0) continue;
+        const p = await Product.findById(k).lean();
+        if (p) merged[k] = num;
+      }
+      config.productPrices = new Map(Object.entries(merged)) as any;
+      await config.save();
+      res.json({
+        userId: targetUserId,
+        productPrices: productPricesToRecord(config.productPrices),
+      });
+    } catch (err: any) {
+      console.error("[admin api-access pricing]", err?.message);
+      res.status(500).json({ message: "Failed to save pricing" });
+    }
+  });
+
+  app.post("/api/admin/api-access/:userId/issue-key", verifyJWT, async (req, res) => {
+    const admin = (req as any).user;
+    if (admin?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const targetUserId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    try {
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const { User } = await import("./models/user");
+      const u = await User.findById(targetUserId).lean();
+      if (!u || u.role !== "agent" || !u.isVerified) {
+        return res.status(400).json({ message: "Target must be a verified agent" });
+      }
+      let config = await AgentApiConfig.findOne({ userId: targetUserId });
+      if (!config) {
+        return res.status(404).json({ message: "Agent has not requested API access yet" });
+      }
+      if (config.status === "revoked") {
+        return res.status(400).json({ message: "API access is revoked; agent must request again" });
+      }
+      const plaintext = generateApiKeyPlaintext();
+      config.keyHash = hashApiKey(plaintext);
+      config.status = "active";
+      await config.save();
+      res.json({
+        apiKey: plaintext,
+        message: "Store this key securely. It will not be shown again.",
+        userId: targetUserId,
+      });
+    } catch (err: any) {
+      console.error("[admin issue-key]", err?.message);
+      res.status(500).json({ message: "Failed to issue API key" });
+    }
+  });
+
+  app.post("/api/admin/api-access/:userId/revoke", verifyJWT, async (req, res) => {
+    const admin = (req as any).user;
+    if (admin?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const targetUserId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    try {
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const updated = await AgentApiConfig.findOneAndUpdate(
+        { userId: targetUserId },
+        { $set: { status: "revoked", keyHash: null } },
+        { new: true },
+      );
+      if (!updated) return res.status(404).json({ message: "No API config for this user" });
+      res.json({ ok: true, status: "revoked" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to revoke" });
+    }
+  });
+
   // Verify Agent (Admin only)
   app.patch(api.users.verifyAgent.path, verifyJWT, async (req, res) => {
     const user = (req as any).user;
@@ -120,6 +254,54 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error('[Profile] Update error:', err.message);
       res.status(500).json({ message: 'Failed to update profile' });
+    }
+  });
+
+  // Agent: request API access (verified agents only)
+  app.post("/api/agent/api-access/request", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    const dbUser = await storage.getUser(user.id);
+    if (!dbUser || dbUser.role !== "agent" || !dbUser.isVerified) {
+      return res.status(403).json({ message: "Only verified agents can request API access" });
+    }
+    try {
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const existing = await AgentApiConfig.findOne({ userId: user.id }).lean();
+      if (existing?.status === "active") {
+        return res.status(400).json({ message: "You already have an active API key" });
+      }
+      if (existing?.status === "pending") {
+        return res.json({ status: "pending", message: "Your request is already pending admin review" });
+      }
+      if (existing?.status === "revoked") {
+        await AgentApiConfig.findOneAndUpdate(
+          { userId: user.id },
+          { $set: { status: "pending", keyHash: null } },
+        );
+        return res.json({ status: "pending", message: "API access request submitted" });
+      }
+      await AgentApiConfig.create({ userId: user.id, status: "pending" });
+      return res.json({ status: "pending", message: "API access request submitted" });
+    } catch (err: any) {
+      console.error("[API access request]", err?.message);
+      res.status(500).json({ message: "Failed to submit request" });
+    }
+  });
+
+  app.get("/api/agent/api-access/status", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "agent") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    try {
+      const { AgentApiConfig } = await import("./models/agentApiConfig");
+      const doc = await AgentApiConfig.findOne({ userId: user.id }).lean();
+      const status = doc?.status ?? "none";
+      return res.json({ status, hasKey: status === "active" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to load status" });
     }
   });
 
@@ -213,7 +395,6 @@ export async function registerRoutes(
               for (let i = 0; i < qty; i++) {
                 const p = await Product.findById(item.productId).lean();
                 const phoneNumber = item.phoneNumber || "";
-                const orderRef = `ORD-${Date.now()}-${i}`;
 
                 // Use role-specific price, fallback to base price if not set
                 const priceForRole = userRole === 'agent' 
@@ -235,17 +416,19 @@ export async function registerRoutes(
 
                 if (p && phoneNumber && portal02Service) {
                   try {
-                    console.log(`[Webhook] Calling vendor for ${phoneNumber}, ${p.dataAmount}GB ${p.network}`);
+                    const clientRef = `ORD-${order.id}-${Date.now()}`;
+                    console.log(`[Webhook] Calling vendor for ${phoneNumber}, ${p.dataAmount}GB ${p.network}, ref=${clientRef}`);
                     const vendorResult = await portal02Service.purchaseDataBundle(
                       phoneNumber,
                       p.dataAmount,
                       p.network,
-                      orderRef
+                      clientRef
                     );
                     console.log(`[Webhook] Vendor result - Success: ${vendorResult.success}, Message: ${vendorResult.message}`);
                     
                     await Order.findByIdAndUpdate(order.id, {
                       $set: {
+                        clientOrderReference: clientRef,
                         vendorOrderId: vendorResult.transactionId || vendorResult.reference,
                         "processingResults.0": {
                           itemIndex: 0,
@@ -298,28 +481,34 @@ export async function registerRoutes(
 
       const ourStatus = ["delivered", "resolved"].includes(status) ? "completed" : ["failed", "cancelled", "refunded"].includes(status) ? "failed" : "processing";
 
+      const candidates = [...new Set([orderId, reference].filter((x) => x != null && String(x).trim() !== "").map((x) => String(x)))];
+      if (candidates.length === 0) {
+        console.warn("[Portal02] Webhook missing orderId/reference; body:", JSON.stringify(req.body).slice(0, 500));
+        return res.status(200).send("OK");
+      }
+
+      const orConditions = candidates.flatMap((c) => [
+        { vendorOrderId: c },
+        { clientOrderReference: c },
+        { "processingResults.transactionId": c },
+        { "processingResults.reference": c },
+      ]);
+
+      const statusAt = processed.timestamp instanceof Date && !isNaN(processed.timestamp.getTime()) ? processed.timestamp : new Date();
+
       const updated = await Order.findOneAndUpdate(
+        { $or: orConditions },
         {
-          $or: [
-            { vendorOrderId: orderId },
-            { vendorOrderId: reference },
-            { "processingResults.transactionId": orderId },
-            { "processingResults.transactionId": reference },
-            { "processingResults.reference": orderId },
-            { "processingResults.reference": reference },
-          ],
-        },
-        {
-          $set: { status: ourStatus },
+          $set: { status: ourStatus, lastStatusUpdateAt: statusAt },
           $push: {
             webhookHistory: {
               event: processed.event,
-              orderId,
-              reference,
+              orderId: orderId != null ? String(orderId) : "",
+              reference: reference != null ? String(reference) : "",
               status,
               recipient: processed.recipient,
               volume: processed.volume,
-              timestamp: processed.timestamp,
+              timestamp: statusAt,
             },
           },
         },
@@ -327,7 +516,9 @@ export async function registerRoutes(
       );
 
       if (updated) {
-        console.log(`[Portal02] Order ${updated._id} updated to ${ourStatus}`);
+        console.log(`[Portal02] Order ${updated._id} updated to ${ourStatus} (lastStatusUpdateAt=${statusAt.toISOString()})`);
+      } else {
+        console.warn(`[Portal02] No order matched webhook candidates: ${candidates.join(", ")}`);
       }
       res.status(200).send("OK");
     } catch (err: any) {
@@ -485,14 +676,16 @@ export async function registerRoutes(
             created.push(order);
             if (p && phoneNumber && portal02Service) {
               try {
+                const clientRef = `ORD-${order.id}-${Date.now()}`;
                 const vendorResult = await portal02Service.purchaseDataBundle(
                   phoneNumber,
                   p.dataAmount,
                   p.network,
-                  `ORD-${order.id}-${Date.now()}`
+                  clientRef
                 );
                 await Order.findByIdAndUpdate(order.id, {
                   $set: {
+                    clientOrderReference: clientRef,
                     vendorOrderId: vendorResult.transactionId || vendorResult.reference,
                     "processingResults.0": {
                       itemIndex: 0,
@@ -680,12 +873,18 @@ export async function registerRoutes(
     const userId = user.id;
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit)) || 10));
-    const { orders, pagination, completedCount } = await storage.getOrdersByUser(userId, page, limit);
+    const sourceQ = String(req.query.source || "");
+    const sourceOpt =
+      sourceQ === "api" || sourceQ === "web" ? ({ orderSource: sourceQ } as const) : undefined;
+    const { orders, pagination, completedCount } = await storage.getOrdersByUser(userId, page, limit, sourceOpt);
     const { Product } = await import('./models/product');
     const enrichedOrders = await Promise.all(
       orders.map(async (order: any) => {
         try {
           const product = await Product.findById(order.productId).lean();
+          const h = order.webhookHistory;
+          const lastWh =
+            Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
           return {
             ...order,
             productName: order.productName || product?.name || 'Unknown Product',
@@ -695,6 +894,10 @@ export async function registerRoutes(
             createdAt: order.createdAt,
             status: order.status,
             paymentStatus: order.paymentStatus,
+            lastStatusUpdateAt: order.lastStatusUpdateAt ?? null,
+            lastVendorWebhook: lastWh
+              ? { vendorStatus: lastWh.status, at: lastWh.timestamp }
+              : null,
           };
         } catch {
           return order;
@@ -756,16 +959,253 @@ export async function registerRoutes(
       }
       
       const product = await Product.findById(order.productId).lean();
+      const h = (order as any).webhookHistory;
+      const lastWh =
+        Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
       const enriched = {
         ...order,
+        id: (order as any)._id?.toString(),
         productName: order.productName || product?.name || 'Unknown',
         productNetwork: product?.network || '',
         dataAmount: order.dataAmount || product?.dataAmount,
+        lastStatusUpdateAt: (order as any).lastStatusUpdateAt ?? null,
+        lastVendorWebhook: lastWh
+          ? { vendorStatus: lastWh.status, at: lastWh.timestamp }
+          : null,
       };
       
       res.json(enriched);
     } catch (err) {
       res.status(500).json({ message: "Internal Server Error" });
+    }
+  });
+
+  // --- Public HTTP API (X-API-Key) for verified agents ---
+  const apiOrderBody = z.object({
+    productId: z.string().min(1),
+    phoneNumber: z.string().regex(/^\d{10}$/, "phoneNumber must be exactly 10 digits"),
+  });
+
+  app.get("/api/v1/orders", verifyApiKeyMiddleware, async (req, res) => {
+    const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+    const userId = ctx.id;
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit)) || 20));
+    const s = String(req.query.source || "api").toLowerCase();
+    let sourceOpt: { orderSource?: "web" | "api" } | undefined;
+    if (s === "all") sourceOpt = undefined;
+    else if (s === "web") sourceOpt = { orderSource: "web" };
+    else sourceOpt = { orderSource: "api" };
+
+    try {
+      const { Product } = await import("./models/product");
+      const { orders, pagination, completedCount } = await storage.getOrdersByUser(userId, page, limit, sourceOpt);
+      const list = await Promise.all(
+        orders.map(async (order: any) => {
+          const product = await Product.findById(order.productId).lean();
+          const h = order.webhookHistory;
+          const lastWh =
+            Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
+          return {
+            id: order.id,
+            status: order.status,
+            paymentStatus: order.paymentStatus,
+            orderSource: order.orderSource ?? "web",
+            phoneNumber: order.phoneNumber,
+            price: order.price,
+            productName: order.productName || product?.name || "Unknown",
+            productNetwork: product?.network || "",
+            dataAmount: order.dataAmount || product?.dataAmount,
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt,
+            lastStatusUpdateAt: order.lastStatusUpdateAt ?? null,
+            lastVendorWebhook: lastWh
+              ? { vendorStatus: lastWh.status, at: lastWh.timestamp }
+              : null,
+          };
+        }),
+      );
+      res.json({ orders: list, pagination, completedCount: completedCount ?? 0 });
+    } catch (err: any) {
+      console.error("[api/v1/orders GET]", err?.message);
+      res.status(500).json({ message: "Failed to list orders" });
+    }
+  });
+
+  app.get("/api/v1/orders/:orderId", verifyApiKeyMiddleware, async (req, res) => {
+    const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+    const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0] : req.params.orderId;
+    try {
+      const { Order } = await import("./models/order");
+      const { Product } = await import("./models/product");
+      const order = await Order.findById(orderId).lean();
+      if (!order) return res.status(404).json({ message: "Order not found" });
+      if (order.userId.toString() !== ctx.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const product = await Product.findById(order.productId).lean();
+      const h = (order as any).webhookHistory;
+      const lastWh =
+        Array.isArray(h) && h.length > 0 ? h[h.length - 1] : null;
+      res.json({
+        order: {
+          id: (order as any)._id?.toString(),
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          orderSource: (order as any).orderSource ?? "web",
+          phoneNumber: order.phoneNumber,
+          price: order.price,
+          productName: order.productName || product?.name || "Unknown",
+          productNetwork: product?.network || "",
+          dataAmount: order.dataAmount || product?.dataAmount,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          lastStatusUpdateAt: (order as any).lastStatusUpdateAt ?? null,
+          lastVendorWebhook: lastWh
+            ? { vendorStatus: lastWh.status, at: lastWh.timestamp }
+            : null,
+          webhookHistory: h ?? [],
+        },
+      });
+    } catch (err: any) {
+      console.error("[api/v1/orders/:id]", err?.message);
+      res.status(500).json({ message: "Failed to load order" });
+    }
+  });
+
+  app.get("/api/v1/products", verifyApiKeyMiddleware, async (req, res) => {
+    try {
+      const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+      const priceMap = productPricesToRecord(ctx.config.productPrices);
+      const products = await storage.getProducts();
+      const list = products.map((p: any) => {
+        const id = p.id || p._id?.toString();
+        const apiPrice = resolveApiPrice(id, p, priceMap);
+        return {
+          id,
+          name: p.name,
+          network: p.network,
+          dataAmount: p.dataAmount,
+          description: p.description ?? null,
+          apiPrice,
+        };
+      });
+      res.json({ products: list });
+    } catch (err: any) {
+      console.error("[api/v1/products]", err?.message);
+      res.status(500).json({ message: "Failed to list products" });
+    }
+  });
+
+  app.post("/api/v1/orders", verifyApiKeyMiddleware, async (req, res) => {
+    const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+    const userId = ctx.id;
+    const parse = apiOrderBody.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ message: "Invalid body", issues: parse.error.flatten() });
+    }
+    const { productId, phoneNumber } = parse.data;
+    try {
+      const { Product } = await import("./models/product");
+      const { Order } = await import("./models/order");
+      const p = await Product.findById(productId).lean();
+      if (!p) return res.status(404).json({ message: "Product not found" });
+
+      const priceMap = productPricesToRecord(ctx.config.productPrices);
+      const perItemPrice = resolveApiPrice(productId, p as any, priceMap);
+      if (!perItemPrice || perItemPrice <= 0) {
+        return res.status(400).json({ message: "No valid API price for this product" });
+      }
+
+      const freshUser = await storage.getUser(userId);
+      const balanceBefore =
+        typeof freshUser?.balance === "string" ? parseFloat(freshUser.balance) : (freshUser?.balance ?? 0);
+      if (balanceBefore < perItemPrice) {
+        return res.status(400).json({
+          message: `Insufficient wallet balance. Need GHS ${perItemPrice.toFixed(2)}, have GHS ${balanceBefore.toFixed(2)}`,
+        });
+      }
+
+      await storage.deductAgentBalance(userId, perItemPrice);
+      const afterUser = await storage.getUser(userId);
+      const balanceAfter =
+        typeof afterUser?.balance === "string" ? parseFloat(afterUser.balance) : (afterUser?.balance ?? 0);
+
+      const portal02Service = (await import("./services/portal02Service")).default;
+      const order = await storage.createCompletedOrder({
+        productId,
+        userId,
+        priceOverride: perItemPrice,
+        phoneNumber,
+        productName: p?.name,
+        statusOverride: p && phoneNumber ? "pending" : "completed",
+        orderSource: "api",
+        walletBalanceBefore: balanceBefore,
+        walletBalanceAfter: balanceAfter,
+      });
+
+      if (p && phoneNumber && portal02Service) {
+        try {
+          const clientRef = `ORD-${order.id}-${Date.now()}`;
+          const vendorResult = await portal02Service.purchaseDataBundle(
+            phoneNumber,
+            p.dataAmount,
+            p.network,
+            clientRef,
+          );
+          await Order.findByIdAndUpdate(order.id, {
+            $set: {
+              clientOrderReference: clientRef,
+              vendorOrderId: vendorResult.transactionId || vendorResult.reference,
+              "processingResults.0": {
+                itemIndex: 0,
+                success: vendorResult.success,
+                transactionId: vendorResult.transactionId,
+                reference: vendorResult.reference,
+                message: vendorResult.message,
+                error: vendorResult.error,
+                status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+              },
+              status: vendorResult.success ? "processing" : "failed",
+            },
+          });
+        } catch (vendorErr: any) {
+          console.error("[api/v1/orders] Portal-02 failed:", vendorErr?.message);
+          await Order.findByIdAndUpdate(order.id, {
+            $set: {
+              status: "failed",
+              "processingResults.0": { itemIndex: 0, success: false, error: vendorErr?.message, status: "failed" },
+            },
+          });
+        }
+      }
+
+      const finalOrder = await Order.findById(order.id).lean();
+      res.status(201).json({
+        order: {
+          id: order.id,
+          status: finalOrder?.status ?? order.status,
+          productId,
+          phoneNumber,
+          price: perItemPrice,
+          orderSource: "api",
+          walletBalanceBefore: balanceBefore,
+          walletBalanceAfter: balanceAfter,
+          createdAt: finalOrder?.createdAt,
+          lastStatusUpdateAt: finalOrder?.lastStatusUpdateAt ?? null,
+          lastVendorWebhook: (() => {
+            const h = finalOrder?.webhookHistory;
+            if (!Array.isArray(h) || h.length === 0) return null;
+            const last = h[h.length - 1] as { status?: string; timestamp?: Date };
+            return last?.status != null
+              ? { vendorStatus: last.status, at: last.timestamp }
+              : null;
+          })(),
+        },
+      });
+    } catch (err: any) {
+      console.error("[api/v1/orders]", err?.message);
+      res.status(500).json({ message: "Failed to place order" });
     }
   });
 

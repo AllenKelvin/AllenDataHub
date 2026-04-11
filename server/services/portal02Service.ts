@@ -121,26 +121,43 @@ class Portal02Service {
 
 
   processWebhookPayload(payload: any) {
-    const event = payload.event || payload.event_type;
-    if (event !== "order.status.updated" && event !== "order.status_update") {
+    const root = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+    const event =
+      root?.event ||
+      root?.event_type ||
+      payload?.event ||
+      payload?.event_type ||
+      payload?.type;
+    if (
+      event !== "order.status.updated" &&
+      event !== "order.status_update" &&
+      event !== "order.updated" &&
+      event !== "status.updated"
+    ) {
       return { success: false, error: `Unknown event: ${event}` };
     }
-    const orderId = payload.orderId || payload.order_id || payload.id;
-    const reference = payload.reference || orderId;
-    const status = payload.status;
+    const orderId = root?.orderId || root?.order_id || root?.id || payload?.orderId || payload?.order_id || payload?.id;
+    const reference =
+      root?.reference ||
+      root?.clientReference ||
+      payload?.reference ||
+      payload?.clientReference ||
+      orderId;
+    const status = root?.status ?? payload?.status;
     const validStatuses = ["pending", "processing", "delivered", "failed", "cancelled", "refunded", "resolved"];
     if (!validStatuses.includes(status)) {
       return { success: false, error: `Invalid status: ${status}` };
     }
+    const tsRaw = root?.timestamp ?? root?.updatedAt ?? payload?.timestamp;
     return {
       success: true,
       event,
       orderId,
       reference,
       status,
-      recipient: payload.recipient,
-      volume: payload.volume,
-      timestamp: payload.timestamp ? new Date(payload.timestamp) : new Date(),
+      recipient: root?.recipient ?? payload?.recipient,
+      volume: root?.volume ?? payload?.volume,
+      timestamp: tsRaw ? new Date(tsRaw) : new Date(),
     };
   }
 }

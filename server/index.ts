@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express, { type Request, Response, NextFunction } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -24,7 +24,14 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, // For Vercel deployment
 ].filter(Boolean);
 
-app.use(cors({
+const publicApiCors = cors({
+  origin: true,
+  credentials: false,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "X-API-Key"],
+});
+
+const appCors = cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -32,10 +39,17 @@ app.use(cors({
       callback(new Error("Not allowed by CORS"));
     }
   },
-  credentials: true, // Crucial for allowing cookies to be sent
+  credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith("/api/v1")) {
+    return publicApiCors(req, res, next);
+  }
+  return appCors(req, res, next);
+});
 
 // Ensure trust proxy is set here as well if not already in setupAuth
 app.set("trust proxy", 1);
