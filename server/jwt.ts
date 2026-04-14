@@ -81,6 +81,7 @@ export function setRefreshCookie(res: Response, token: string) {
     sameSite: isProd ? "none" : "lax", // cross-domain in prod, lax locally
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/", // Ensure cookie is sent to all routes
+    domain: isProd ? ".onrender.com" : undefined, // Allow subdomains in prod
   });
 }
 
