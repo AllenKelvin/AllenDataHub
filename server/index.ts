@@ -18,10 +18,11 @@ declare module "http" {
 }
 
 const allowedOrigins = [
-  "https://allendatahub-two.vercel.app",
+  "https://allendatahub-two.vercel.app", // Old Vercel frontend
   "https://allen-data-hub.vercel.app",
+  "https://allendatahub.com", // Custom domain
   "http://localhost:5173", // Dev
-  process.env.FRONTEND_URL, // For Vercel deployment
+  process.env.FRONTEND_URL, // For Render deployment
 ].filter(Boolean);
 
 const publicApiCors = cors({
