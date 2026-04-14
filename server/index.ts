@@ -21,6 +21,7 @@ const allowedOrigins = [
   "https://allendatahub-two.vercel.app", // Old Vercel frontend
   "https://allen-data-hub.vercel.app",
   "https://allendatahub.com", // Custom domain
+  "https://www.allendatahub.com", // Custom domain with www
   "http://localhost:5173", // Dev
   process.env.FRONTEND_URL, // For Render deployment
 ].filter(Boolean);
