@@ -188,6 +188,8 @@ The API accepts phone numbers in multiple formats and automatically normalizes t
     "orderSource": "api",
     "phoneNumber": "0541234567",
     "price": 2.50,
+    "vendorOrderId": "txn_1234567890",
+    "clientOrderReference": "ORD-65a4c2e8f123456789abcdef-1705330245123",
     "productName": "MTN 1GB Data Bundle",
     "productNetwork": "MTN",
     "dataAmount": "1",
@@ -200,11 +202,10 @@ The API accepts phone numbers in multiple formats and automatically normalizes t
 }
 ```
 
-**Status Values:**
-- `pending` - Order created, awaiting vendor processing
-- `processing` - Vendor is processing the order
-- `completed` - Order successfully delivered to customer
-- `failed` - Order failed (insufficient inventory or technical error)
+**Important Fields for Partners:**
+- `vendorOrderId`: Use this to track the order with the vendor and match webhooks
+- `clientOrderReference`: Reference sent to vendor (echoed in their webhooks)
+- `status`: Order processing status
 
 **Response Headers:**
 - `X-Request-ID` - Unique identifier for this request (useful for debugging)
