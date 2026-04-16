@@ -981,13 +981,44 @@ export async function registerRoutes(
   });
 
   // --- Public HTTP API (X-API-Key) for verified agents ---
+  
+  // Helper: Normalize phone numbers to 10-digit format
+  function normalizePhoneNumber(phone: string): { valid: boolean; normalized?: string; error?: string } {
+    if (!phone || typeof phone !== "string") {
+      return { valid: false, error: "Phone number is required" };
+    }
+    
+    let cleaned = phone.replace(/\D/g, ""); // Remove all non-digits
+    
+    // Handle different formats
+    if (cleaned.startsWith("233") && cleaned.length === 12) {
+      // International: 233541234567 → 0541234567
+      cleaned = "0" + cleaned.slice(3);
+    } else if (cleaned.startsWith("0") && cleaned.length === 10) {
+      // Already correct: 0541234567 → 0541234567
+      cleaned = cleaned;
+    } else if (cleaned.length === 9) {
+      // No prefix: 541234567 → 0541234567
+      cleaned = "0" + cleaned;
+    } else {
+      return {
+        valid: false,
+        error: `Invalid phone format. Expected format: 0XXXXXXXXX (10 digits). Examples: "0541234567", "+233541234567", "541234567". Received: "${phone}"`,
+      };
+    }
+    
+    return { valid: true, normalized: cleaned };
+  }
+
   const apiOrderBody = z.object({
-    productId: z.string().min(1),
-    phoneNumber: z.string().regex(/^\d{10}$/, "phoneNumber must be exactly 10 digits"),
+    productId: z.string().min(1, "productId is required"),
+    phoneNumber: z.string().min(1, "phoneNumber is required"),
   });
 
   app.get("/api/v1/orders", verifyApiKeyMiddleware, async (req, res) => {
     const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    res.setHeader("X-Request-ID", requestId);
     const userId = ctx.id;
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit)) || 20));
@@ -1025,23 +1056,38 @@ export async function registerRoutes(
           };
         }),
       );
-      res.json({ orders: list, pagination, completedCount: completedCount ?? 0 });
+      res.json({ orders: list, pagination, completedCount: completedCount ?? 0, requestId });
     } catch (err: any) {
       console.error("[api/v1/orders GET]", err?.message);
-      res.status(500).json({ message: "Failed to list orders" });
+      res.status(500).json({ 
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Failed to list orders",
+        requestId,
+      });
     }
   });
 
   app.get("/api/v1/orders/:orderId", verifyApiKeyMiddleware, async (req, res) => {
     const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    res.setHeader("X-Request-ID", requestId);
     const orderId = Array.isArray(req.params.orderId) ? req.params.orderId[0] : req.params.orderId;
     try {
       const { Order } = await import("./models/order");
       const { Product } = await import("./models/product");
       const order = await Order.findById(orderId).lean();
-      if (!order) return res.status(404).json({ message: "Order not found" });
+      if (!order) return res.status(404).json({ 
+        error: "ORDER_NOT_FOUND",
+        message: "Order not found",
+        orderId,
+        requestId,
+      });
       if (order.userId.toString() !== ctx.id) {
-        return res.status(403).json({ message: "Forbidden" });
+        return res.status(403).json({ 
+          error: "FORBIDDEN",
+          message: "You do not have permission to access this order",
+          requestId,
+        });
       }
       const product = await Product.findById(order.productId).lean();
       const h = (order as any).webhookHistory;
@@ -1066,14 +1112,21 @@ export async function registerRoutes(
             : null,
           webhookHistory: h ?? [],
         },
+        requestId,
       });
     } catch (err: any) {
       console.error("[api/v1/orders/:id]", err?.message);
-      res.status(500).json({ message: "Failed to load order" });
+      res.status(500).json({ 
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Failed to load order",
+        requestId,
+      });
     }
   });
 
   app.get("/api/v1/products", verifyApiKeyMiddleware, async (req, res) => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    res.setHeader("X-Request-ID", requestId);
     try {
       const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
       const priceMap = productPricesToRecord(ctx.config.productPrices);
@@ -1090,31 +1143,78 @@ export async function registerRoutes(
           apiPrice,
         };
       });
-      res.json({ products: list });
+      res.json({ products: list, requestId });
     } catch (err: any) {
       console.error("[api/v1/products]", err?.message);
-      res.status(500).json({ message: "Failed to list products" });
+      res.status(500).json({ 
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Failed to list products",
+        requestId,
+      });
     }
   });
 
   app.post("/api/v1/orders", verifyApiKeyMiddleware, async (req, res) => {
     const ctx = (req as any).apiAgent as import("./apiKeyAuth").ApiAgentContext;
     const userId = ctx.id;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    res.setHeader("X-Request-ID", requestId);
+    
     const parse = apiOrderBody.safeParse(req.body);
     if (!parse.success) {
-      return res.status(400).json({ message: "Invalid body", issues: parse.error.flatten() });
+      return res.status(400).json({ 
+        error: "INVALID_REQUEST",
+        message: "Invalid request body",
+        issues: parse.error.flatten(),
+        requestId,
+      });
     }
-    const { productId, phoneNumber } = parse.data;
+    const { productId, phoneNumber: rawPhoneNumber } = parse.data;
+    
+    // Validate productId format
+    const mongoose = await import("mongoose");
+    if (!mongoose.default.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({
+        error: "INVALID_PRODUCT_ID",
+        message: "productId must be a valid 24-character MongoDB ObjectId",
+        example: "507f1f77bcf86cd799439011",
+        received: productId,
+        requestId,
+      });
+    }
+    
+    // Normalize phone number
+    const phoneNorm = normalizePhoneNumber(rawPhoneNumber);
+    if (!phoneNorm.valid) {
+      return res.status(400).json({
+        error: "INVALID_PHONE_NUMBER",
+        message: phoneNorm.error,
+        requestId,
+      });
+    }
+    const phoneNumber = phoneNorm.normalized!;
+    
     try {
       const { Product } = await import("./models/product");
       const { Order } = await import("./models/order");
       const p = await Product.findById(productId).lean();
-      if (!p) return res.status(404).json({ message: "Product not found" });
+      if (!p) return res.status(404).json({ 
+        error: "PRODUCT_NOT_FOUND",
+        message: "Product not found",
+        productId,
+        requestId,
+      });
 
       const priceMap = productPricesToRecord(ctx.config.productPrices);
       const perItemPrice = resolveApiPrice(productId, p as any, priceMap);
       if (!perItemPrice || perItemPrice <= 0) {
-        return res.status(400).json({ message: "No valid API price for this product" });
+        return res.status(400).json({
+          error: "NO_VALID_PRICE",
+          message: "No valid API price configured for this product",
+          productId,
+          suggestion: "Contact support to configure pricing for this product",
+          requestId,
+        });
       }
 
       const freshUser = await storage.getUser(userId);
@@ -1122,7 +1222,13 @@ export async function registerRoutes(
         typeof freshUser?.balance === "string" ? parseFloat(freshUser.balance) : (freshUser?.balance ?? 0);
       if (balanceBefore < perItemPrice) {
         return res.status(400).json({
-          message: `Insufficient wallet balance. Need GHS ${perItemPrice.toFixed(2)}, have GHS ${balanceBefore.toFixed(2)}`,
+          error: "INSUFFICIENT_BALANCE",
+          message: "Insufficient wallet balance",
+          required: perItemPrice,
+          available: balanceBefore,
+          shortfall: perItemPrice - balanceBefore,
+          suggestion: "Please topup your wallet before placing this order",
+          requestId,
         });
       }
 
@@ -1202,10 +1308,16 @@ export async function registerRoutes(
               : null;
           })(),
         },
+        requestId,
       });
     } catch (err: any) {
       console.error("[api/v1/orders]", err?.message);
-      res.status(500).json({ message: "Failed to place order" });
+      res.status(500).json({ 
+        error: "INTERNAL_SERVER_ERROR",
+        message: "Failed to place order",
+        requestId,
+        suggestion: "Please contact support with this requestId if the problem persists",
+      });
     }
   });
 
