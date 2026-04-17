@@ -31,7 +31,12 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
-  app.use("/{*path}", async (req, res, next) => {
+  // Skip API routes - let them be handled by Express routes, not Vite
+  app.use((req, res, next) => {
+    if (req.path.startsWith("/api/") || req.path.startsWith("/agent-api/")) {
+      return next();
+    }
+    // For all other paths, serve the frontend
     const url = req.originalUrl;
 
     try {

@@ -55,7 +55,7 @@ X-API-Key: adh_<your_secret_key>
 ### Example
 
 ```bash
-curl -X GET https://api.allendatahub.com/api/v1/products \
+curl -X GET https://allendatahub.com/api/v1/products \
   -H "X-API-Key: adh_your_secret_key_here"
 ```
 
@@ -69,7 +69,7 @@ curl -X GET https://api.allendatahub.com/api/v1/products \
 ## Base URL
 
 ```
-https://api.allendatahub.com
+https://allendatahub.com
 ```
 
 For development/testing environments, a staging URL may be provided during onboarding.
@@ -129,7 +129,7 @@ None
 
 **Example Request:**
 ```bash
-curl -X GET https://api.allendatahub.com/api/v1/products \
+curl -X GET https://allendatahub.com/api/v1/products \
   -H "X-API-Key: adh_your_secret_key"
 ```
 
@@ -213,7 +213,7 @@ The API accepts phone numbers in multiple formats and automatically normalizes t
 **Example Request:**
 ```bash
 # Example 1: Local format
-curl -X POST https://api.allendatahub.com/api/v1/orders \
+curl -X POST https://allendatahub.com/api/v1/orders \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -222,7 +222,7 @@ curl -X POST https://api.allendatahub.com/api/v1/orders \
   }'
 
 # Example 2: International format (automatically normalized)
-curl -X POST https://api.allendatahub.com/api/v1/orders \
+curl -X POST https://allendatahub.com/api/v1/orders \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -231,7 +231,7 @@ curl -X POST https://api.allendatahub.com/api/v1/orders \
   }'
 
 # Example 3: With spaces (automatically normalized)
-curl -X POST https://api.allendatahub.com/api/v1/orders \
+curl -X POST https://allendatahub.com/api/v1/orders \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -362,19 +362,19 @@ X-API-Key: adh_your_secret_key
 **Example Requests:**
 ```bash
 # Get first page with default limit
-curl -X GET https://api.allendatahub.com/api/v1/orders \
+curl -X GET https://allendatahub.com/api/v1/orders \
   -H "X-API-Key: adh_your_secret_key"
 
 # Get second page with 50 items
-curl -X GET "https://api.allendatahub.com/api/v1/orders?page=2&limit=50" \
+curl -X GET "https://allendatahub.com/api/v1/orders?page=2&limit=50" \
   -H "X-API-Key: adh_your_secret_key"
 
 # Get only API orders
-curl -X GET "https://api.allendatahub.com/api/v1/orders?source=api" \
+curl -X GET "https://allendatahub.com/api/v1/orders?source=api" \
   -H "X-API-Key: adh_your_secret_key"
 
 # Get all orders (both API and web)
-curl -X GET "https://api.allendatahub.com/api/v1/orders?source=all" \
+curl -X GET "https://allendatahub.com/api/v1/orders?source=all" \
   -H "X-API-Key: adh_your_secret_key"
 ```
 
@@ -437,7 +437,7 @@ X-API-Key: adh_your_secret_key
 
 **Example Request:**
 ```bash
-curl -X GET https://api.allendatahub.com/api/v1/orders/65a4c2e8f123456789abcdef \
+curl -X GET https://allendatahub.com/api/v1/orders/65a4c2e8f123456789abcdef \
   -H "X-API-Key: adh_your_secret_key"
 ```
 
@@ -601,7 +601,7 @@ Example error handling in TypeScript:
 ```typescript
 async function createOrder(productId: string, phoneNumber: string) {
   try {
-    const response = await fetch('https://api.allendatahub.com/api/v1/orders', {
+    const response = await fetch('https://allendatahub.com/api/v1/orders', {
       method: 'POST',
       headers: {
         'X-API-Key': process.env.ALLENDATAHUB_API_KEY,
@@ -643,7 +643,7 @@ async function createOrder(productId: string, phoneNumber: string) {
 ```javascript
 // 1. Get available products
 const getAvailableProducts = async () => {
-  const response = await fetch('https://api.allendatahub.com/api/v1/products', {
+  const response = await fetch('https://allendatahub.com/api/v1/products', {
     headers: {
       'X-API-Key': 'adh_your_secret_key'
     }
@@ -653,7 +653,7 @@ const getAvailableProducts = async () => {
 
 // 2. Purchase bundle when customer selects
 const purchaseBundle = async (productId, phoneNumber) => {
-  const response = await fetch('https://api.allendatahub.com/api/v1/orders', {
+  const response = await fetch('https://allendatahub.com/api/v1/orders', {
     method: 'POST',
     headers: {
       'X-API-Key': 'adh_your_secret_key',
@@ -676,7 +676,7 @@ const purchaseBundle = async (productId, phoneNumber) => {
 // 3. Monitor order status
 const checkOrderStatus = async (orderId) => {
   const response = await fetch(
-    `https://api.allendatahub.com/api/v1/orders/${orderId}`,
+    `https://allendatahub.com/api/v1/orders/${orderId}`,
     {
       headers: {
         'X-API-Key': 'adh_your_secret_key'
@@ -695,7 +695,7 @@ import json
 from datetime import datetime, timedelta
 
 API_KEY = "adh_your_secret_key"
-BASE_URL = "https://api.allendatahub.com"
+BASE_URL = "https://allendatahub.com"
 
 def get_orders_report(days=7, limit=50):
     """Get all orders from the last N days"""
@@ -754,7 +754,7 @@ print(json.dumps(report, indent=2))
 #!/bin/bash
 
 API_KEY="adh_your_secret_key"
-BASE_URL="https://api.allendatahub.com"
+BASE_URL="https://allendatahub.com"
 
 # Get last 100 API orders
 echo "Fetching last 100 orders..."
@@ -920,7 +920,7 @@ import requests
 def purchase_data_safely(product_id, phone_number):
     try:
         response = requests.post(
-            'https://api.allendatahub.com/api/v1/orders',
+            'https://allendatahub.com/api/v1/orders',
             headers={'X-API-Key': API_KEY},
             json={
                 'productId': product_id,
@@ -980,7 +980,7 @@ async function createOrderWithRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(
-        'https://api.allendatahub.com/api/v1/orders',
+        'https://allendatahub.com/api/v1/orders',
         {
           method: 'POST',
           headers: {

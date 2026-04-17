@@ -29,7 +29,7 @@ Contact support@allendatahub.com and request Agent API access.
 ### 2. Test Connection
 
 ```bash
-curl https://api.allendatahub.com/agent-api/health
+curl https://allendatahub.com/agent-api/health
 
 # Response:
 {
@@ -42,7 +42,7 @@ curl https://api.allendatahub.com/agent-api/health
 ### 3. Create Your First Order
 
 ```bash
-curl -X POST https://api.allendatahub.com/agent-api/orders/create \
+curl -X POST https://allendatahub.com/agent-api/orders/create \
   -H "X-API-Key: your_api_key_here" \
   -H "Content-Type: application/json" \
   -d '{
@@ -82,14 +82,14 @@ curl -X POST https://api.allendatahub.com/agent-api/orders/create \
 Every request must include your API key in the `X-API-Key` header.
 
 ```bash
-curl -H "X-API-Key: your_api_key_here" https://api.allendatahub.com/agent-api/...
+curl -H "X-API-Key: your_api_key_here" https://allendatahub.com/agent-api/...
 ```
 
 ### What Happens Without Auth
 
 ```bash
 # Missing API Key
-curl https://api.allendatahub.com/agent-api/orders/create
+curl https://allendatahub.com/agent-api/orders/create
 
 # Response: 401
 {
@@ -105,7 +105,7 @@ curl https://api.allendatahub.com/agent-api/orders/create
 
 ### Base URL
 ```
-https://api.allendatahub.com
+https://allendatahub.com
 ```
 
 ### Required Headers
@@ -217,7 +217,7 @@ GET /agent-api/orders/:orderId
 **Example:**
 ```bash
 curl -H "X-API-Key: your_key" \
-  https://api.allendatahub.com/agent-api/orders/65a4c2e8f123456789abcdef
+  https://allendatahub.com/agent-api/orders/65a4c2e8f123456789abcdef
 ```
 
 **Response:**
@@ -365,7 +365,7 @@ async function createMultipleOrders(phoneNumbers: string[], productId: string) {
   for (const phone of phoneNumbers) {
     try {
       const response = await fetch(
-        "https://api.allendatahub.com/agent-api/orders/create",
+        "https://allendatahub.com/agent-api/orders/create",
         {
           method: "POST",
           headers: {
@@ -430,7 +430,7 @@ async function createOrderWithRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(
-        "https://api.allendatahub.com/agent-api/orders/create",
+        "https://allendatahub.com/agent-api/orders/create",
         {
           method: "POST",
           headers: {
@@ -550,7 +550,7 @@ if (result.success) {
 ```typescript
 async function handleOrderCreation(productId: string, phone: string) {
   const response = await fetch(
-    "https://api.allendatahub.com/agent-api/orders/create",
+    "https://allendatahub.com/agent-api/orders/create",
     {
       method: "POST",
       headers: {
@@ -595,24 +595,24 @@ async function handleOrderCreation(productId: string, phone: string) {
 
 **1. Check Health**
 ```bash
-curl https://api.allendatahub.com/agent-api/health
+curl https://allendatahub.com/agent-api/health
 ```
 
 **2. Get Products**
 ```bash
 curl -H "X-API-Key: your_api_key" \
-  https://api.allendatahub.com/agent-api/products
+  https://allendatahub.com/agent-api/products
 ```
 
 **3. Check Balance**
 ```bash
 curl -H "X-API-Key: your_api_key" \
-  https://api.allendatahub.com/agent-api/account/balance
+  https://allendatahub.com/agent-api/account/balance
 ```
 
 **4. Create Order**
 ```bash
-curl -X POST https://api.allendatahub.com/agent-api/orders/create \
+curl -X POST https://allendatahub.com/agent-api/orders/create \
   -H "X-API-Key: your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -625,13 +625,13 @@ curl -X POST https://api.allendatahub.com/agent-api/orders/create \
 **5. Get Your Orders**
 ```bash
 curl -H "X-API-Key: your_api_key" \
-  "https://api.allendatahub.com/agent-api/orders?page=1&limit=10"
+  "https://allendatahub.com/agent-api/orders?page=1&limit=10"
 ```
 
 **6. Get Single Order**
 ```bash
 curl -H "X-API-Key: your_api_key" \
-  https://api.allendatahub.com/agent-api/orders/ORDER_ID_FROM_STEP_4
+  https://allendatahub.com/agent-api/orders/ORDER_ID_FROM_STEP_4
 ```
 
 ---
@@ -696,7 +696,7 @@ A: Use your regular credentials. We mark test orders internally. Contact support
 import fetch from "node-fetch";
 
 const API_KEY = "your_api_key_here";
-const BASE_URL = "https://api.allendatahub.com";
+const BASE_URL = "https://allendatahub.com";
 
 class AllenDataHubAPI {
   private apiKey: string;

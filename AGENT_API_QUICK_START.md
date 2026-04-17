@@ -16,7 +16,7 @@ They'll send you: `X-API-Key: xxxxxxxxxxxxxxxxxxxxxxxxxx`
 ## Step 2: Test Connection
 
 ```bash
-curl https://api.allendatahub.com/agent-api/health
+curl https://allendatahub.com/agent-api/health
 ```
 
 Expected response:
@@ -34,7 +34,7 @@ Expected response:
 
 ```bash
 curl -H "X-API-Key: your_api_key" \
-  https://api.allendatahub.com/agent-api/products
+  https://allendatahub.com/agent-api/products
 ```
 
 You'll get back a list of products with:
@@ -50,7 +50,7 @@ You'll get back a list of products with:
 ## Step 4: Create Your First Order
 
 ```bash
-curl -X POST https://api.allendatahub.com/agent-api/orders/create \
+curl -X POST https://allendatahub.com/agent-api/orders/create \
   -H "X-API-Key: your_api_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -140,7 +140,7 @@ const productId = "507f1f77bcf86cd799439011"; // from /products
 
 async function createOrder(phoneNumber) {
   const response = await fetch(
-    "https://api.allendatahub.com/agent-api/orders/create",
+    "https://allendatahub.com/agent-api/orders/create",
     {
       method: "POST",
       headers: {
@@ -181,7 +181,7 @@ import requests
 
 API_KEY = "your_api_key_here"
 PRODUCT_ID = "507f1f77bcf86cd799439011"
-BASE_URL = "https://api.allendatahub.com"
+BASE_URL = "https://allendatahub.com"
 
 def create_order(phone_number):
     response = requests.post(
