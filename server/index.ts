@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { type Request, type Response, type NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { setupAuth } from "./auth";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { connectDb } from "./db";
@@ -26,13 +27,6 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, // For Render deployment
 ].filter(Boolean);
 
-const publicApiCors = cors({
-  origin: true,
-  credentials: false,
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "X-API-Key"],
-});
-
 const appCors = cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -47,9 +41,6 @@ const appCors = cors({
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path.startsWith("/api/v1")) {
-    return publicApiCors(req, res, next);
-  }
   return appCors(req, res, next);
 });
 
@@ -120,7 +111,8 @@ app.use((req, res, next) => {
   // 2. NOW INITIALIZE SERVICES
   try {
     await connectDb();
-    await registerRoutes(httpServer, app);
+    setupAuth(app);
+    await registerRoutes(app);
     
     // mark ready so API requests are served (prevents early 404s)
     isReady = true;
