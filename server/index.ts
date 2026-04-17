@@ -122,10 +122,6 @@ app.use((req, res, next) => {
     await connectDb();
     await registerRoutes(httpServer, app);
     
-    // Register simplified agent API
-    const { registerSimplifiedAgentRoutes } = await import("./agentApi");
-    await registerSimplifiedAgentRoutes(app);
-    
     // mark ready so API requests are served (prevents early 404s)
     isReady = true;
 
