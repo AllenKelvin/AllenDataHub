@@ -29,6 +29,7 @@ export async function hashPassword(password: string) {
 export async function comparePassword(supplied: string, stored: string) {
   if (!stored) return false;
 
+  // Format 1: scrypt format (hex.salt)
   if (stored.includes('.')) {
     try {
       const [hashed, salt] = stored.split(".");
@@ -40,6 +41,7 @@ export async function comparePassword(supplied: string, stored: string) {
     }
   }
 
+  // Format 2: bcrypt/bcryptjs ($2a$, $2b$, $2y$)
   if (/^\$2[aby]\$/.test(stored)) {
     try {
       return await bcrypt.compare(supplied, stored);
@@ -48,7 +50,13 @@ export async function comparePassword(supplied: string, stored: string) {
     }
   }
 
-  return supplied === stored;
+  // Format 3: Plain text (legacy - should be migrated)
+  if (supplied === stored) {
+    console.log("[Password] Warning: Plain text password detected - should be migrated");
+    return true;
+  }
+
+  return false;
 }
 
 // EXPORT normalizeUser
@@ -82,7 +90,11 @@ export function setupAuth(app: Express) {
       const user = await storage.getUserByUsername(identifier);
       if (!user) return res.status(401).json({ message: "Invalid username or password" });
 
+      // Debug: Log password format
+      console.log(`[Login] User found: ${user.username}, password format: ${user.password?.substring(0, 20)}...`);
+
       const matched = await comparePassword(password, user.password);
+      console.log(`[Login] Password match result: ${matched}`);
       if (!matched) return res.status(401).json({ message: "Invalid username or password" });
 
       // Auto-migrate legacy passwords
