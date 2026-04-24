@@ -6,7 +6,8 @@ import { ApiKey } from "./models/apiKey";
 import { AgentApiPrice } from "./models/agentApiPrice";
 import type { InsertUser, InsertProduct, InsertOrder } from "@shared/schema";
 import mongoose from "mongoose";
-import MongoStore from "connect-mongo";
+// Lazy-load MongoStore to avoid initialization errors
+let MongoStore: any = null;
 
 export interface IStorage {
   getUser(id: string): Promise<any | null>;
@@ -449,5 +450,25 @@ export class DatabaseStorage implements IStorage {
 
 export const storage = new DatabaseStorage();
 
-export const sessionStore = MongoStore.create({ mongoUrl: process.env.DATABASE_URL });
-export default storage;
+// Lazy-create session store only when DATABASE_URL is available
+// Note: This is only needed if express-session with MongoStore is used
+let _sessionStore: any = null;
+export function getSessionStore() {
+  if (!_sessionStore) {
+    const mongoUrl = process.env.DATABASE_URL;
+    if (!mongoUrl) {
+      console.warn("[Session] DATABASE_URL not set, session store not available");
+      return null;
+    }
+    // Lazy-load MongoStore
+    if (!MongoStore) {
+      MongoStore = require("connect-mongo").default;
+    }
+    _sessionStore = MongoStore.create({ mongoUrl });
+  }
+  return _sessionStore;
+}
+
+// Don't export sessionStore at module level - it's not used by this app
+// (The app uses JWT tokens instead of server-side sessions)
+// export default storage;
