@@ -1,6 +1,9 @@
 import { User } from "./models/user";
 import { Product } from "./models/product";
 import { Order } from "./models/order";
+import { ApiAccess } from "./models/apiAccess";
+import { ApiKey } from "./models/apiKey";
+import { AgentApiPrice } from "./models/agentApiPrice";
 import type { InsertUser, InsertProduct, InsertOrder } from "@shared/schema";
 import mongoose from "mongoose";
 import MongoStore from "connect-mongo";
@@ -12,6 +15,15 @@ export interface IStorage {
   updateUserVerification(id: string, isVerified: boolean): Promise<any | null>;
   getUnverifiedAgents(): Promise<any[]>;
   updatePassword(id: string, newPassword: string): Promise<any | null>;
+  // API access
+  getAgentApiAccessStatus(userId: string): Promise<{ status: "none" | "pending" | "active" | "revoked"; hasKey: boolean }>;
+  requestAgentApiAccess(userId: string): Promise<{ status: "pending" | "active" | "revoked" }>;
+  adminListApiAccess(): Promise<any[]>;
+  adminPatchAgentApiPricing(userId: string, prices: Record<string, number>): Promise<{ ok: true }>;
+  adminIssueAgentApiKey(userId: string): Promise<{ apiKey: string }>;
+  adminRevokeAgentApiAccess(userId: string): Promise<{ ok: true }>;
+  getApiPriceForAgent(userId: string, productId: string): Promise<number | null>;
+  deductAgentBalanceIfSufficient(agentId: string, amount: number): Promise<{ ok: true; before: number; after: number } | { ok: false; available: number }>;
   // Paginated orders for a user: returns orders array, pagination info and completed count
   getOrdersByUser(
     userId: string,
@@ -297,6 +309,141 @@ export class DatabaseStorage implements IStorage {
     const updated = await User.findByIdAndUpdate(agentId, { $inc: { balance: amount } }, { new: true }).lean();
     if (!updated) return null;
     return { ...updated, id: updated._id?.toString() };
+  }
+
+  async getAgentApiAccessStatus(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) return { status: "none" as const, hasKey: false };
+    const access = await ApiAccess.findOne({ userId }).lean();
+    if (!access) return { status: "none" as const, hasKey: false };
+    const hasKey = (await ApiKey.countDocuments({ userId, status: "active" })) > 0;
+    return { status: (access as any).status as any, hasKey };
+  }
+
+  async requestAgentApiAccess(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    const existing = await ApiAccess.findOne({ userId }).lean();
+    if (existing) {
+      // If revoked, allow re-request (goes back to pending)
+      if ((existing as any).status === "revoked") {
+        await ApiAccess.updateOne({ userId }, { $set: { status: "pending", requestedAt: new Date(), revokedAt: null } });
+        return { status: "pending" as const };
+      }
+      return { status: (existing as any).status as any };
+    }
+    await ApiAccess.create({ userId, status: "pending", requestedAt: new Date() });
+    return { status: "pending" as const };
+  }
+
+  async adminListApiAccess() {
+    const [accessDocs, products] = await Promise.all([
+      ApiAccess.find().sort({ requestedAt: -1 }).lean(),
+      Product.find().lean(),
+    ]);
+    const productList = products.map((p: any) => ({
+      id: p._id?.toString(),
+      name: p.name,
+      network: p.network,
+      dataAmount: p.dataAmount,
+      agentPrice: p.agentPrice ?? p.price ?? 0,
+    }));
+
+    const rows = await Promise.all(
+      accessDocs.map(async (a: any) => {
+        const userId = a.userId?.toString();
+        const u = await User.findById(userId).select("username email balance").lean();
+        const key = await ApiKey.findOne({ userId, status: "active" }).sort({ createdAt: -1 }).lean();
+        const priceDocs = await AgentApiPrice.find({ userId }).lean();
+        const productPrices: Record<string, number> = {};
+        for (const pd of priceDocs as any[]) {
+          const pid = (pd.productId || "").toString();
+          if (pid) productPrices[pid] = pd.price;
+        }
+        return {
+          userId,
+          username: (u as any)?.username,
+          email: (u as any)?.email,
+          status: a.status,
+          balance: (u as any)?.balance ?? 0,
+          requestedAt: a.requestedAt ? new Date(a.requestedAt).toISOString() : undefined,
+          lastUsedAt: (key as any)?.lastUsedAt ? new Date((key as any).lastUsedAt).toISOString() : undefined,
+          productPrices,
+          products: productList,
+        };
+      }),
+    );
+    return rows;
+  }
+
+  async adminPatchAgentApiPricing(userId: string, prices: Record<string, number>) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    const entries = Object.entries(prices || {}).filter(([, v]) => typeof v === "number" && isFinite(v) && v > 0);
+    for (const [productId, price] of entries) {
+      if (!mongoose.Types.ObjectId.isValid(productId)) continue;
+      await AgentApiPrice.updateOne(
+        { userId, productId },
+        { $set: { price } },
+        { upsert: true },
+      );
+    }
+    return { ok: true as const };
+  }
+
+  async adminIssueAgentApiKey(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    // Ensure access record exists and is not revoked
+    const access = await ApiAccess.findOne({ userId }).lean();
+    if (!access) throw new Error("Agent has not requested API access");
+    if ((access as any).status === "revoked") {
+      // Allow admin to re-activate by issuing a new key
+      await ApiAccess.updateOne({ userId }, { $set: { status: "active", activatedAt: new Date(), revokedAt: null } });
+    } else if ((access as any).status !== "active") {
+      await ApiAccess.updateOne({ userId }, { $set: { status: "active", activatedAt: new Date() } });
+    }
+
+    const { generateApiKey } = await import("./apiKeyAuth");
+    const { token, prefix, tokenHash } = generateApiKey();
+
+    // Revoke existing active keys for this user (regenerate behavior)
+    await ApiKey.updateMany({ userId, status: "active" }, { $set: { status: "revoked", revokedAt: new Date() } });
+    await ApiKey.create({ userId, prefix, tokenHash, status: "active" });
+
+    return { apiKey: token };
+  }
+
+  async adminRevokeAgentApiAccess(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    await ApiAccess.updateOne({ userId }, { $set: { status: "revoked", revokedAt: new Date() } }, { upsert: true });
+    await ApiKey.updateMany({ userId, status: "active" }, { $set: { status: "revoked", revokedAt: new Date() } });
+    return { ok: true as const };
+  }
+
+  async getApiPriceForAgent(userId: string, productId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) return null;
+    if (!mongoose.Types.ObjectId.isValid(productId)) return null;
+    const override = await AgentApiPrice.findOne({ userId, productId }).lean();
+    if (override && typeof (override as any).price === "number") return (override as any).price;
+    const p = await Product.findById(productId).lean();
+    if (!p) return null;
+    const fallback = (p as any).agentPrice ?? (p as any).price ?? null;
+    return typeof fallback === "number" ? fallback : null;
+  }
+
+  async deductAgentBalanceIfSufficient(agentId: string, amount: number) {
+    if (!mongoose.Types.ObjectId.isValid(agentId)) throw new Error("Invalid agent id");
+    const amt = Math.abs(Number(amount) || 0);
+    if (!isFinite(amt) || amt <= 0) throw new Error("Invalid amount");
+    const updated = await User.findOneAndUpdate(
+      { _id: agentId, balance: { $gte: amt } },
+      { $inc: { balance: -amt } },
+      { new: true },
+    ).lean();
+    if (!updated) {
+      const u = await User.findById(agentId).select("balance").lean();
+      return { ok: false as const, available: Number((u as any)?.balance ?? 0) };
+    }
+    const after = Number((updated as any).balance ?? 0);
+    const before = after + amt;
+    return { ok: true as const, before, after };
   }
 }
 

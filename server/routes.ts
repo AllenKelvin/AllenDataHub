@@ -2,12 +2,258 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, hashPassword, normalizeUser } from "./auth";
 import { verifyJWT } from "./jwt";
+import { verifyApiKey } from "./apiKeyAuth";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // === AGENT API ACCESS (JWT protected, used inside dashboard) ===
+  app.get("/api/agent/api-access/status", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "agent") return res.status(403).json({ message: "Agents only" });
+    if (!user.isVerified) return res.status(403).json({ message: "Agent not verified" });
+    const status = await (storage as any).getAgentApiAccessStatus(user.id);
+    res.json(status);
+  });
+
+  app.post("/api/agent/api-access/request", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "agent") return res.status(403).json({ message: "Agents only" });
+    if (!user.isVerified) return res.status(403).json({ message: "Agent not verified" });
+    const result = await (storage as any).requestAgentApiAccess(user.id);
+    res.json({ message: "Requested", ...result });
+  });
+
+  // === ADMIN: API ACCESS MANAGEMENT ===
+  app.get("/api/admin/api-access", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const rows = await (storage as any).adminListApiAccess();
+    res.json(rows);
+  });
+
+  app.patch("/api/admin/api-access/:userId/pricing", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const userId = req.params.userId;
+    const prices = (req.body || {}).prices || {};
+    try {
+      const parsed = z.record(z.string(), z.number()).parse(prices);
+      const out = await (storage as any).adminPatchAgentApiPricing(userId, parsed);
+      res.json(out);
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message || "Invalid pricing payload" });
+    }
+  });
+
+  app.post("/api/admin/api-access/:userId/issue-key", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const userId = req.params.userId;
+    try {
+      const issued = await (storage as any).adminIssueAgentApiKey(userId);
+      res.json({ apiKey: issued.apiKey, message: "Issued" });
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message || "Could not issue key" });
+    }
+  });
+
+  app.post("/api/admin/api-access/:userId/revoke", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const userId = req.params.userId;
+    try {
+      const out = await (storage as any).adminRevokeAgentApiAccess(userId);
+      res.json(out);
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message || "Could not revoke" });
+    }
+  });
+
+  // === PUBLIC PARTNER API (API key protected, no subdomain required) ===
+  // Base URL: https://allendatahub.com/api/v1/*
+
+  app.get("/api/v1/products", verifyApiKey, async (req, res) => {
+    const agent = (req as any).user;
+    const products = await storage.getProducts();
+    const enriched = await Promise.all(
+      products.map(async (p: any) => {
+        const apiPrice = await (storage as any).getApiPriceForAgent(agent.id, p.id);
+        return {
+          id: p.id,
+          name: p.name,
+          network: p.network,
+          dataAmount: p.dataAmount,
+          description: p.description ?? null,
+          apiPrice: typeof apiPrice === "number" ? apiPrice : (p.agentPrice ?? p.price ?? 0),
+        };
+      }),
+    );
+    res.json({ products: enriched });
+  });
+
+  function normalizeGhPhone(input: unknown): { ok: true; phone: string } | { ok: false; message: string } {
+    const raw = String(input ?? "").trim();
+    if (!raw) return { ok: false, message: "phoneNumber is required" };
+    const digits = raw.replace(/[^\d]/g, "");
+    // +233XXXXXXXXX or 233XXXXXXXXX -> 0XXXXXXXXX
+    if (digits.startsWith("233") && digits.length === 12) {
+      const rest = digits.slice(3);
+      return { ok: true, phone: "0" + rest };
+    }
+    // 9 digits -> assume missing leading 0
+    if (digits.length === 9) return { ok: true, phone: "0" + digits };
+    // already 10 digits starting with 0
+    if (digits.length === 10 && digits.startsWith("0")) return { ok: true, phone: digits };
+    return {
+      ok: false,
+      message: `Invalid phone format. Expected 0XXXXXXXXX (10 digits). Received: "${raw}"`,
+    };
+  }
+
+  app.post("/api/v1/orders", verifyApiKey, async (req, res) => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    res.setHeader("X-Request-ID", requestId);
+
+    const agent = (req as any).user;
+    const body = req.body || {};
+    const { productId } = body;
+    const quantity = Math.max(1, Math.min(100, parseInt(String(body.quantity ?? "1"), 10) || 1));
+    const phoneRes = normalizeGhPhone(body.phoneNumber);
+    if (!phoneRes.ok) return res.status(400).json({ error: "INVALID_PHONE_NUMBER", message: phoneRes.message, requestId });
+    const phoneNumber = phoneRes.phone;
+
+    if (!productId || typeof productId !== "string") {
+      return res.status(400).json({ error: "INVALID_PRODUCT_ID", message: "productId is required", requestId });
+    }
+    const mongoose = await import("mongoose");
+    if (!mongoose.default.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({
+        error: "INVALID_PRODUCT_ID",
+        message: "productId must be a valid 24-character MongoDB ObjectId",
+        example: "507f1f77bcf86cd799439011",
+        received: productId,
+        requestId,
+      });
+    }
+
+    const { Product } = await import("./models/product");
+    const p = await Product.findById(productId).lean();
+    if (!p) return res.status(404).json({ error: "PRODUCT_NOT_FOUND", message: "Product not found", productId, requestId });
+
+    const unitPrice = (await (storage as any).getApiPriceForAgent(agent.id, productId)) ?? (p.agentPrice ?? p.price ?? 0);
+    const total = Number(unitPrice) * quantity;
+    if (!isFinite(total) || total <= 0) return res.status(400).json({ error: "INVALID_PRICE", message: "Invalid price configuration", requestId });
+
+    // Deduct wallet atomically
+    const deducted = await (storage as any).deductAgentBalanceIfSufficient(agent.id, total);
+    if (!deducted.ok) {
+      return res.status(400).json({
+        error: "INSUFFICIENT_BALANCE",
+        message: "Insufficient wallet balance",
+        required: Number(total.toFixed(2)),
+        available: Number((deducted as any).available ?? 0),
+        shortfall: Number((total - Number((deducted as any).available ?? 0)).toFixed(2)),
+        suggestion: "Please topup your wallet before placing this order",
+        requestId,
+      });
+    }
+
+    const { Order } = await import("./models/order");
+    const portal02Service = (await import("./services/portal02Service")).default;
+
+    // Create orders (one per quantity), return first order as primary
+    const created: any[] = [];
+    for (let i = 0; i < quantity; i++) {
+      const order = await (storage as any).createCompletedOrder({
+        productId,
+        userId: agent.id,
+        phoneNumber,
+        productName: (p as any).name,
+        statusOverride: phoneNumber ? "pending" : "completed",
+        paymentStatus: "success",
+        priceOverride: unitPrice,
+        orderSource: "api",
+        walletBalanceBefore: i === 0 ? deducted.before : undefined,
+        walletBalanceAfter: i === quantity - 1 ? deducted.after : undefined,
+      });
+      created.push(order);
+
+      // Trigger vendor call (best-effort)
+      if (portal02Service && phoneNumber) {
+        try {
+          const clientRef = `ORD-${order.id}-${Date.now()}`;
+          const vendorResult = await portal02Service.purchaseDataBundle(
+            phoneNumber,
+            (p as any).dataAmount,
+            (p as any).network,
+            clientRef,
+          );
+          await Order.findByIdAndUpdate(order.id, {
+            $set: {
+              clientOrderReference: clientRef,
+              vendorOrderId: vendorResult.transactionId || vendorResult.reference,
+              "processingResults.0": {
+                itemIndex: 0,
+                success: vendorResult.success,
+                transactionId: vendorResult.transactionId,
+                reference: vendorResult.reference,
+                message: vendorResult.message,
+                error: vendorResult.error,
+                status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+              },
+              status: vendorResult.success ? "processing" : "failed",
+            },
+          });
+        } catch (vendorErr: any) {
+          await Order.findByIdAndUpdate(order.id, {
+            $set: {
+              status: "failed",
+              "processingResults.0": { itemIndex: 0, success: false, error: vendorErr?.message, status: "failed" },
+            },
+          });
+        }
+      }
+    }
+
+    const first = created[0];
+    const enriched = {
+      ...first,
+      productNetwork: (p as any).network,
+      dataAmount: (p as any).dataAmount,
+      phoneNumber,
+      price: unitPrice,
+      orderSource: "api",
+    };
+    return res.status(201).json({ order: enriched, requestId });
+  });
+
+  app.get("/api/v1/orders", verifyApiKey, async (req, res) => {
+    const agent = (req as any).user;
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit)) || 20));
+    const source = String(req.query.source || "api");
+    const sourceOpt =
+      source === "api" || source === "web" ? ({ orderSource: source } as const) : undefined;
+    const opts = source === "all" ? undefined : sourceOpt;
+    const { orders, pagination, completedCount } = await storage.getOrdersByUser(agent.id, page, limit, opts);
+    res.json({ orders, pagination, completedCount });
+  });
+
+  app.get("/api/v1/orders/:orderId", verifyApiKey, async (req, res) => {
+    const agent = (req as any).user;
+    const orderId = req.params.orderId;
+    const { Order } = await import("./models/order");
+    const order = await Order.findById(orderId).lean();
+    if (!order) return res.status(404).json({ message: "Order not found" });
+    if (String((order as any).userId) !== String(agent.id)) return res.status(403).json({ message: "Forbidden" });
+    res.json({ ...order, id: (order as any)._id?.toString(), userId: (order as any).userId?.toString() });
+  });
 
   // === USER & AGENT ROUTES ===
   
@@ -711,6 +957,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     );
     const totalSpent = enriched.reduce((sum: number, o: any) => sum + (Number(o.price) || 0), 0);
     res.json({ orders: enriched, totalSpent, pagination });
+  });
+
+  // Admin: update order status (Admin only)
+  app.patch("/api/admin/orders/:id/status", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    const id = req.params.id;
+    const status = String((req.body || {}).status || "").trim();
+    const allowed = new Set(["pending", "processing", "completed", "failed"]);
+    if (!allowed.has(status)) return res.status(400).json({ message: "Invalid status" });
+    const { Order } = await import("./models/order");
+    const updated = await Order.findByIdAndUpdate(id, { $set: { status, lastStatusUpdateAt: new Date() } }, { new: true }).lean();
+    if (!updated) return res.status(404).json({ message: "Order not found" });
+    res.json({ ...updated, id: (updated as any)._id?.toString() });
   });
 
   // Get single order by ID (for polling status updates)
