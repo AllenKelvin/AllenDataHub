@@ -2,7 +2,8 @@ import { type Express } from "express";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import bcrypt from "bcryptjs";
+// Use native bcrypt (handles both $2a$ and $2b$ hashes)
+import bcrypt from "bcrypt";
 import {
   generateAccessToken,
   generateRefreshToken,
