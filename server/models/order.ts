@@ -28,6 +28,8 @@ const OrderSchema = new mongoose.Schema(
 
 // Helpful compound index for common queries (filter by user and status)
 OrderSchema.index({ userId: 1, status: 1 });
+// Index for duplicate order prevention: check orders by phone number and status
+OrderSchema.index({ phoneNumber: 1, status: 1 });
 
 export const Order = mongoose.model("Order", OrderSchema);
 export default Order;
