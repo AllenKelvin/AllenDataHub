@@ -376,6 +376,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[Webhook] Event: ${event}, Amount: ${data.amount}, Status: ${data.status}`);
 
+      // Idempotency check: check if this payment reference was already processed
+      const paymentReference = data.reference;
+      if (paymentReference) {
+        const { Order } = await import("./models/order");
+        const existingOrder = await Order.findOne({ paymentReference }).lean();
+        if (existingOrder) {
+          console.log(`[Webhook] Duplicate webhook detected. Order ${existingOrder._id} already exists for payment reference ${paymentReference}. Skipping.`);
+          return res.status(200).json({ status: true, message: "Duplicate webhook ignored" });
+        }
+      }
+
       if (event === "charge.success") {
         const metadata = data.metadata || {};
         const amount = data.amount; // in smallest currency unit (pesewas)
@@ -430,6 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   productName: p?.name,
                   statusOverride: p && phoneNumber ? "pending" : "completed",
                   priceOverride: priceForRole,
+                  paymentReference: paymentReference,
                 });
                 createdOrdersCount++;
 

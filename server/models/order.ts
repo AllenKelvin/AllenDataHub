@@ -10,6 +10,8 @@ const OrderSchema = new mongoose.Schema(
     dataAmount: { type: String, required: true },
     phoneNumber: { type: String, required: false },
     productName: { type: String, required: false },
+    /** Paystack transaction reference for webhook idempotency */
+    paymentReference: { type: String, index: true },
     vendorOrderId: { type: String },
     /** Client reference sent to Portal-02; vendor webhooks may echo this for lookup */
     clientOrderReference: { type: String, index: true },

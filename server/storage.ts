@@ -217,7 +217,7 @@ export class DatabaseStorage implements IStorage {
     return { ...obj, id: (obj as any)._id?.toString() };
   }
 
-  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string; orderSource?: "web" | "api"; walletBalanceBefore?: number; walletBalanceAfter?: number }) {
+  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string; orderSource?: "web" | "api"; walletBalanceBefore?: number; walletBalanceAfter?: number; paymentReference?: string }) {
     try {
       const p = await Product.findById(order.productId).lean();
       if (!p) throw new Error("Product not found");
@@ -235,6 +235,7 @@ export class DatabaseStorage implements IStorage {
         phoneNumber: order.phoneNumber || undefined,
         productName: order.productName || p.name,
         orderSource: order.orderSource || "web",
+        paymentReference: order.paymentReference,
         walletBalanceBefore: typeof order.walletBalanceBefore === "number" ? order.walletBalanceBefore : undefined,
         walletBalanceAfter: typeof order.walletBalanceAfter === "number" ? order.walletBalanceAfter : undefined,
       });
