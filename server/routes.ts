@@ -332,7 +332,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!user) return res.status(401).json({ message: "Unauthorized" });
     
     const { amount, email, metadata } = req.body;
-    if (typeof amount !== "number" || !email) return res.status(400).json({ message: "Invalid payload" });
+    if (typeof amount !== "number" || !email || typeof email !== "string" || !email.includes("@")) {
+      return res.status(400).json({ message: "Invalid payload: a valid email is required" });
+    }
     const secret = process.env.PAYSTACK_SECRET_KEY;
     if (!secret) return res.status(500).json({ message: "Paystack not configured" });
 
@@ -969,13 +971,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Otherwise initialize Paystack transaction
     const secret = process.env.PAYSTACK_SECRET_KEY;
     if (!secret) return res.status(500).json({ message: "Paystack not configured" });
+    if (!user.email || typeof user.email !== 'string' || !user.email.includes('@')) {
+      return res.status(400).json({ message: 'User email is required for Paystack payment. Please update your profile with a valid email address.' });
+    }
 
     try {
       const amountToCharge = (user.role === 'agent') ? p.agentPrice : p.userPrice;
       const resp = await fetch("https://api.paystack.co/transaction/initialize", {
         method: "POST",
         headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: amountToCharge, email: user.username ?? "", currency: "GHS", metadata: { type: "order", userId: user._id.toString(), productId } }),
+        body: JSON.stringify({ amount: amountToCharge, email: user.email, currency: "GHS", metadata: { type: "order", userId: user._id.toString(), productId } }),
       });
       const data = await resp.json();
       res.json(data);
