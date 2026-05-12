@@ -4,6 +4,7 @@ import { setupAuth, hashPassword, normalizeUser } from "./auth";
 import { verifyJWT } from "./jwt";
 import { verifyApiKey } from "./apiKeyAuth";
 import { storage } from "./storage";
+import { User } from "./models/user";
 import { api } from "@shared/routes";
 import { z } from "zod";;
 
@@ -1145,14 +1146,26 @@ async function seedDatabase() {
   const admin1Hash = await hashPassword("Password100");
   if (!admin1) {
     console.log("Seeding Admin 1...");
-    await storage.createUser({
-      username: "@Admin001",
-      password: admin1Hash,
-      role: "admin",
-      isVerified: true,
-    });
+    try {
+      await storage.createUser({
+        username: "@Admin001",
+        email: "admin001@allendatahub.com",
+        password: admin1Hash,
+        role: "admin",
+        isVerified: true,
+      });
+    } catch (e: any) {
+      console.warn("Failed to seed Admin 1", e?.message || e);
+    }
   } else {
     try {
+      if (!admin1.email) {
+        await User.findByIdAndUpdate(
+          admin1.id || admin1._id?.toString(),
+          { email: "admin001@allendatahub.com" },
+          { new: true, runValidators: true },
+        );
+      }
       await storage.updatePassword(admin1.id || admin1._id?.toString(), admin1Hash);
       console.log("Enforced password for @Admin001");
     } catch (e) {
@@ -1164,14 +1177,26 @@ async function seedDatabase() {
   const admin2Hash = await hashPassword("Password200");
   if (!admin2) {
     console.log("Seeding Admin 2...");
-    await storage.createUser({
-      username: "@Admin002",
-      password: admin2Hash,
-      role: "admin",
-      isVerified: true,
-    });
+    try {
+      await storage.createUser({
+        username: "@Admin002",
+        email: "admin002@allendatahub.com",
+        password: admin2Hash,
+        role: "admin",
+        isVerified: true,
+      });
+    } catch (e: any) {
+      console.warn("Failed to seed Admin 2", e?.message || e);
+    }
   } else {
     try {
+      if (!admin2.email) {
+        await User.findByIdAndUpdate(
+          admin2.id || admin2._id?.toString(),
+          { email: "admin002@allendatahub.com" },
+          { new: true, runValidators: true },
+        );
+      }
       await storage.updatePassword(admin2.id || admin2._id?.toString(), admin2Hash);
       console.log("Enforced password for @Admin002");
     } catch (e) {

@@ -66,9 +66,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser & { isVerified?: boolean }) {
+    if (!insertUser.email || typeof insertUser.email !== "string") {
+      throw new Error("User email is required");
+    }
+
     const user = new User({
       username: insertUser.username,
-      email: (insertUser as any).email,
+      email: insertUser.email,
       password: insertUser.password,
       role: insertUser.role || "user",
       isVerified: insertUser.isVerified ?? false,
@@ -85,7 +89,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePassword(id: string, newPassword: string) {
-    const updated = await User.findByIdAndUpdate(id, { password: newPassword }, { new: true }).lean();
+    const updated = await User.findByIdAndUpdate(id, { password: newPassword }, { new: true, runValidators: true }).lean();
     if (!updated) return null;
     return { ...updated, id: (updated as any)._id?.toString() };
   }
