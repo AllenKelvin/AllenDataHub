@@ -5,6 +5,7 @@ import { verifyJWT } from "./jwt";
 import { verifyApiKey } from "./apiKeyAuth";
 import { storage } from "./storage";
 import { User } from "./models/user";
+import portal02Service, { portal02AvailableVolumes } from "./services/portal02Service";
 import { api } from "@shared/routes";
 import { z } from "zod";;
 
@@ -116,6 +117,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       message: `Invalid phone format. Expected 0XXXXXXXXX (10 digits). Received: "${raw}"`,
     };
   }
+
+  const apiPurchaseRateLimits = new Map<string, { count: number; reset: number }>();
+  const MAX_API_PURCHASES_PER_MINUTE = 20;
+
+  function rateLimitApiPurchase(req: any, res: any, next: any) {
+    const agentId = (req as any).user?.id || req.ip || "anonymous";
+    const now = Date.now();
+    const entry = apiPurchaseRateLimits.get(agentId);
+    if (!entry || now > entry.reset) {
+      apiPurchaseRateLimits.set(agentId, { count: 1, reset: now + 60_000 });
+      return next();
+    }
+    if (entry.count >= MAX_API_PURCHASES_PER_MINUTE) {
+      return res.status(429).json({
+        error: "RATE_LIMIT_EXCEEDED",
+        message: "Too many purchase requests. Please wait a moment and retry.",
+        retryAfterSeconds: Math.ceil((entry.reset - now) / 1000),
+      });
+    }
+    entry.count += 1;
+    return next();
+  }
+
+  app.post("/api/v1/data/purchase", verifyApiKey, rateLimitApiPurchase, async (req, res) => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    res.setHeader("X-Request-ID", requestId);
+
+    const agent = (req as any).user;
+    const body = req.body || {};
+    const phoneRes = normalizeGhPhone(body.phoneNumber);
+    if (!phoneRes.ok) {
+      return res.status(400).json({ error: "INVALID_PHONE_NUMBER", message: phoneRes.message, requestId });
+    }
+    const phoneNumber = phoneRes.phone;
+
+    const rawNetwork = String(body.network || "").trim();
+    const network = Object.keys(portal02AvailableVolumes).find((key) => key.toLowerCase() === rawNetwork.toLowerCase());
+    if (!network) {
+      return res.status(400).json({
+        error: "INVALID_NETWORK",
+        message: `network must be one of: ${Object.keys(portal02AvailableVolumes).join(", ")}`,
+        received: rawNetwork,
+        requestId,
+      });
+    }
+
+    const volume = Number(body.volume);
+    if (!Number.isFinite(volume) || volume <= 0 || !portal02AvailableVolumes[network]?.includes(volume)) {
+      return res.status(400).json({
+        error: "INVALID_VOLUME",
+        message: `volume must be one of: ${portal02AvailableVolumes[network].join(", ")}`,
+        received: body.volume,
+        requestId,
+      });
+    }
+
+    const webhookUrl = body.webhookUrl ? String(body.webhookUrl).trim() : undefined;
+    if (webhookUrl) {
+      try {
+        new URL(webhookUrl);
+      } catch (err) {
+        return res.status(400).json({ error: "INVALID_WEBHOOK_URL", message: "webhookUrl must be a valid URL", received: webhookUrl, requestId });
+      }
+    }
+
+    const { Product } = await import("./models/product");
+    let product = await Product.findOne({ network, dataAmount: `${volume}GB` }).lean();
+    if (!product) {
+      product = await Product.findOne({ network, dataAmount: new RegExp(`^${volume}\\s*GB$`, "i") }).lean();
+    }
+    if (!product) {
+      return res.status(404).json({
+        error: "PRODUCT_NOT_FOUND",
+        message: `No product found for network ${network} and volume ${volume}GB`,
+        requestId,
+      });
+    }
+
+    const unitPrice = (await (storage as any).getApiPriceForAgent(agent.id, product._id?.toString())) ?? (product.agentPrice ?? product.price ?? 0);
+    if (!isFinite(unitPrice) || unitPrice <= 0) {
+      return res.status(400).json({ error: "INVALID_PRICE", message: "Could not determine price for this bundle", requestId });
+    }
+
+    const deducted = await (storage as any).deductAgentBalanceIfSufficient(agent.id, unitPrice);
+    if (!deducted.ok) {
+      return res.status(400).json({
+        error: "INSUFFICIENT_BALANCE",
+        message: "Insufficient wallet balance",
+        required: Number(unitPrice.toFixed(2)),
+        available: Number((deducted as any).available ?? 0),
+        shortfall: Number((unitPrice - Number((deducted as any).available ?? 0)).toFixed(2)),
+        suggestion: "Please topup your wallet before placing this order",
+        requestId,
+      });
+    }
+
+    const clientRef = `API-${agent.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const order = await (storage as any).createCompletedOrder({
+      productId: product._id.toString(),
+      userId: agent.id,
+      phoneNumber,
+      productName: product.name,
+      statusOverride: "pending",
+      paymentStatus: "success",
+      priceOverride: unitPrice,
+      orderSource: "api",
+      walletBalanceBefore: deducted.before,
+      walletBalanceAfter: deducted.after,
+      clientOrderReference: clientRef,
+      webhookUrl,
+    });
+
+    const { Order } = await import("./models/order");
+    let vendorResult: any = { success: false, error: "Internal error", status: "failed" };
+    try {
+      vendorResult = await portal02Service.purchaseDataBundle(phoneNumber, volume, network, clientRef);
+      const vendorStatus = vendorResult.success ? (vendorResult.status && vendorResult.status !== "pending" ? vendorResult.status : "processing") : "failed";
+      await Order.findByIdAndUpdate(order.id, {
+        $set: {
+          vendorOrderId: vendorResult.transactionId || vendorResult.reference,
+          status: vendorStatus === "failed" ? "failed" : "processing",
+          processingResults: [
+            {
+              itemIndex: 0,
+              success: vendorResult.success,
+              transactionId: vendorResult.transactionId,
+              reference: vendorResult.reference,
+              message: vendorResult.message,
+              error: vendorResult.error,
+              status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+            },
+          ],
+        },
+      });
+    } catch (vendorErr: any) {
+      await Order.findByIdAndUpdate(order.id, {
+        $set: {
+          status: "failed",
+          processingResults: [{ itemIndex: 0, success: false, error: vendorErr?.message, status: "failed" }],
+        },
+      });
+      vendorResult = { success: false, error: vendorErr?.message || "Vendor request failed", status: "failed" };
+    }
+
+    return res.json({
+      success: vendorResult.success,
+      orderId: order.id,
+      transactionId: vendorResult.transactionId || vendorResult.reference,
+      reference: vendorResult.reference || clientRef,
+      status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+      message: vendorResult.message || "Order submitted",
+      amount: unitPrice,
+      currency: vendorResult.currency || "GHS",
+      webhookUrl: webhookUrl || null,
+      walletBalanceBefore: deducted.before,
+      walletBalanceAfter: deducted.after,
+      raw: vendorResult.raw ?? null,
+      requestId,
+    });
+  });
 
   app.post("/api/v1/orders", verifyApiKey, async (req, res) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -596,6 +757,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (updated) {
         console.log(`[Portal02] Order ${updated._id} updated to ${ourStatus} (lastStatusUpdateAt=${statusAt.toISOString()})`);
+        if ((updated as any).webhookUrl && ["completed", "failed"].includes(ourStatus)) {
+          const orderDoc = updated as any;
+          try {
+            await fetch(orderDoc.webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                orderId: orderDoc._id?.toString?.(),
+                vendorOrderId: orderDoc.vendorOrderId,
+                clientOrderReference: orderDoc.clientOrderReference,
+                status: ourStatus,
+                vendorStatus: status,
+                phoneNumber: orderDoc.phoneNumber,
+                dataAmount: orderDoc.dataAmount,
+                webhookEvent: processed.event,
+                timestamp: statusAt.toISOString(),
+                raw: req.body,
+              }),
+            });
+            console.log(`[Portal02] Forwarded status update to ${orderDoc.webhookUrl}`);
+          } catch (forwardErr: any) {
+            console.error(`[Portal02] Failed to forward webhook to ${orderDoc.webhookUrl}:`, forwardErr?.message || forwardErr);
+          }
+        }
       } else {
         console.warn(`[Portal02] No order matched webhook candidates: ${candidates.join(", ")}`);
       }

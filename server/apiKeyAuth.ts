@@ -23,8 +23,8 @@ export function generateApiKey(): { token: string; prefix: string; tokenHash: st
 
 export async function verifyApiKey(req: Request, res: Response, next: NextFunction) {
   try {
-    const header = (req.header("X-API-Key") || "").trim();
-    if (!header) return res.status(401).json({ message: "Missing X-API-Key header" });
+    const header = (req.header("x-api-key") || req.header("X-API-Key") || "").trim();
+    if (!header) return res.status(401).json({ message: "Missing x-api-key header" });
 
     const tokenHash = hashApiKey(header);
     const keyDoc = await ApiKey.findOne({ tokenHash, status: "active" }).lean();

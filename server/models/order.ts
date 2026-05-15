@@ -15,6 +15,7 @@ const OrderSchema = new mongoose.Schema(
     vendorOrderId: { type: String },
     /** Client reference sent to Portal-02; vendor webhooks may echo this for lookup */
     clientOrderReference: { type: String, index: true },
+    webhookUrl: { type: String },
     /** Last time vendor webhook reported a status change for this order */
     lastStatusUpdateAt: { type: Date },
     orderSource: { type: String, enum: ["web", "api"], default: "web" },

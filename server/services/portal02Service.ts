@@ -2,13 +2,13 @@ const API_KEY = process.env.PORTAL02_API_KEY || "dk_WZqU3-BTai3q4IuEoOXqc6IHVfGk
 const BASE_URL = process.env.PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1";
 const BACKEND_URL = process.env.BACKEND_URL || process.env.VITE_API_URL || "http://localhost:5000";
 
-const offerSlugs: Record<string, string> = {
+export const portal02OfferSlugs: Record<string, string> = {
   MTN: "master_beneficiary_data_bundle",
   Telecel: "telecel_expiry_bundle",
   AirtelTigo: "ishare_data_bundle",
 };
 
-const availableVolumes: Record<string, number[]> = {
+export const portal02AvailableVolumes: Record<string, number[]> = {
   MTN: [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
   Telecel: [5, 10, 15, 20, 25, 30, 40, 50, 100],
   AirtelTigo: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20],
@@ -36,12 +36,12 @@ function extractVolumeNumber(size: string | number): number {
 }
 
 function isVolumeAvailable(network: string, volume: number): boolean {
-  const volumes = availableVolumes[network];
+  const volumes = portal02AvailableVolumes[network];
   return volumes ? volumes.includes(volume) : false;
 }
 
 function getOfferSlug(network: string): string {
-  const slug = offerSlugs[network];
+  const slug = portal02OfferSlugs[network];
   if (!slug) throw new Error(`No offer slug found for network: ${network}`);
   return slug;
 }

@@ -221,7 +221,7 @@ export class DatabaseStorage implements IStorage {
     return { ...obj, id: (obj as any)._id?.toString() };
   }
 
-  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string; orderSource?: "web" | "api"; walletBalanceBefore?: number; walletBalanceAfter?: number; paymentReference?: string }) {
+  async createCompletedOrder(order: InsertOrder & { userId: string; priceOverride?: number; phoneNumber?: string; productName?: string; paymentStatus?: string; statusOverride?: string; orderSource?: "web" | "api"; walletBalanceBefore?: number; walletBalanceAfter?: number; paymentReference?: string; clientOrderReference?: string; webhookUrl?: string }) {
     try {
       const p = await Product.findById(order.productId).lean();
       if (!p) throw new Error("Product not found");
@@ -240,6 +240,8 @@ export class DatabaseStorage implements IStorage {
         productName: order.productName || p.name,
         orderSource: order.orderSource || "web",
         paymentReference: order.paymentReference,
+        clientOrderReference: order.clientOrderReference || undefined,
+        webhookUrl: order.webhookUrl || undefined,
         walletBalanceBefore: typeof order.walletBalanceBefore === "number" ? order.walletBalanceBefore : undefined,
         walletBalanceAfter: typeof order.walletBalanceAfter === "number" ? order.walletBalanceAfter : undefined,
       });
@@ -261,7 +263,7 @@ export class DatabaseStorage implements IStorage {
 
       console.log(`[Order] Incrementing GB by ${gbIncrement} for user ${order.userId}`);
       const updatedUser = await User.findByIdAndUpdate(order.userId, {
-        $inc: { totalOrdersToday: 1, totalSpentToday: p.price, totalGBSentToday: gbIncrement, totalGBPurchased: gbIncrement },
+        $inc: { totalOrdersToday: 1, totalSpentToday: finalPrice, totalGBSentToday: gbIncrement, totalGBPurchased: gbIncrement },
       }, { new: true });
       console.log(`[Order] User updated, totalGBPurchased now: ${updatedUser?.totalGBPurchased}`);
 
