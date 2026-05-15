@@ -113,6 +113,7 @@ export function setupAuth(app: Express) {
         username: user.username,
         role: userRole,
         email: user.email,
+        isVerified: Boolean(user.isVerified),
       };
 
       const accessToken = generateAccessToken(payload);
@@ -178,6 +179,7 @@ export function setupAuth(app: Express) {
         username: newUser.username,
         role: newUserRole,
         email: newUser.email,
+        isVerified: Boolean(newUser.isVerified),
       };
 
       const accessToken = generateAccessToken(payload);
@@ -227,15 +229,27 @@ export function setupAuth(app: Express) {
   });
 
   // Refresh token endpoint - issue new access token
-  app.post("/api/refresh", (req, res) => {
+  app.post("/api/refresh", async (req, res) => {
     const refreshToken = req.cookies.refresh_token;
     if (!refreshToken) return res.status(401).json({ message: "Missing refresh token" });
 
     const payload = verifyRefreshToken(refreshToken);
     if (!payload) return res.status(401).json({ message: "Invalid refresh token" });
 
-    // Issue new access token
-    const accessToken = generateAccessToken(payload);
+    // Fetch fresh user data to preserve current verification state
+    const user = await storage.getUser(payload.id);
+    if (!user) return res.status(401).json({ message: "Invalid refresh token" });
+
+    const userRole = user.role === 'user' ? 'user' : user.role;
+    const newPayload: JWTPayload = {
+      id: payload.id,
+      username: user.username,
+      role: userRole,
+      email: user.email,
+      isVerified: Boolean(user.isVerified),
+    };
+
+    const accessToken = generateAccessToken(newPayload);
     res.json({ accessToken });
   });
 

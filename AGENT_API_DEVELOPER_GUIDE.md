@@ -293,6 +293,14 @@ These must be set in Render for the agent API to work:
 | `FRONTEND_URL` | `https://<your-frontend-domain>.vercel.app` | CORS configuration |
 | `PORT` | Auto-provided by Render | Server port (usually 10000 on Render) |
 
+### Agent app Render environment
+If you deploy your own agent integration on Render and need a server-side connection to AllenDataHub, add these variables to your agent app:
+
+- `ALLENDATAHUB_API_KEY` — your AllenDataHub partner API key
+- `ALLENDATAHUB_BASE_URL` — `https://allendatahub.com` (optional; default is the public AllenDataHub API host)
+
+Keep `ALLENDATAHUB_API_KEY` secret and never expose it in browser-side code.
+
 ### Render dashboard checklist
 
 When deploying to Render:
