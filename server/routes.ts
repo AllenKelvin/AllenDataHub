@@ -291,11 +291,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.post("/api/v1/orders", verifyApiKey, async (req, res) => {
+  const handleCreateApiOrder = async (req: any, res: any) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     res.setHeader("X-Request-ID", requestId);
 
-    const agent = (req as any).user;
+    const agent = req.user;
     const body = req.body || {};
     const { productId } = body;
     const quantity = Math.max(1, Math.min(100, parseInt(String(body.quantity ?? "1"), 10) || 1));
@@ -406,7 +406,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       orderSource: "api",
     };
     return res.status(201).json({ order: enriched, requestId });
-  });
+  };
+
+  app.post("/api/v1/orders", verifyApiKey, handleCreateApiOrder);
+  app.post("/api/orders", verifyApiKey, handleCreateApiOrder);
 
   app.get("/api/v1/orders", verifyApiKey, async (req, res) => {
     const agent = (req as any).user;

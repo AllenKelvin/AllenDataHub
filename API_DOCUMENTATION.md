@@ -144,6 +144,8 @@ Purchase a data bundle for a customer's phone number.
 POST /api/v1/orders
 ```
 
+> Compatibility: `/api/orders` is supported as an alias, but use `/api/v1/orders` for all new integrations.
+
 **Headers:**
 ```
 X-API-Key: adh_your_secret_key
