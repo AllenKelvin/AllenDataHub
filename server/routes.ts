@@ -31,6 +31,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: "Requested", ...result });
   });
 
+  app.post("/api/agent/api-access/generate-key", verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+    if (user.role !== "agent") return res.status(403).json({ message: "Agents only" });
+    if (!user.isVerified) return res.status(403).json({ message: "Agent not verified" });
+    try {
+      const result = await (storage as any).agentGenerateApiKey(user.id);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message || "Could not generate key" });
+    }
+  });
+
   // === ADMIN: API ACCESS MANAGEMENT ===
   app.get("/api/admin/api-access", verifyJWT, async (req, res) => {
     const user = (req as any).user;

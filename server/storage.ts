@@ -19,6 +19,7 @@ export interface IStorage {
   // API access
   getAgentApiAccessStatus(userId: string): Promise<{ status: "none" | "pending" | "active" | "revoked"; hasKey: boolean }>;
   requestAgentApiAccess(userId: string): Promise<{ status: "pending" | "active" | "revoked" }>;
+  agentGenerateApiKey(userId: string): Promise<{ apiKey: string; message: string }>;
   adminListApiAccess(): Promise<any[]>;
   adminPatchAgentApiPricing(userId: string, prices: Record<string, number>): Promise<{ ok: true }>;
   adminIssueAgentApiKey(userId: string): Promise<{ apiKey: string }>;
@@ -340,6 +341,22 @@ export class DatabaseStorage implements IStorage {
     }
     await ApiAccess.create({ userId, status: "pending", requestedAt: new Date() });
     return { status: "pending" as const };
+  }
+
+  async agentGenerateApiKey(userId: string) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    const access = await ApiAccess.findOne({ userId }).lean();
+    if (!access) throw new Error("API access not requested. Please request access first.");
+    if ((access as any).status !== "active") throw new Error("API access is not active. Please contact your admin.");
+    
+    const { generateApiKey } = await import("./apiKeyAuth");
+    const { token, prefix, tokenHash } = generateApiKey();
+    
+    // Revoke existing active keys for this user
+    await ApiKey.updateMany({ userId, status: "active" }, { $set: { status: "revoked", revokedAt: new Date() } });
+    await ApiKey.create({ userId, prefix, tokenHash, status: "active" });
+    
+    return { apiKey: token, message: "API key generated successfully" };
   }
 
   async adminListApiAccess() {
