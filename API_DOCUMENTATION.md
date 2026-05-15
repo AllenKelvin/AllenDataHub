@@ -141,10 +141,8 @@ Purchase a data bundle for a customer's phone number.
 
 **Endpoint:**
 ```
-POST /api/v1/orders
+POST /api/v1/data/purchase
 ```
-
-> Compatibility: `/api/orders` is supported as an alias, but use `/api/v1/orders` for all new integrations.
 
 **Headers:**
 ```
@@ -155,16 +153,20 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "productId": "507f1f77bcf86cd799439011",
-  "phoneNumber": "0541234567"
+  "network": "MTN",
+  "volume": 1,
+  "phoneNumber": "0541234567",
+  "webhookUrl": "https://your.site/api/webhooks/allendatahub"
 }
 ```
 
 **Body Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `productId` | string | Yes | MongoDB ID of the product (24-character hex string, from products endpoint) |
-| `phoneNumber` | string | Yes | Customer's phone number (10-digit Ghanaian format) |
+| `network` | string | Yes | One of `MTN`, `Telecel`, `AirtelTigo` |
+| `volume` | number | Yes | Volume in GB for the selected network |
+| `phoneNumber` | string | Yes | Customer's phone number; multiple Ghana formats accepted |
+| `webhookUrl` | string | No | Optional callback URL for status updates |
 
 **Phone Number Format:**
 The API accepts phone numbers in multiple formats and automatically normalizes them to 10-digit format:
@@ -206,7 +208,7 @@ The API accepts phone numbers in multiple formats and automatically normalizes t
 
 **Important Fields for Partners:**
 - `vendorOrderId`: Use this to track the order with the vendor and match webhooks
-- `clientOrderReference`: Reference sent to vendor (echoed in their webhooks)
+- `clientOrderReference`: Reference sent to the vendor (echoed in their webhooks)
 - `status`: Order processing status
 
 **Response Headers:**
@@ -215,30 +217,34 @@ The API accepts phone numbers in multiple formats and automatically normalizes t
 **Example Request:**
 ```bash
 # Example 1: Local format
-curl -X POST https://allendatahub.com/api/v1/orders \
+curl -X POST https://allendatahub.com/api/v1/data/purchase \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "productId": "507f1f77bcf86cd799439011",
+    "network": "MTN",
+    "volume": 1,
     "phoneNumber": "0541234567"
   }'
 
 # Example 2: International format (automatically normalized)
-curl -X POST https://allendatahub.com/api/v1/orders \
+curl -X POST https://allendatahub.com/api/v1/data/purchase \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "productId": "507f1f77bcf86cd799439011",
+    "network": "MTN",
+    "volume": 1,
     "phoneNumber": "+233541234567"
   }'
 
-# Example 3: With spaces (automatically normalized)
-curl -X POST https://allendatahub.com/api/v1/orders \
+# Example 3: With webhook URL
+curl -X POST https://allendatahub.com/api/v1/data/purchase \
   -H "X-API-Key: adh_your_secret_key" \
   -H "Content-Type: application/json" \
   -d '{
-    "productId": "507f1f77bcf86cd799439011",
-    "phoneNumber": "0541 234 567"
+    "network": "MTN",
+    "volume": 1,
+    "phoneNumber": "0541 234 567",
+    "webhookUrl": "https://your.site/api/webhooks/allendatahub"
   }'
 ```
 
@@ -253,13 +259,22 @@ Invalid phone number format:
 }
 ```
 
-Invalid product ID:
+Invalid network:
 ```json
 {
-  "error": "INVALID_PRODUCT_ID",
-  "message": "productId must be a valid 24-character MongoDB ObjectId",
-  "example": "507f1f77bcf86cd799439011",
-  "received": "invalid",
+  "error": "INVALID_NETWORK",
+  "message": "network must be one of: MTN, Telecel, AirtelTigo",
+  "received": "BadNet",
+  "requestId": "req_1234567890_abc123"
+}
+```
+
+Invalid volume:
+```json
+{
+  "error": "INVALID_VOLUME",
+  "message": "volume must be one of: 1, 2, 3, 4, ...",
+  "received": 7,
   "requestId": "req_1234567890_abc123"
 }
 ```
@@ -268,8 +283,7 @@ Product not found:
 ```json
 {
   "error": "PRODUCT_NOT_FOUND",
-  "message": "Product not found",
-  "productId": "507f1f77bcf86cd799439011",
+  "message": "No product found for network MTN and volume 1GB",
   "requestId": "req_1234567890_abc123"
 }
 ```
@@ -532,14 +546,13 @@ All error responses follow this format:
 | Code | Message | Solution |
 |------|---------|----------|
 | `INVALID_PHONE_NUMBER` | Invalid phone format | Use format `0XXXXXXXXX` or international format `+233XXXXXXXXX` |
-| `INVALID_PRODUCT_ID` | productId must be a valid ObjectId | Verify productId is a 24-character hex string from products endpoint |
 | `INVALID_REQUEST` | Invalid body structure | Check all required fields are present and correctly formatted |
 
 **Business Logic Errors:**
 
 | Code | Message | Solution |
 |------|---------|----------|
-| `PRODUCT_NOT_FOUND` | Product not found | Verify productId from `/api/v1/products` endpoint |
+| `PRODUCT_NOT_FOUND` | Product not found | Verify your `network` and `volume` match an available bundle |
 | `INSUFFICIENT_BALANCE` | Insufficient wallet balance | Topup your wallet before placing this order |
 | `NO_VALID_PRICE` | No valid API price configured | Contact support; pricing not set for your account on this product |
 
@@ -601,15 +614,15 @@ All error responses follow this format:
 
 Example error handling in TypeScript:
 ```typescript
-async function createOrder(productId: string, phoneNumber: string) {
+async function createOrder(network: string, volume: number, phoneNumber: string) {
   try {
-    const response = await fetch('https://allendatahub.com/api/v1/orders', {
+    const response = await fetch('https://allendatahub.com/api/v1/data/purchase', {
       method: 'POST',
       headers: {
         'X-API-Key': process.env.ALLENDATAHUB_API_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ productId, phoneNumber }),
+      body: JSON.stringify({ network, volume, phoneNumber }),
     });
 
     const data = await response.json();
@@ -654,16 +667,17 @@ const getAvailableProducts = async () => {
 };
 
 // 2. Purchase bundle when customer selects
-const purchaseBundle = async (productId, phoneNumber) => {
-  const response = await fetch('https://allendatahub.com/api/v1/orders', {
+const purchaseBundle = async (network, volume, phoneNumber) => {
+  const response = await fetch('https://allendatahub.com/api/v1/data/purchase', {
     method: 'POST',
     headers: {
       'X-API-Key': 'adh_your_secret_key',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      productId: productId,
-      phoneNumber: phoneNumber
+      network,
+      volume,
+      phoneNumber
     })
   });
   
@@ -919,13 +933,14 @@ const API_KEY = process.env.ALLENDATAHUB_API_KEY;
 ```python
 import requests
 
-def purchase_data_safely(product_id, phone_number):
+def purchase_data_safely(network, volume, phone_number):
     try:
         response = requests.post(
-            'https://allendatahub.com/api/v1/orders',
+            'https://allendatahub.com/api/v1/data/purchase',
             headers={'X-API-Key': API_KEY},
             json={
-                'productId': product_id,
+                'network': network,
+                'volume': volume,
                 'phoneNumber': phone_number
             },
             timeout=10  # 10 second timeout
@@ -975,21 +990,22 @@ def log_api_call(endpoint, method, status_code, response_time):
 
 ```javascript
 async function createOrderWithRetry(
-  productId, 
-  phoneNumber, 
+  network,
+  volume,
+  phoneNumber,
   maxRetries = 3
 ) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(
-        'https://allendatahub.com/api/v1/orders',
+        'https://allendatahub.com/api/v1/data/purchase',
         {
           method: 'POST',
           headers: {
             'X-API-Key': API_KEY,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ productId, phoneNumber })
+          body: JSON.stringify({ network, volume, phoneNumber })
         }
       );
 
@@ -1048,12 +1064,16 @@ def validate_phone_number(phone: str) -> Tuple[bool, str]:
     
     return False, ""
 
-def validate_order_request(product_id: str, phone_number: str) -> Tuple[bool, str]:
+def validate_order_request(network: str, volume: int, phone_number: str) -> Tuple[bool, str]:
     """Validate order request"""
     
-    # Validate product ID (MongoDB ObjectId format)
-    if not re.match(r'^[a-f0-9]{24}$', product_id):
-        return False, "Invalid product ID format"
+    # Validate network
+    if network not in ["MTN", "Telecel", "AirtelTigo"]:
+        return False, "Invalid network"
+    
+    # Validate volume
+    if not isinstance(volume, int) or volume <= 0:
+        return False, "Invalid volume"
     
     # Validate phone number
     is_valid, _ = validate_phone_number(phone_number)
