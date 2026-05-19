@@ -19,14 +19,14 @@ AllenDataHub exposes a partner API under `/api/v1` that allows verified agents t
 
 ## Base URL
 
-- `https://allendatahub.com`
+- `https://allen-data-hub-backend.onrender.com`
 - Agent API path: `/api/v1`
 
 Examples:
 
-- `GET https://allendatahub.com/api/v1/products`
-- `POST https://allendatahub.com/api/v1/data/purchase`
-- `GET https://allendatahub.com/api/v1/orders/:orderId`
+- `GET https://allen-data-hub-backend.onrender.com/api/v1/products`
+- `POST https://allen-data-hub-backend.onrender.com/api/v1/data/purchase`
+- `GET https://allen-data-hub-backend.onrender.com/api/v1/orders/:orderId`
 
 ---
 
@@ -236,7 +236,7 @@ Preferred pattern:
 ### Example Node.js server implementation
 
 ```js
-const BASE_URL = "https://allendatahub.com";
+const BASE_URL = "https://allen-data-hub-backend.onrender.com";
 const API_KEY = process.env.ALLENDATAHUB_API_KEY;
 
 async function purchaseBundle({ phoneNumber, network, volume, webhookUrl }) {
@@ -297,7 +297,7 @@ These must be set in Render for the agent API to work:
 If you deploy your own agent integration on Render and need a server-side connection to AllenDataHub, add these variables to your agent app:
 
 - `ALLENDATAHUB_API_KEY` — your AllenDataHub partner API key
-- `ALLENDATAHUB_BASE_URL` — `https://allendatahub.com` (optional; default is the public AllenDataHub API host)
+- `ALLENDATAHUB_BASE_URL` — `https://allen-data-hub-backend.onrender.com` (optional; default is the current AllenDataHub API backend host)
 
 Keep `ALLENDATAHUB_API_KEY` secret and never expose it in browser-side code.
 
@@ -374,7 +374,7 @@ When deploying to Render:
 ### Direct purchase example
 
 ```bash
-curl -X POST "https://allendatahub.com/api/v1/data/purchase" \
+curl -X POST "https://allen-data-hub-backend.onrender.com/api/v1/data/purchase" \
   -H "Content-Type: application/json" \
   -H "x-api-key: adh_live_123abc" \
   -d '{
@@ -388,7 +388,7 @@ curl -X POST "https://allendatahub.com/api/v1/data/purchase" \
 ### Poll order status example
 
 ```bash
-curl -X GET "https://allendatahub.com/api/v1/orders/65a4c2e8f123456789abcdef" \
+curl -X GET "https://allen-data-hub-backend.onrender.com/api/v1/orders/65a4c2e8f123456789abcdef" \
   -H "x-api-key: adh_live_123abc"
 ```
 
