@@ -335,6 +335,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(agents);
   });
 
+  // Verify Agent (Admin only)
+  app.patch(api.users.verifyAgent.path, verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
+      return res.status(403).send({ message: "Forbidden" });
+    }
+    try {
+      const agentId = req.params.id;
+      if (!agentId) {
+        return res.status(400).json({ message: "Agent ID is required" });
+      }
+      const updated = await storage.updateUserVerification(agentId, true);
+      if (!updated) {
+        return res.status(404).json({ message: "Agent not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to verify agent", error: err.message });
+    }
+  });
+
   // Admin totals across platform (Admin only)
   app.get("/api/admin/totals", verifyJWT, async (req, res) => {
     const user = (req as any).user;
