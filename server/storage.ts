@@ -4,6 +4,7 @@ import { Order } from "./models/order";
 import { ApiAccess } from "./models/apiAccess";
 import { ApiKey } from "./models/apiKey";
 import { AgentApiPrice } from "./models/agentApiPrice";
+import { Notification } from "./models/notification";
 import type { InsertUser, InsertProduct, InsertOrder } from "@shared/schema";
 import mongoose from "mongoose";
 // Lazy-load MongoStore to avoid initialization errors
@@ -318,6 +319,30 @@ export class DatabaseStorage implements IStorage {
     const updated = await User.findByIdAndUpdate(agentId, { $inc: { balance: amount } }, { new: true }).lean();
     if (!updated) return null;
     return { ...updated, id: updated._id?.toString() };
+  }
+
+  async createNotification(userId: string, message: string, meta: any = {}) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) throw new Error("Invalid user id");
+    const doc = await Notification.create({ userId, message, meta });
+    return { ...doc.toObject(), id: doc._id.toString() };
+  }
+
+  async getUserNotifications(userId: string, limit = 50) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) return [];
+    const docs = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
+    return docs.map((d: any) => ({ ...d, id: d._id?.toString() }));
+  }
+
+  async markNotificationRead(notificationId: string) {
+    if (!mongoose.Types.ObjectId.isValid(notificationId)) return null;
+    const updated = await Notification.findByIdAndUpdate(notificationId, { $set: { read: true } }, { new: true }).lean();
+    return updated ? { ...updated, id: updated._id?.toString() } : null;
+  }
+
+  async getUserDeposits(userId: string, limit = 10) {
+    if (!mongoose.Types.ObjectId.isValid(userId)) return [];
+    const docs = await Notification.find({ userId, 'meta.type': 'deposit' }).sort({ createdAt: -1 }).limit(limit).lean();
+    return docs.map((d: any) => ({ ...d, id: d._id?.toString() }));
   }
 
   async getAgentApiAccessStatus(userId: string) {

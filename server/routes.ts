@@ -414,13 +414,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     try {
       const id = req.params.id;
-      const { amount } = req.body;
+      const { amount, reason } = req.body;
       if (typeof amount !== "number" || amount <= 0) return res.status(400).send({ message: "Invalid amount" });
       const amountGHS = Number(amount);
+
+      // Read current balance before crediting
+      const beforeUser = await (storage as any).getUser(id);
+      const beforeBal = Number((beforeUser && (beforeUser as any).balance) ?? 0);
+
       const updated = await (storage as any).creditAgentBalance(id, amountGHS);
-      res.json(updated);
+      if (!updated) return res.status(404).json({ message: 'Agent not found' });
+
+      const afterBal = Number((updated as any).balance ?? 0);
+
+      const adminName = user.username || 'Admin';
+      const message = `Your account has been funded with GHS ${amountGHS.toFixed(2)} by ${adminName}. ${reason ? 'Reason: ' + String(reason) : ''}`;
+
+      // Create a notification record for the agent (used by frontend bell and admin deposits list)
+      try {
+        await (storage as any).createNotification(id, message, { type: 'deposit', amount: amountGHS, before: beforeBal, after: afterBal, platform: 'admin', reason, by: user.id });
+      } catch (nErr) {
+        console.error('[Notify] Failed to create notification', nErr);
+      }
+
+      // Send email to agent (Brevo) if configured
+      try {
+        const agent = await (storage as any).getUser(id);
+        const agentEmail = agent?.email;
+        const brevoApiKey = process.env.BREVO_API_KEY;
+        if (agentEmail && brevoApiKey) {
+          await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "api-key": brevoApiKey },
+            body: JSON.stringify({
+              sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
+              to: [{ email: agentEmail, name: agent?.username || 'Agent' }],
+              subject: "Your agent account was funded",
+              htmlContent: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <div style="background-color: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0;">Account Funded</h1>
+                  </div>
+                  <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+                    <p style="font-size: 16px; color: #1f2937;">Hi ${agent?.username || 'Agent'},</p>
+                    <p style="font-size: 16px; color: #1f2937;">Your account has been credited with <strong>GHS ${amountGHS.toFixed(2)}</strong> by <strong>${adminName}</strong>.</p>
+                    ${reason ? `<p style="font-size:14px;color:#374151">Reason: ${String(reason)}</p>` : ''}
+                    <p style="font-size:12px;color:#6b7280; margin-top:20px">Balance before: GHS ${beforeBal.toFixed(2)} — Balance after: GHS ${afterBal.toFixed(2)}</p>
+                  </div>
+                </div>
+              `,
+            }),
+          });
+        }
+      } catch (emailErr) {
+        console.error('[Email] Failed to send funding email', emailErr);
+      }
+
+      res.json({ updated, message });
     } catch (err) {
+      console.error('[Admin Wallet] error', err);
       res.status(500).json({ message: "Internal Server Error" });
+    }
+  });
+
+  // Notifications for current user
+  app.get('/api/notifications', verifyJWT, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: 'Unauthorized' });
+      const docs = await (storage as any).getUserNotifications(user.id, 50);
+      res.json(docs);
+    } catch (e) {
+      console.error('[Notifications] fetch failed', e);
+      res.status(500).json({ message: 'Failed to fetch notifications' });
+    }
+  });
+
+  app.post('/api/notifications/:id/read', verifyJWT, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const updated = await (storage as any).markNotificationRead(id);
+      res.json(updated);
+    } catch (e) {
+      res.status(500).json({ message: 'Failed to mark read' });
+    }
+  });
+
+  // Admin: fetch recent deposits for a specific agent
+  app.get('/api/admin/agents/:id/deposits', verifyJWT, async (req, res) => {
+    const user = (req as any).user;
+    if (user?.role !== 'admin') return res.status(403).json({ message: 'Forbidden' });
+    try {
+      const id = req.params.id;
+      const docs = await (storage as any).getUserDeposits(id, 20);
+      res.json(docs);
+    } catch (e) {
+      console.error('[Admin Deposits] failed', e);
+      res.status(500).json({ message: 'Failed to fetch deposits' });
     }
   });
 
@@ -502,7 +592,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const amountAfterFee = amountInGHS - adminFee;
             console.log(`[Webhook] Wallet topup for agent ${agentId}. Amount: ${amountInGHS} GHS, Admin Fee (4%): ${adminFee.toFixed(2)} GHS, Net Credit: ${amountAfterFee.toFixed(2)} GHS`);
             // Credit agent balance with amount minus 4% admin fee
-            await (storage as any).creditAgentBalance(agentId, amountAfterFee);
+            const beforeUser = await (storage as any).getUser(agentId);
+            const beforeBal = Number((beforeUser && (beforeUser as any).balance) ?? 0);
+            const updated = await (storage as any).creditAgentBalance(agentId, amountAfterFee);
+            const afterBal = Number((updated as any).balance ?? 0);
+
+            // Create deposit notification and send email to agent
+            try {
+              await (storage as any).createNotification(agentId, `Your account was credited with GHS ${amountAfterFee.toFixed(2)} via Paystack.`, { type: 'deposit', amount: amountAfterFee, before: beforeBal, after: afterBal, platform: 'paystack' });
+            } catch (nErr) {
+              console.error('[Webhook Notify] Failed to create notification', nErr);
+            }
+
+            try {
+              const agent = await (storage as any).getUser(agentId);
+              const agentEmail = agent?.email;
+              const brevoApiKey = process.env.BREVO_API_KEY;
+              if (agentEmail && brevoApiKey) {
+                await fetch("https://api.brevo.com/v3/smtp/email", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "api-key": brevoApiKey },
+                  body: JSON.stringify({
+                    sender: { name: "AllenDataHub", email: "allendatahub@gmail.com" },
+                    to: [{ email: agentEmail, name: agent?.username || 'Agent' }],
+                    subject: "Wallet funded",
+                    htmlContent: `
+                      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <div style="background-color: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                          <h1 style="margin: 0;">Wallet Funded</h1>
+                        </div>
+                        <div style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb;">
+                          <p style="font-size: 16px; color: #1f2937;">Hi ${agent?.username || 'Agent'},</p>
+                          <p style="font-size: 16px; color: #1f2937;">Your wallet has been credited with <strong>GHS ${amountAfterFee.toFixed(2)}</strong> via Paystack.</p>
+                          <p style="font-size:12px;color:#6b7280; margin-top:20px">Balance before: GHS ${beforeBal.toFixed(2)} — Balance after: GHS ${afterBal.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    `,
+                  }),
+                });
+              }
+            } catch (emailErr) {
+              console.error('[Webhook Email] failed', emailErr);
+            }
           }
         }
 
