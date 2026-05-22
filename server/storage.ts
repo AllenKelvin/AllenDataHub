@@ -15,6 +15,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<any | null>;
   createUser(user: InsertUser & { isVerified?: boolean }): Promise<any>;
   updateUserVerification(id: string, isVerified: boolean): Promise<any | null>;
+  updateUser(id: string, updates: Record<string, any>): Promise<any | null>;
   getUnverifiedAgents(): Promise<any[]>;
   updatePassword(id: string, newPassword: string): Promise<any | null>;
   // API access
@@ -86,6 +87,20 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserVerification(id: string, isVerified: boolean) {
     const updated = await User.findByIdAndUpdate(id, { isVerified }, { new: true }).lean();
+    if (!updated) return null;
+    return { ...updated, id: (updated as any)._id?.toString() };
+  }
+
+  async updateUser(id: string, updates: Record<string, any>) {
+    if (!mongoose.Types.ObjectId.isValid(id)) return null;
+    const allowed: Record<string, any> = {};
+    if (typeof updates.fullName === 'string') allowed.fullName = updates.fullName;
+    if (typeof updates.email === 'string') allowed.email = updates.email;
+    if (typeof updates.phoneNumber === 'string') allowed.phoneNumber = updates.phoneNumber;
+    if (typeof updates.whatsapp === 'string') allowed.whatsapp = updates.whatsapp;
+    if (typeof updates.momo === 'string') allowed.momo = updates.momo;
+    if (Object.keys(allowed).length === 0) return null;
+    const updated = await User.findByIdAndUpdate(id, { $set: allowed }, { new: true }).lean();
     if (!updated) return null;
     return { ...updated, id: (updated as any)._id?.toString() };
   }

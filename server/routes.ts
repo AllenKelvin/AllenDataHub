@@ -490,6 +490,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update current user's profile
+  app.patch('/api/user', verifyJWT, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ message: 'Unauthorized' });
+      const body = req.body || {};
+      const updates: Record<string, any> = {};
+      if (typeof body.fullName === 'string') updates.fullName = body.fullName;
+      if (typeof body.email === 'string') updates.email = body.email;
+      if (typeof body.phoneNumber === 'string') updates.phoneNumber = body.phoneNumber;
+      if (typeof body.whatsapp === 'string') updates.whatsapp = body.whatsapp;
+      if (typeof body.momo === 'string') updates.momo = body.momo;
+
+      if (Object.keys(updates).length === 0) return res.status(400).json({ message: 'No valid fields to update' });
+
+      const updated = await (storage as any).updateUser(user.id, updates);
+      if (!updated) return res.status(404).json({ message: 'User not found or nothing updated' });
+      const norm = normalizeUser(updated);
+      res.json(norm);
+    } catch (e: any) {
+      console.error('[Profile] update failed', e);
+      res.status(500).json({ message: 'Failed to update profile' });
+    }
+  });
+
   app.post('/api/notifications/:id/read', verifyJWT, async (req, res) => {
     try {
       const id = req.params.id;
