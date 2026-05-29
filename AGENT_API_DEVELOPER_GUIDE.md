@@ -192,6 +192,7 @@ The forwarded payload includes:
 - `orderId`
 - `vendorOrderId`
 - `clientOrderReference`
+- `reference`
 - `status`
 - `vendorStatus`
 - `phoneNumber`

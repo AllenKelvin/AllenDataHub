@@ -851,7 +851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (updated) {
         console.log(`[Portal02] Order ${updated._id} updated to ${ourStatus} (lastStatusUpdateAt=${statusAt.toISOString()})`);
-        if ((updated as any).webhookUrl && ["completed", "failed"].includes(ourStatus)) {
+        if ((updated as any).webhookUrl && ["processing", "completed", "failed"].includes(ourStatus)) {
           const orderDoc = updated as any;
           try {
             await fetch(orderDoc.webhookUrl, {
@@ -861,6 +861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 orderId: orderDoc._id?.toString?.(),
                 vendorOrderId: orderDoc.vendorOrderId,
                 clientOrderReference: orderDoc.clientOrderReference,
+                reference: orderDoc.clientOrderReference || orderDoc.vendorOrderId || orderDoc._id?.toString?.(),
                 status: ourStatus,
                 vendorStatus: status,
                 phoneNumber: orderDoc.phoneNumber,

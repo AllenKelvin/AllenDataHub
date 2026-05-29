@@ -91,6 +91,7 @@ app.post("/api/webhooks/allendatahub", express.json(), async (req, res) => {
     orderId,
     vendorOrderId,
     clientOrderReference,
+    reference,
     status,           // "completed", "failed", "processing"
     vendorStatus,     // Raw vendor status
     phoneNumber,
@@ -160,7 +161,12 @@ When status changes, you'll receive:
     // Raw vendor response data
   }
 }
-```
+
+> Tip: Match the incoming webhook by any available identifier:
+> - `orderId`
+> - `vendorOrderId`
+> - `clientOrderReference`
+> - `reference`
 
 ### Status Values Explained
 
