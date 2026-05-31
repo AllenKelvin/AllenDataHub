@@ -246,11 +246,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let vendorResult: any = { success: false, error: "Internal error", status: "failed" };
     try {
       vendorResult = await portal02Service.purchaseDataBundle(phoneNumber, volume, network, clientRef);
-      const vendorStatus = vendorResult.success ? (vendorResult.status && vendorResult.status !== "pending" ? vendorResult.status : "processing") : "failed";
       await Order.findByIdAndUpdate(order.id, {
         $set: {
           vendorOrderId: vendorResult.transactionId || vendorResult.reference,
-          status: vendorStatus === "failed" ? "failed" : "processing",
+          status: vendorResult.success ? "pending" : "failed",
           processingResults: [
             {
               itemIndex: 0,
@@ -259,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               reference: vendorResult.reference,
               message: vendorResult.message,
               error: vendorResult.error,
-              status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+              status: vendorResult.status || (vendorResult.success ? "pending" : "failed"),
             },
           ],
         },
@@ -279,7 +278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       orderId: order.id,
       transactionId: vendorResult.transactionId || vendorResult.reference,
       reference: vendorResult.reference || clientRef,
-      status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+      status: vendorResult.status || (vendorResult.success ? "pending" : "failed"),
       message: vendorResult.message || "Order submitted",
       amount: unitPrice,
       currency: vendorResult.currency || "GHS",
@@ -771,9 +770,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           reference: vendorResult.reference,
                           message: vendorResult.message,
                           error: vendorResult.error,
-                          status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+                          status: vendorResult.status || (vendorResult.success ? "pending" : "failed"),
                         },
-                        status: vendorResult.success ? "processing" : "failed",
+                        status: vendorResult.success ? "pending" : "failed",
                       },
                     });
                   } catch (vendorErr: any) {
@@ -1095,9 +1094,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       reference: vendorResult.reference,
                       message: vendorResult.message,
                       error: vendorResult.error,
-                      status: vendorResult.status || (vendorResult.success ? "processing" : "failed"),
+                      status: vendorResult.status || (vendorResult.success ? "pending" : "failed"),
                     },
-                    status: vendorResult.success ? "processing" : "failed",
+                    status: vendorResult.success ? "pending" : "failed",
                   },
                 });
               } catch (vendorErr: any) {
