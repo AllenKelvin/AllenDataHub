@@ -7,7 +7,8 @@ import { storage } from "./storage";
 import { User } from "./models/user";
 import portal02Service, { portal02AvailableVolumes } from "./services/portal02Service";
 import { api } from "@shared/routes";
-import { z } from "zod";;
+import { z } from "zod";
+import { hasActiveProcessingConflict } from "./utils/orderDuplicateCheck";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -687,21 +688,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const orderCount = existingOrders.length;
               
               if (orderCount >= 2) {
-                // Check if all existing orders are completed
-                const hasIncompleteOrders = existingOrders.some(
-                  (o) => o.status === "pending" || o.status === "processing"
-                );
+                const hasIncompleteOrders = hasActiveProcessingConflict(existingOrders);
                 
                 if (hasIncompleteOrders) {
-                  const incomplete = existingOrders
-                    .filter((o) => o.status === "pending" || o.status === "processing")
-                    .map((o) => `${phoneNumber} (${o.productName || "Unknown"}-${o.status})`);
                   conflictingItems.push({
                     phoneNumber,
                     productName: existingOrders[0]?.productName || "Unknown product",
                     status: "blocked",
                   });
-                  console.log(`[Webhook] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, some incomplete`);
+                  console.log(`[Webhook] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, active processing orders present`);
                 }
               }
             }
@@ -992,10 +987,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orderCount = existingOrders.length;
       
       if (orderCount >= 2) {
-        // Check if all existing orders are completed
-        const hasIncompleteOrders = existingOrders.some(
-          (o) => o.status === "pending" || o.status === "processing"
-        );
+        const hasIncompleteOrders = hasActiveProcessingConflict(existingOrders);
         
         if (hasIncompleteOrders) {
           conflictingItems.push({
@@ -1003,7 +995,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             productName: existingOrders[0]?.productName || "Unknown product",
             status: "blocked",
           });
-          console.log(`[Checkout] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, some incomplete`);
+          console.log(`[Checkout] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, active processing orders present`);
         }
       }
     }
