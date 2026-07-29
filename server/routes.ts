@@ -8,7 +8,6 @@ import { User } from "./models/user";
 import portal02Service, { portal02AvailableVolumes } from "./services/portal02Service";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { hasActiveProcessingConflict } from "./utils/orderDuplicateCheck";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -673,45 +672,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const { User } = await import("./models/user");
             const portal02Service = (await import("./services/portal02Service")).default;
 
-            // Check for duplicate orders: allow max 2 orders per phone number
-            // - If 0-1 existing orders: allow new order
-            // - If 2+ existing orders: block unless all are completed
-            const processingStatuses = ["pending", "processing"];
-            const conflictingItems: Array<{ phoneNumber: string; productName: string; status: string }> = [];
-            
-            for (const item of cart) {
-              const phoneNumber = item.phoneNumber?.trim();
-              if (!phoneNumber) continue;
-              
-              // Count all orders for this phone number
-              const existingOrders = await Order.find({ phoneNumber }).sort({ createdAt: -1 }).lean();
-              const orderCount = existingOrders.length;
-              
-              if (orderCount >= 2) {
-                const hasIncompleteOrders = hasActiveProcessingConflict(existingOrders);
-                
-                if (hasIncompleteOrders) {
-                  conflictingItems.push({
-                    phoneNumber,
-                    productName: existingOrders[0]?.productName || "Unknown product",
-                    status: "blocked",
-                  });
-                  console.log(`[Webhook] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, active processing orders present`);
-                }
-              }
-            }
-            
-            if (conflictingItems.length > 0) {
-              const conflictMessages = conflictingItems
-                .map((item) => item.phoneNumber)
-                .join(", ");
-              console.log(`[Webhook] Duplicate order blocked: ${conflictMessages}`);
-              return res.status(400).json({
-                message: `You already have processing orders for: ${conflictMessages}. Please wait for delivery before ordering to the same number again.`,
-                conflictingItems,
-              });
-            }
-
             // Get user role for pricing
             const webhookUser = await User.findById(userId).lean();
             const userRole = webhookUser?.role;
@@ -971,45 +931,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const cart = await storage.getCart(userId);
       console.log(`[Checkout] Cart items: ${cart.length}, Full cart: ${JSON.stringify(cart)}`);
-
-    // Check for duplicate orders: allow max 2 orders per phone number
-    // - If 0-1 existing orders: allow new order
-    // - If 2+ existing orders: block unless all are completed
-    const { Order } = await import("./models/order");
-    const conflictingItems: Array<{ phoneNumber: string; productName: string; status: string }> = [];
-    
-    for (const item of cart) {
-      const phoneNumber = item.phoneNumber?.trim();
-      if (!phoneNumber) continue;
-      
-      // Count all orders for this phone number
-      const existingOrders = await Order.find({ phoneNumber }).sort({ createdAt: -1 }).lean();
-      const orderCount = existingOrders.length;
-      
-      if (orderCount >= 2) {
-        const hasIncompleteOrders = hasActiveProcessingConflict(existingOrders);
-        
-        if (hasIncompleteOrders) {
-          conflictingItems.push({
-            phoneNumber,
-            productName: existingOrders[0]?.productName || "Unknown product",
-            status: "blocked",
-          });
-          console.log(`[Checkout] Duplicate order blocked for ${phoneNumber}: ${orderCount} orders exist, active processing orders present`);
-        }
-      }
-    }
-    
-    if (conflictingItems.length > 0) {
-      const conflictMessages = conflictingItems
-        .map((item) => `${item.phoneNumber} (${item.productName})`)
-        .join(", ");
-      console.log(`[Checkout] Duplicate order blocked: ${conflictMessages}`);
-      return res.status(400).json({
-        message: `You already have processing orders for: ${conflictMessages}. Please wait for delivery before ordering to the same number again.`,
-        conflictingItems,
-      });
-    }
 
     // compute total with role-specific pricing
     let total = 0;

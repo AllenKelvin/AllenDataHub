@@ -11,11 +11,11 @@ test('pending orders do not count as active processing conflicts', () => {
   assert.equal(hasActiveProcessingConflict(orders), false);
 });
 
-test('processing orders do count as active conflicts', () => {
+test('processing orders also do not block checkout anymore', () => {
   const orders = [
     { status: 'processing', phoneNumber: '0240000000' },
     { status: 'completed', phoneNumber: '0240000000' },
   ];
 
-  assert.equal(hasActiveProcessingConflict(orders), true);
+  assert.equal(hasActiveProcessingConflict(orders), false);
 });

@@ -5,5 +5,6 @@ export type OrderLike = {
 };
 
 export function hasActiveProcessingConflict(existingOrders: OrderLike[]) {
-  return existingOrders.some((order) => (order.status || "").toLowerCase() === "processing");
+  void existingOrders;
+  return false;
 }
