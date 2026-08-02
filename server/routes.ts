@@ -549,14 +549,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (typeof amount !== "number" || !email || typeof email !== "string" || !email.includes("@")) {
       return res.status(400).json({ message: "Invalid payload: a valid email is required" });
     }
-    const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) return res.status(500).json({ message: "Paystack not configured" });
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_SECRET;
+    if (!paystackSecret) return res.status(500).json({ message: "Paystack not configured" });
 
     try {
       const resp = await fetch("https://api.paystack.co/transaction/initialize", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${secret}`,
+          Authorization: `Bearer ${paystackSecret}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ amount, email, currency: "GHS", metadata }),
@@ -569,31 +569,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Paystack webhook
+  async function forwardNewAppPaystackSuccess(data: any) {
+    const newAppBackendUrl = process.env.NEW_APP_BACKEND_URL;
+    const bridgeSecret = process.env.INTERNAL_BRIDGE_SECRET;
+
+    if (!newAppBackendUrl) {
+      console.error("[Webhook] NEW_APP forwarding failed: NEW_APP_BACKEND_URL is not configured.");
+      return;
+    }
+    if (!bridgeSecret) {
+      console.error("[Webhook] NEW_APP forwarding failed: INTERNAL_BRIDGE_SECRET is not configured.");
+      return;
+    }
+
+    const forwardUrl = `${newAppBackendUrl.replace(/\/+$/, "")}/api/internal/paystack-success`;
+    try {
+      const response = await fetch(forwardUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": bridgeSecret,
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => "<no response body>");
+        console.error(`[Webhook] NEW_APP forward failed (${response.status}): ${bodyText}`);
+      } else {
+        console.log(`[Webhook] NEW_APP paystack success forwarded to ${forwardUrl}`);
+      }
+    } catch (forwardErr) {
+      console.error("[Webhook] Failed forwarding NEW_APP paystack success:", forwardErr);
+    }
+  }
+
   app.post("/api/paystack/webhook", async (req, res) => {
-    const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) return res.status(500).send("Paystack not configured");
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_SECRET;
+    if (!paystackSecret) {
+      console.error("[Webhook] Paystack webhook request received but Paystack secret is not configured.");
+      return res.status(200).json({ status: false, message: "Paystack not configured" });
+    }
 
     const signature = req.headers["x-paystack-signature"] as string | undefined;
-    const raw = (req.rawBody as Buffer) || Buffer.from("");
+    const raw = (((req as any).rawBody as Buffer) || Buffer.from(""));
     const crypto = await import("crypto");
-    const hmac = crypto.createHmac("sha512", secret).update(raw).digest("hex");
+    const hmac = crypto.createHmac("sha512", paystackSecret).update(raw).digest("hex");
 
     console.log(`[Webhook] Paystack webhook received. Signature match: ${signature === hmac}`);
-    
+
     if (!signature || signature !== hmac) {
       console.warn(`[Webhook] Invalid Paystack webhook signature. Expected: ${hmac}, Got: ${signature}`);
-      return res.status(400).send("Invalid signature");
+      return res.status(200).json({ status: false, message: "Invalid signature" });
     }
 
     try {
       const payload = JSON.parse(raw.toString());
       const event = payload.event;
       const data = payload.data;
+      const metadata = data.metadata || {};
+      const paymentReference = data.reference;
+      const isNewApp =
+        (typeof paymentReference === "string" && paymentReference.startsWith("NEWAPP_")) ||
+        metadata.project === "NEW_APP";
 
       console.log(`[Webhook] Event: ${event}, Amount: ${data.amount}, Status: ${data.status}`);
 
+      if (event === "charge.success" && isNewApp) {
+        console.log(`[Webhook] NEW_APP payment detected. Reference: ${paymentReference}, project: ${metadata.project}`);
+        void forwardNewAppPaystackSuccess(data);
+        return res.status(200).json({ status: true, message: "Paystack webhook received" });
+      }
+
       // Idempotency check: check if this payment reference was already processed
-      const paymentReference = data.reference;
       if (paymentReference) {
         const { Order } = await import("./models/order");
         const existingOrder = await Order.findOne({ paymentReference }).lean();
@@ -604,7 +652,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (event === "charge.success") {
-        const metadata = data.metadata || {};
         const amount = data.amount; // in smallest currency unit (pesewas)
         console.log(`[Webhook] Charge success. Metadata type: ${metadata.type}, UserId: ${metadata.userId}`);
         
@@ -615,13 +662,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const adminFee = amountInGHS * 0.04; // 4% admin fee
             const amountAfterFee = amountInGHS - adminFee;
             console.log(`[Webhook] Wallet topup for agent ${agentId}. Amount: ${amountInGHS} GHS, Admin Fee (4%): ${adminFee.toFixed(2)} GHS, Net Credit: ${amountAfterFee.toFixed(2)} GHS`);
-            // Credit agent balance with amount minus 4% admin fee
             const beforeUser = await (storage as any).getUser(agentId);
             const beforeBal = Number((beforeUser && (beforeUser as any).balance) ?? 0);
             const updated = await (storage as any).creditAgentBalance(agentId, amountAfterFee);
             const afterBal = Number((updated as any).balance ?? 0);
 
-            // Create deposit notification and send email to agent
             try {
               await (storage as any).createNotification(agentId, `Your account was credited with GHS ${amountAfterFee.toFixed(2)} via Paystack.`, { type: 'deposit', amount: amountAfterFee, before: beforeBal, after: afterBal, platform: 'paystack' });
             } catch (nErr) {
@@ -672,7 +717,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const { User } = await import("./models/user");
             const portal02Service = (await import("./services/portal02Service")).default;
 
-            // Get user role for pricing
             const webhookUser = await User.findById(userId).lean();
             const userRole = webhookUser?.role;
 
@@ -682,8 +726,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               for (let i = 0; i < qty; i++) {
                 const p = await Product.findById(item.productId).lean();
                 const phoneNumber = item.phoneNumber || "";
-
-                // Use role-specific price, fallback to base price if not set
                 const priceForRole = userRole === 'agent' 
                   ? (p?.agentPrice ?? p?.price) 
                   : (p?.userPrice ?? p?.price);
@@ -749,11 +791,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ status: true });
+      res.status(200).json({ status: true });
     } catch (err) {
       console.error(`[Webhook] Processing error: ${err}`);
-      res.status(500).send("Webhook error");
+      res.status(200).json({ status: false, message: "Webhook processing failed" });
     }
+  });
+
+  // Internal bridge endpoint for verified forwarded Paystack success payloads
+  app.post("/api/internal/paystack-success", async (req, res) => {
+    const bridgeSecret = process.env.INTERNAL_BRIDGE_SECRET;
+    if (!bridgeSecret) {
+      console.error("[Internal Bridge] INTERNAL_BRIDGE_SECRET is not configured.");
+      return res.status(500).json({ status: false, message: "Internal bridge secret not configured" });
+    }
+
+    const incomingSecret = req.headers["x-internal-secret"] as string | undefined;
+    if (!incomingSecret || incomingSecret !== bridgeSecret) {
+      console.warn("[Internal Bridge] Unauthorized forwarded webhook request.");
+      return res.status(401).json({ status: false, message: "Unauthorized" });
+    }
+
+    console.log("[Internal Bridge] Verified forwarded webhook request.");
+    return res.status(200).json({ status: true, message: "Forwarded webhook verified" });
   });
 
   // Portal-02 vendor webhook (updates order status from vendor)
@@ -1032,7 +1092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     // PAYSTACK PAYMENT — all users
-    const secret = process.env.PAYSTACK_SECRET_KEY;
+    const secret = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_SECRET;
     if (!secret) return res.status(500).json({ message: 'Paystack not configured' });
 
     // Validate email for Paystack - ONLY use email, never fall back to username
@@ -1162,7 +1222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     // Otherwise initialize Paystack transaction
-    const secret = process.env.PAYSTACK_SECRET_KEY;
+    const secret = process.env.PAYSTACK_SECRET_KEY || process.env.PAYSTACK_SECRET;
     if (!secret) return res.status(500).json({ message: "Paystack not configured" });
     if (!user.email || typeof user.email !== 'string' || !user.email.includes('@')) {
       return res.status(400).json({ message: 'User email is required for Paystack payment. Please update your profile with a valid email address.' });
