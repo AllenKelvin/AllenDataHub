@@ -13,7 +13,7 @@ interface AuthContextType {
     username?: string;
     phone: string;
     password: string;
-    role: "user" | "agent" | "admin";
+    role: "user" | "agent";
     referredBy?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
   verifyEmail: (token: string) => Promise<{ ok: boolean; error?: string }>;

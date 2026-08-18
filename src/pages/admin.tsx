@@ -24,7 +24,6 @@ export default function AdminPage() {
     fullName?: string;
     email?: string;
     role?: string;
-    apiPrice: number;
     apiPricing: Record<string, number>;
     keys: Array<{ id: string; name?: string; keyPreview?: string; status?: string; lastUsed?: string | null }>;
   }>>([]);
@@ -37,10 +36,11 @@ export default function AdminPage() {
     agentPrice: number;
   }>>([]);
   const [selectedApiAccountId, setSelectedApiAccountId] = useState("");
+  const [editingApiProducts, setEditingApiProducts] = useState<Set<string>>(new Set());
   const [allOrders, setAllOrders] = useState<Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }>>([]);
   const [disabledNetworks, setDisabledNetworks] = useState<string[]>([]);
   const [priceForm, setPriceForm] = useState({ userPrice: "4", agentPrice: "3.5", network: "MTN", label: "1GB" });
-  const [apiSettings, setApiSettings] = useState({ enabled: true, price: "0.5", note: "API access active" });
+  const [apiSettings, setApiSettings] = useState({ enabled: true, note: "API access active" });
   const [summary, setSummary] = useState({ users: 0, orders: 0, refunds: 0, notifications: 0, apiKeys: 0, products: 0, networkSettings: 0, disabledNetworks: [] as string[] });
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function AdminPage() {
           apiFetch<{ summary?: typeof summary }>('/api/admin/overview', { userId: user.id }),
           apiFetch<{ requests?: Array<{ id: string; email?: string; requestType?: string; createdAt?: string; status?: string }> }>('/api/admin/requests', { userId: user.id }),
           apiFetch<{ settings?: Array<{ network: string; enabled?: boolean }> }>('/api/network-settings', { userId: user.id }),
-          apiFetch<{ config?: { enabled?: boolean; price?: number; note?: string } }>('/api/admin/api-config', { userId: user.id }),
+          apiFetch<{ config?: { enabled?: boolean; note?: string } }>('/api/admin/api-config', { userId: user.id }),
           apiFetch<{ orders?: Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }> }>('/api/orders', { userId: user.id }),
           apiFetch<{ accounts?: typeof apiAccounts }>('/api/admin/api-accounts', { userId: user.id }),
           apiFetch<{ products?: typeof apiProducts }>('/api/admin/api-products', { userId: user.id }),
@@ -66,7 +66,6 @@ export default function AdminPage() {
         setDisabledNetworks(nextDisabled);
         setApiSettings({
           enabled: !!configData?.config?.enabled,
-          price: String(configData?.config?.price ?? "0.5"),
           note: String(configData?.config?.note ?? "API access active"),
         });
         setApiAccounts(Array.isArray(accountsData?.accounts) ? accountsData.accounts : []);
@@ -202,7 +201,7 @@ export default function AdminPage() {
     const response = await fetch(`${apiBase}/api/admin/api-config`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "x-user-id": user.id },
-      body: JSON.stringify({ enabled: apiSettings.enabled, price: Number(apiSettings.price || 0), note: apiSettings.note }),
+      body: JSON.stringify({ enabled: apiSettings.enabled, note: apiSettings.note }),
     });
     if (response.ok) {
       window.alert("API access settings saved.");
@@ -225,6 +224,11 @@ export default function AdminPage() {
         ...account,
         apiPricing: { ...account.apiPricing, [productId]: Number(data.price ?? price) },
       } : account));
+      setEditingApiProducts((current) => {
+        const next = new Set(current);
+        next.delete(productId);
+        return next;
+      });
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Unable to save API price.");
     }
@@ -238,8 +242,7 @@ export default function AdminPage() {
     if (!selectedApiAccount) return product.userPrice;
     const override = selectedApiAccount.apiPricing?.[product.id];
     if (Number.isFinite(Number(override))) return Number(override);
-    const basePrice = selectedApiAccount.role === "agent" ? product.agentPrice : product.userPrice;
-    return Number((basePrice + selectedApiAccount.apiPrice).toFixed(2));
+    return selectedApiAccount.role === "agent" ? product.agentPrice : product.userPrice;
   };
 
   return (
@@ -496,13 +499,6 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div className="space-y-2 md:col-span-1">
-                  <Label>API price per request</Label>
-                  <Input
-                    value={apiSettings.price}
-                    onChange={(event) => setApiSettings((current) => ({ ...current, price: event.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-1">
                   <Label>Status note</Label>
                   <Input
                     value={apiSettings.note}
@@ -581,6 +577,7 @@ export default function AdminPage() {
                             <Input
                               aria-label={`${product.name} API price`}
                               value={String(getDisplayedApiPrice(product))}
+                              disabled={!editingApiProducts.has(product.id)}
                               min="0"
                               step="0.01"
                               type="number"
@@ -595,7 +592,20 @@ export default function AdminPage() {
                             />
                           </td>
                           <td className="px-4 py-3">
-                            <Button size="sm" className="rounded-lg" disabled={!selectedApiAccount} onClick={() => saveAccountProductPrice(selectedApiAccountId, product.id, String(getDisplayedApiPrice(product)))}>Save</Button>
+                            <Button
+                              size="sm"
+                              className="rounded-lg"
+                              disabled={!selectedApiAccount}
+                              onClick={() => {
+                                if (!editingApiProducts.has(product.id)) {
+                                  setEditingApiProducts((current) => new Set(current).add(product.id));
+                                  return;
+                                }
+                                void saveAccountProductPrice(selectedApiAccountId, product.id, String(getDisplayedApiPrice(product)));
+                              }}
+                            >
+                              {editingApiProducts.has(product.id) ? "Save" : "Edit"}
+                            </Button>
                           </td>
                         </tr>
                       ))}

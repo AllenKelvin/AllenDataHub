@@ -19,6 +19,7 @@ const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
 const PORTAL02_API_KEY = process.env.PORTAL02_API_KEY || process.env.VITE_PORTAL02_API_KEY || '';
 const PORTAL02_BASE_URL = process.env.PORTAL02_BASE_URL || process.env.VITE_PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
+const PORTAL02_CANCEL_URL = process.env.PORTAL02_CANCEL_URL || '';
 const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allen-data-hub-backend.onrender.com';
 const REFERRAL_COMMISSION_RATE = 0.01;
 
@@ -133,7 +134,7 @@ const DEFAULT_NETWORK_SETTINGS = [
   { network: 'Telecel', enabled: true },
 ];
 
-const DEFAULT_API_CONFIG = { enabled: true, price: 0.5, note: 'API access active' };
+const DEFAULT_API_CONFIG = { enabled: true, note: 'API access active' };
 
 let client;
 let db;
@@ -255,16 +256,19 @@ async function cancelPortal02Order({ network, orderId, reference }) {
   const normalizedNetwork = network === 'AirtelTigo' ? 'AirtelTigo' : network;
   const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork] || String(normalizedNetwork || '').toLowerCase();
   const baseUrl = String(PORTAL02_BASE_URL).replace(/\/$/, '');
-  const vendorId = orderId || reference;
-  const requestBodies = [];
-
-  if (reference) requestBodies.push({ reference, orderId: vendorId });
-  if (vendorId) requestBodies.push({ orderId: vendorId, reference: reference || vendorId });
-  if (!requestBodies.length) {
+  const vendorId = String(orderId || '').trim();
+  const vendorReference = String(reference || '').trim();
+  if (!vendorId && !vendorReference) {
     return { success: false, error: 'No Portal-02 order identifier was found for cancellation.' };
   }
 
+  const requestBody = {
+    orderId: vendorId || vendorReference,
+    reference: vendorReference || vendorId,
+    network: normalizedNetwork,
+  };
   const candidateRequests = [
+    ...(PORTAL02_CANCEL_URL ? [{ url: PORTAL02_CANCEL_URL, method: 'POST' }] : []),
     { url: `${baseUrl}/order/${endpoint}/cancel`, method: 'POST' },
     { url: `${baseUrl}/order/cancel`, method: 'POST' },
     { url: `${baseUrl}/cancel/${endpoint}`, method: 'POST' },
@@ -272,46 +276,61 @@ async function cancelPortal02Order({ network, orderId, reference }) {
   ].filter(Boolean);
 
   for (const candidate of candidateRequests) {
-    for (const payload of requestBodies) {
-      try {
-        const response = await fetch(candidate.url, {
-          method: candidate.method,
-          headers: {
-            'x-api-key': PORTAL02_API_KEY,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({ ...payload, network: normalizedNetwork }),
-        });
+    console.log(JSON.stringify({
+      tag: 'PORTAL02_CANCEL_ATTEMPT',
+      url: candidate.url,
+      method: candidate.method,
+      network: normalizedNetwork,
+      orderId: vendorId,
+      reference: vendorReference,
+    }));
+    try {
+      const response = await fetch(candidate.url, {
+        method: candidate.method,
+        headers: {
+          'x-api-key': PORTAL02_API_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: candidate.method === 'DELETE' ? JSON.stringify(requestBody) : JSON.stringify(requestBody),
+      });
 
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) {
-          return {
-            success: true,
-            status: data.status || data.state || 'cancelled',
-            orderId: data.orderId || data.id || vendorId,
-            reference: data.reference || reference || vendorId,
-            raw: data,
-          };
-        }
+      const data = await response.json().catch(() => ({}));
+      const status = String(data.status || data.state || '').toLowerCase();
+      const explicitlyFailed = data.success === false || ['failed', 'error', 'rejected'].includes(status);
+      const cancellationConfirmed = ['cancelled', 'canceled', 'refunded', 'success', 'completed'].includes(status)
+        || data.cancelled === true
+        || data.canceled === true
+        || data.success === true;
 
-        const errorText = data.message || data.error || `Portal-02 cancel failed with status ${response.status}`;
-        if (response.status === 404 || response.status === 405) {
-          continue;
-        }
-        return {
-          success: false,
-          error: errorText,
-          statusCode: response.status,
+      if (response.ok && !explicitlyFailed && cancellationConfirmed) {
+        const result = {
+          success: true,
+          status: status || 'cancelled',
+          orderId: data.orderId || data.id || vendorId,
+          reference: data.reference || vendorReference || vendorId,
           raw: data,
         };
-      } catch (error) {
-        const errMessage = error instanceof Error ? error.message : 'Portal-02 cancellation network error.';
-        if (candidate !== candidateRequests[candidateRequests.length - 1]) {
-          continue;
-        }
-        return { success: false, error: errMessage };
+        console.log(JSON.stringify({ tag: 'PORTAL02_CANCEL_CONFIRMED', ...result, url: candidate.url }));
+        return result;
       }
+
+      const errorText = data.message || data.error || `Portal-02 cancel failed with status ${response.status}`;
+      console.error(JSON.stringify({
+        tag: 'PORTAL02_CANCEL_FAILED',
+        url: candidate.url,
+        statusCode: response.status,
+        vendorStatus: status,
+        error: errorText,
+        orderId: vendorId,
+        reference: vendorReference,
+      }));
+      if (response.status !== 404 && response.status !== 405) {
+        return { success: false, error: errorText, statusCode: response.status, raw: data };
+      }
+    } catch (error) {
+      const errMessage = error instanceof Error ? error.message : 'Portal-02 cancellation network error.';
+      console.error(JSON.stringify({ tag: 'PORTAL02_CANCEL_NETWORK_ERROR', url: candidate.url, error: errMessage }));
     }
   }
 
@@ -699,9 +718,7 @@ function getApiPriceForProduct(user, product, config = DEFAULT_API_CONFIG) {
   if (Number.isFinite(override) && override >= 0) return Number(override.toFixed(2));
 
   const rolePrice = user?.role === 'agent' ? 'agentPrice' : 'userPrice';
-  const basePrice = Number(product?.[rolePrice] ?? product?.price ?? 0);
-  const apiFee = Number(user?.apiPrice ?? config?.price ?? 0);
-  return Number((basePrice + apiFee).toFixed(2));
+  return Number(product?.[rolePrice] ?? product?.price ?? 0);
 }
 
 async function creditWalletForPaystackSuccess({ userId, amount, reference, source = 'paystack', metadata = {} }) {
@@ -936,7 +953,7 @@ app.post('/api/auth/register', async (req, res) => {
   const username = payload.username?.trim() || `@${(fullName || '').replace(/\s+/g, '').slice(0, 8) || 'user'}`;
   const phone = payload.phone?.trim();
   const password = payload.password;
-  const role = payload.role === 'admin' ? 'admin' : payload.role === 'agent' ? 'agent' : 'user';
+  const role = payload.role === 'agent' ? 'agent' : 'user';
 
   if (!fullName || !email || !phone || !password) {
     return res.status(400).json({ ok: false, error: 'Please complete all required fields.' });
@@ -1055,11 +1072,20 @@ app.get('/api/referrals', requireUser, async (req, res) => {
 
 // ─── Packages & Network Settings ────────────────────────────────────────────
 
-app.get('/api/packages', async (_req, res) => {
+app.get('/api/packages', async (req, res) => {
   if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
   const packageCollection = await getCollectionByNames(['products', 'packages']);
   const packages = await packageCollection.find({ enabled: { $ne: false } }).toArray();
-  res.json({ ok: true, packages: packages.length ? packages : DEFAULT_PACKAGES });
+  const userId = String(req.headers['x-user-id'] || '');
+  const account = userId ? await getUserById(userId) : null;
+  const visiblePackages = packages.length ? packages : DEFAULT_PACKAGES;
+  res.json({
+    ok: true,
+    packages: visiblePackages.map((product) => ({
+      ...product,
+      price: account ? getApiPriceForProduct(account, product) : Number(product.price ?? product.userPrice ?? 0),
+    })),
+  });
 });
 
 app.get('/api/network-settings', async (_req, res) => {
@@ -1141,7 +1167,6 @@ app.get('/api/v1/wallet', requireApiKey, async (req, res) => {
     ok: true,
     walletBalance: Number(req.user.walletBalance || 0),
     recentDeposits: deposits,
-    apiFee: Number(req.user.apiPrice ?? req.apiConfig.price ?? 0),
   });
 });
 
@@ -1151,10 +1176,8 @@ app.get('/api/v1/packages', requireApiKey, async (req, res) => {
     .find(filter)
     .sort({ network: 1, size: 1 })
     .toArray();
-  const apiFee = Number(req.user.apiPrice ?? req.apiConfig.price ?? 0);
   res.json({
     ok: true,
-    apiFee,
     packages: products.map((product) => ({
       id: product.id,
       name: product.name,
@@ -1222,13 +1245,18 @@ async function createSingleOrder(req, res) {
   }
 
   const user = await getUserById(req.user.id);
+  const accountPrice = getApiPriceForProduct(user, productExists);
+  const chargedAmount = user.apiPricing?.[productExists.id] !== undefined
+    ? accountPrice
+    : orderAmount;
+
   const balBefore = Number(user.walletBalance || 0);
 
-  if (balBefore < orderAmount) {
+  if (balBefore < chargedAmount) {
     return res.status(400).json({ ok: false, error: 'Insufficient wallet balance.' });
   }
 
-  const balAfter = Number((balBefore - orderAmount).toFixed(2));
+  const balAfter = Number((balBefore - chargedAmount).toFixed(2));
   const orderId = makeId('ord');
   const vendorReference = `${network}-${orderId}`;
 
@@ -1242,7 +1270,7 @@ async function createSingleOrder(req, res) {
     status: 'Pending',
     source: source === 'api' ? 'api' : 'web',
     paid: true,
-    amount: orderAmount,
+    amount: chargedAmount,
     balBefore,
     balAfter,
     date: new Date().toISOString(),
@@ -1284,7 +1312,7 @@ async function createSingleOrder(req, res) {
   await createNotification(user.id, 'Order placed', `${size} for ${recipient} on ${network}.`, 'order');
 
   if (user.referredBy) {
-    await applyReferralCommission(user.referredBy, orderAmount);
+    await applyReferralCommission(user.referredBy, chargedAmount);
   }
 
   return res.status(201).json({ ok: true, order: { ...order, portalOrderId: portalResult.transactionId, portalStatus: portalResult.status }, walletBalance: balAfter, portalResult });
@@ -1379,14 +1407,29 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
     reference: order.portalReference || order.reference || order.id,
   });
 
+  if (!portalCancelResult.success) {
+    console.error(JSON.stringify({
+      tag: 'ALLENDAHUB_CANCEL_BLOCKED',
+      orderId: id,
+      portalOrderId: order.portalOrderId || null,
+      portalReference: order.portalReference || order.reference || null,
+      reason: portalCancelResult.error,
+    }));
+    return res.status(502).json({
+      ok: false,
+      error: `Portal-02 cancellation was not confirmed. ${portalCancelResult.error}`,
+      portalCancelResult,
+    });
+  }
+
   await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
   await db.collection('orders').updateOne({ id }, {
     $set: {
       status: 'Cancelled',
       balAfter,
-      portalCancelStatus: portalCancelResult.success ? 'cancelled' : 'failed',
+      portalCancelStatus: 'cancelled',
       portalCancelResponse: portalCancelResult,
-      portalCancelError: portalCancelResult.success ? null : portalCancelResult.error,
+      portalCancelError: null,
       updatedAt: new Date().toISOString(),
     },
   });
@@ -1859,7 +1902,6 @@ app.get('/api/admin/api-users', requireAdmin, async (_req, res) => {
     ok: true,
     apiUsers: users.map((u) => ({
       ...sanitizeUser(u),
-      apiPrice: Number(u.apiPrice ?? 0),
       keys: keys.filter((k) => k.userId === u.id).map((k) => ({ id: k.id, name: k.name, keyPreview: k.keyPreview, status: k.status, createdAt: k.createdAt, lastUsed: k.lastUsed })),
       activeKeys: keys.filter((k) => k.userId === u.id && k.status === 'Active').length,
     })),
@@ -1876,7 +1918,6 @@ app.get('/api/admin/api-accounts', requireAdmin, async (_req, res) => {
       fullName: account.fullName,
       email: account.email,
       role: account.role,
-      apiPrice: Number(account.apiPrice ?? 0),
       apiPricing: account.apiPricing && typeof account.apiPricing === 'object' ? account.apiPricing : {},
       keys: keys.filter((key) => key.userId === account.id).map((key) => ({
         id: key.id,

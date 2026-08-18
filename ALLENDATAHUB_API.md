@@ -45,12 +45,11 @@ Example response:
 {
   "ok": true,
   "walletBalance": 125.5,
-  "apiFee": 0.5,
   "recentDeposits": []
 }
 ```
 
-`apiFee` is the fallback account fee configured by an administrator. An administrator can also override the final price for each product and account.
+An administrator can override the final price for each product and account. Accounts without a saved override keep their existing standard user or agent product prices.
 
 ## 4. List packages
 

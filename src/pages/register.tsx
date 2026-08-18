@@ -84,7 +84,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState<"user" | "agent" | "admin">("user");
+  const [role, setRole] = useState<"user" | "agent">("user");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -140,12 +140,11 @@ export default function RegisterPage() {
               <Label className="dark:text-slate-200">Account Type</Label>
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as "user" | "agent" | "admin")}
+                onChange={(e) => setRole(e.target.value as "user" | "agent")}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
               >
                 <option value="user">User</option>
                 <option value="agent">Agent</option>
-                <option value="admin">Admin</option>
               </select>
             </div>
             <div className="space-y-2">

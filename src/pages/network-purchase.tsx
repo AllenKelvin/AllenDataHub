@@ -176,7 +176,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
         if (!response.ok) return;
         const data = await response.json();
         const nextDisabled = Array.isArray(data?.settings)
-          ? data.settings.filter((entry: { network?: string; enabled?: boolean }) => entry.enabled === false).map((entry) => entry.network).filter(Boolean)
+          ? data.settings.filter((entry: { network?: string; enabled?: boolean }) => entry.enabled === false).map((entry: { network?: string }) => entry.network).filter(Boolean)
           : [];
         setDisabledNetworks(nextDisabled);
       } catch {
@@ -187,7 +187,9 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     const loadPackages = async () => {
       try {
         const apiBase = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000";
-        const response = await fetch(`${apiBase}/api/packages`);
+        const response = await fetch(`${apiBase}/api/packages`, {
+          headers: user?.id ? { "x-user-id": user.id } : undefined,
+        });
         if (!response.ok) return;
         const data = await response.json();
         const nextPackageMap = {
@@ -203,7 +205,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
 
     void loadNetworkStatus();
     void loadPackages();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
