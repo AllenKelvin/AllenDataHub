@@ -58,6 +58,7 @@ export default function WalletPage() {
   const { toast } = useToast();
   const [visible, setVisible] = useState(true);
   const [amount, setAmount] = useState("");
+  const [isPaying, setIsPaying] = useState(false);
   const [filter, setFilter] = useState("all");
   const [selectedDeposit, setSelectedDeposit] = useState<string | null>(null);
 
@@ -109,7 +110,7 @@ export default function WalletPage() {
   const recentActivityAmount = userDeposits.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
   const recentActivityCount = Math.min(userDeposits.length, 6);
 
-  const handlePaystack = () => {
+  const handlePaystack = async () => {
     if (parsedAmount < MIN_TOPUP) {
       toast({
         title: "Minimum top-up",
@@ -118,10 +119,46 @@ export default function WalletPage() {
       });
       return;
     }
-    toast({
-      title: "Redirecting to Paystack",
-      description: `You will pay ${formatGHS(totalPay)} (includes 4% admin fee).`,
-    });
+
+    if (!user?.id) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in before funding your wallet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsPaying(true);
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
+      const response = await fetch(`${apiBase}/api/payments/initialize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user.id,
+        },
+        body: JSON.stringify({ amount: parsedAmount }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || "Unable to initialize Paystack payment.");
+      }
+
+      if (!data.authorizationUrl) {
+        throw new Error(data?.message || "Paystack did not return a checkout URL.");
+      }
+
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      toast({
+        title: "Payment initialization failed",
+        description: error instanceof Error ? error.message : "Unable to open Paystack.",
+        variant: "destructive",
+      });
+      setIsPaying(false);
+    }
   };
 
   return (
@@ -300,9 +337,10 @@ export default function WalletPage() {
                 <Button
                   type="button"
                   onClick={handlePaystack}
+                  disabled={isPaying}
                   className="h-12 w-full rounded-xl bg-orange-500 text-base font-semibold text-white shadow-md shadow-orange-200 hover:bg-orange-600"
                 >
-                  Proceed to Paystack
+                  {isPaying ? "Opening Paystack..." : "Proceed to Paystack"}
                 </Button>
 
                 <p className="flex items-center justify-center gap-2 text-xs text-slate-500">

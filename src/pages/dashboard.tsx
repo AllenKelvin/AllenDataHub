@@ -40,10 +40,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export default function DashboardPage() {
   const { user, updateUser } = useAuth();
   const firstName = user?.fullName?.split(" ")[0] || "Dealer";
+  const isMobile = useIsMobile();
   const [dashboard, setDashboard] = useState({
     walletBalance: user?.walletBalance ?? 0,
     walletChange: 0,
