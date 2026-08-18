@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { DataPackage } from "@/lib/types";
 import {
   CheckCircle2,
   FileSpreadsheet,
@@ -16,7 +17,6 @@ import { formatGHS } from "@/lib/formatters";
 const MTN_PACKAGES: DataPackage[] = [];
 const AT_PACKAGES: DataPackage[] = [];
 const TELECEL_PACKAGES: DataPackage[] = [];
-import type { DataPackage } from "@/lib/types";
 import { StatusBadge, WalletPill } from "@/components/ui-helpers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

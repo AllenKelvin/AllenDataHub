@@ -15,7 +15,7 @@ interface AuthContextType {
     password: string;
     role: "user" | "agent" | "admin";
     referredBy?: string;
-  }) => Promise<{ ok: boolean; error?: string; verificationToken?: string }>;
+  }) => Promise<{ ok: boolean; error?: string }>;
   verifyEmail: (token: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   updateUser: (patch: Partial<User>) => Promise<void>;
@@ -167,8 +167,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (response.ok) {
             const data = await response.json();
-            commitUser(null);
-            return { ok: true, verificationToken: data.verificationToken };
+            if (data.user) {
+              commitUser(data.user);
+              setUsers([data.user]);
+            }
+            return { ok: true };
           }
 
           try {

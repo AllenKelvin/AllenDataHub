@@ -110,8 +110,7 @@ export default function RegisterPage() {
       return;
     }
 
-    const emailParam = encodeURIComponent(email);
-    setLocation(`/verify-email?email=${emailParam}&sent=1`);
+    setLocation("/dashboard");
   };
 
   return (

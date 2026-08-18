@@ -130,6 +130,9 @@ let client;
 let db;
 
 function makeId(prefix) {
+  if (prefix === 'ord') {
+    return `${prefix}_${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(2, 8)}`;
+  }
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
@@ -642,7 +645,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const nextReferral = `${fullName.split(' ').map((p) => p[0]).join('').slice(0, 4).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`;
-  const verificationToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   let referredBy = payload.referredBy?.trim() || undefined;
   if (referredBy) {
@@ -670,8 +672,7 @@ app.post('/api/auth/register', async (req, res) => {
     role,
     network: 'MTN',
     status: 'approved',
-    emailVerified: false,
-    emailVerificationToken: verificationToken,
+    emailVerified: true,
     phoneVerified: false,
     walletBalance: 0,
     commissionEarned: 0,
@@ -684,35 +685,8 @@ app.post('/api/auth/register', async (req, res) => {
 
   await db.collection('users').insertOne(newUser);
 
-  const verificationUrl = `${FRONTEND_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(verificationToken)}&email=${encodeURIComponent(email)}`;
-  const emailResult = await sendBrevoEmail({
-    toEmail: email,
-    toName: fullName,
-    subject: 'Verify your email address',
-    htmlContent: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
-        <h2 style="margin:0 0 16px;color:#1f2937;">Welcome to AllenDataHub</h2>
-        <p style="margin:0 0 12px;color:#374151;">Hi ${fullName},</p>
-        <p style="margin:0 0 20px;color:#374151;">Please verify your email address by clicking the button below.</p>
-        <p style="margin:0 0 20px;">
-          <a href="${verificationUrl}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Verify Email</a>
-        </p>
-        <p style="margin:0;color:#6b7280;">If the button does not work, copy and paste this link into your browser:</p>
-        <p style="margin:8px 0 0;color:#4f46e5;word-break:break-all;">${verificationUrl}</p>
-      </div>
-    `,
-    textContent: `Welcome to AllenDataHub. Please verify your email by visiting: ${verificationUrl}`,
-  });
-
-  if (!emailResult.ok) {
-    console.warn('⚠️ Email verification send failed:', emailResult.error);
-  }
-
   return res.status(201).json({
     ok: true,
-    verificationToken,
-    verificationUrl,
-    emailSent: emailResult.ok,
     user: sanitizeUser(newUser),
   });
 });
