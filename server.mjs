@@ -11,7 +11,9 @@ const port = process.env.PORT || 4000;
 const mongoUri = process.env.MONGO_URI || process.env.DATABASE_URL || '';
 const mongoDbName = process.env.MONGO_DB_NAME || 'platform';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || '';
-const FRONTEND_BASE_URL = process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'http://localhost:4173';
+const INTERNAL_BRIDGE_SECRET = process.env.INTERNAL_BRIDGE_SECRET || '';
+const ALLENDAHUB_FRONTEND_URL = process.env.ALLENDAHUB_FRONTEND_URL || process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'https://allendatahub.com';
+const PAYSTACK_CALLBACK_URL = process.env.PAYSTACK_CALLBACK_URL || `${ALLENDAHUB_FRONTEND_URL.replace(/\/$/, '')}/payment-return`;
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
@@ -671,6 +673,95 @@ async function getUserById(userId) {
   return db.collection('users').findOne({ id: userId });
 }
 
+function getPaystackReferenceForUser(userId) {
+  return `ALLEN_${Date.now()}_${String(userId || 'guest')}`;
+}
+
+function getPaystackEmailForUser(user) {
+  if (user?.email && String(user.email).trim()) return String(user.email).trim();
+  const identifier = user?.id || user?.phone || 'user';
+  const safeIdentifier = String(identifier).replace(/[^a-zA-Z0-9._@-]/g, '').slice(0, 40) || 'user';
+  return `${safeIdentifier}@allendatahub.com`;
+}
+
+function toMainCurrencyFromPesewas(value) {
+  const amount = Number(value || 0);
+  return Number((amount / 100).toFixed(2));
+}
+
+async function creditWalletForPaystackSuccess({ userId, amount, reference, source = 'paystack', metadata = {} }) {
+  if (!db || !userId) {
+    return { ok: false, error: 'Missing userId for wallet credit.' };
+  }
+
+  const user = await getUserById(String(userId));
+  if (!user) {
+    return { ok: false, error: `User ${userId} not found.` };
+  }
+
+  const existing = await db.collection('deposits').findOne({ reference });
+  if (existing?.status === 'Credited') {
+    return {
+      ok: true,
+      alreadyProcessed: true,
+      reference,
+      userId,
+      balBefore: Number(existing.balBefore ?? user.walletBalance ?? 0),
+      balAfter: Number(existing.balAfter ?? user.walletBalance ?? 0),
+      creditAmount: Number(existing.amount || 0),
+    };
+  }
+
+  const amountValue = Number(amount || 0);
+  const balBefore = Number(user.walletBalance || 0);
+  const balAfter = Number((balBefore + amountValue).toFixed(2));
+
+  await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
+
+  const depositRecord = {
+    id: makeId('dep'),
+    userId: user.id,
+    amount: amountValue,
+    fee: 0,
+    totalPay: amountValue,
+    method: 'card',
+    platform: 'paystack',
+    reference,
+    status: 'Credited',
+    balBefore,
+    balAfter,
+    handledBy: source,
+    metadata: {
+      project: 'NEW_APP',
+      userId: user.id,
+      ...metadata,
+    },
+    source,
+    date: new Date().toISOString(),
+    creditedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await db.collection('deposits').updateOne({ reference }, { $set: depositRecord });
+  } else {
+    await db.collection('deposits').insertOne(depositRecord);
+  }
+
+  await createNotification(user.id, 'Wallet credited', `GHS ${amountValue.toFixed(2)} added to your wallet.`, 'deposit');
+
+  return {
+    ok: true,
+    alreadyProcessed: false,
+    reference,
+    userId,
+    balBefore,
+    balAfter,
+    creditAmount: amountValue,
+    deposit: depositRecord,
+  };
+}
+
 async function requireUser(req, res, next) {
   if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
   const userId = req.headers['x-user-id'];
@@ -1268,33 +1359,50 @@ app.get('/api/deposits', requireUser, async (req, res) => {
   res.json({ ok: true, deposits });
 });
 
-app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
+async function initializePaystackPayment(req, res) {
   const amount = Number(req.body?.amount || 0);
+  if (!req.user && !req.body?.userId) {
+    return res.status(401).json({ ok: false, error: 'Authentication required.' });
+  }
   if (amount < 10) {
     return res.status(400).json({ ok: false, error: 'Minimum top-up is GHS 10.' });
   }
 
+  const user = req.user || (await getUserById(String(req.body?.userId)));
+  if (!user) {
+    return res.status(404).json({ ok: false, error: 'User not found.' });
+  }
+
   const fee = Number((amount * 0.04).toFixed(2));
   const totalPay = Number((amount + fee).toFixed(2));
-  const reference = makeId('pay');
-  const balBefore = Number(req.user.walletBalance || 0);
+  const reference = getPaystackReferenceForUser(user.id);
+  const balBefore = Number(user.walletBalance || 0);
+  const email = getPaystackEmailForUser(user);
+  const callbackUrl = String(req.body?.callbackUrl || PAYSTACK_CALLBACK_URL || 'https://allendatahub.com/payment-return');
 
-  await db.collection('deposits').insertOne({
-    id: makeId('dep'),
-    userId: req.user.id,
-    amount,
-    fee,
-    totalPay,
-    method: 'card',
-    platform: 'paystack',
-    reference,
-    status: 'Pending',
-    balBefore,
-    balAfter: balBefore,
-    handledBy: req.user.fullName,
-    date: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-  });
+  await db.collection('deposits').updateOne(
+    { reference },
+    {
+      $setOnInsert: {
+        id: makeId('dep'),
+        userId: user.id,
+        amount,
+        fee,
+        totalPay,
+        method: 'card',
+        platform: 'paystack',
+        reference,
+        status: 'Pending',
+        balBefore,
+        balAfter: balBefore,
+        handledBy: user.fullName || user.username || 'system',
+        metadata: { project: 'ALLENDATAHUB', userId: user.id },
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+    },
+    { upsert: true }
+  );
 
   if (!PAYSTACK_SECRET) {
     return res.json({
@@ -1302,8 +1410,9 @@ app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
       demo: true,
       reference,
       amount: totalPay,
-      callbackUrl: `${req.body?.callbackUrl || ''}?reference=${reference}&amount=${amount}&balBefore=${balBefore}`,
-      message: 'Paystack key not configured. Use demo completion endpoint.',
+      email,
+      callbackUrl: `${callbackUrl}?reference=${encodeURIComponent(reference)}&amount=${encodeURIComponent(String(amount))}`,
+      message: 'Paystack key not configured. Use the demo completion endpoint.',
     });
   }
 
@@ -1315,21 +1424,87 @@ app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        email: req.user.email,
+        email,
         amount: Math.round(totalPay * 100),
         reference,
-        callback_url: req.body?.callbackUrl,
-        metadata: { userId: req.user.id, creditAmount: amount },
+        callback_url: callbackUrl,
+        metadata: {
+          project: 'ALLENDATAHUB',
+          userId: user.id,
+          creditAmount: amount,
+          source: 'ALLENDATAHUB',
+        },
       }),
     });
+
     const data = await paystackRes.json();
     if (!data.status) {
       return res.status(400).json({ ok: false, error: data.message || 'Paystack initialization failed.' });
     }
-    return res.json({ ok: true, authorizationUrl: data.data.authorization_url, reference });
+
+    return res.json({
+      ok: true,
+      authorizationUrl: data.data.authorization_url,
+      reference,
+      email,
+      callbackUrl,
+      source: 'paystack',
+    });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: error.message });
+    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : 'Paystack initialization failed.' });
   }
+}
+
+app.post('/api/payments/initialize', requireUser, async (req, res) => {
+  return initializePaystackPayment(req, res);
+});
+
+app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
+  return initializePaystackPayment(req, res);
+});
+
+app.post('/api/internal/paystack-success', async (req, res) => {
+  const providedSecret = req.headers['x-internal-secret'];
+  if (!providedSecret || String(providedSecret) !== String(INTERNAL_BRIDGE_SECRET || '')) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
+  const payload = req.body || {};
+  const eventData = payload.data || payload;
+  const userId = String(eventData?.metadata?.userId || payload?.metadata?.userId || payload?.userId || '');
+  const reference = String(eventData?.reference || payload?.reference || '');
+  const amountPesewas = Number(eventData?.amount || payload?.amount || 0);
+  const amount = Number((toMainCurrencyFromPesewas(amountPesewas)).toFixed(2));
+
+  if (!reference || !userId) {
+    return res.status(400).json({ ok: false, error: 'Missing payment reference or metadata.userId.' });
+  }
+
+  const result = await creditWalletForPaystackSuccess({
+    userId,
+    amount,
+    reference,
+    source: 'internal_bridge',
+    metadata: {
+      project: 'ALLENDATAHUB',
+      forwardedFrom: 'cloudnum',
+      verifiedFrom: 'internal_bridge',
+      amountPesewas,
+    },
+  });
+
+  if (!result.ok) {
+    return res.status(400).json({ ok: false, error: result.error });
+  }
+
+  return res.json({
+    ok: true,
+    alreadyProcessed: !!result.alreadyProcessed,
+    userId,
+    reference,
+    amount,
+    balanceAfter: result.balAfter,
+  });
 });
 
 app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
