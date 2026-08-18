@@ -135,17 +135,28 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     AirtelTigo: AT_PACKAGES,
     Telecel: TELECEL_PACKAGES,
   });
-  const [selectedPackageId, setSelectedPackageId] = useState(config.packages[0]?.id ?? "");
+  const [selectedPackageId, setSelectedPackageId] = useState("");
   const [phone, setPhone] = useState("");
   const [recurring, setRecurring] = useState(false);
   const [bulkRecipients, setBulkRecipients] = useState([""]);
-  const [bulkRecipientPackages, setBulkRecipientPackages] = useState<string[]>([
-    config.packages[0]?.id ?? "",
-  ]);
-  const [bulkPackageId, setBulkPackageId] = useState(config.packages[0]?.id ?? "");
+  const [bulkRecipientPackages, setBulkRecipientPackages] = useState<string[]>([]);
+  const [bulkPackageId, setBulkPackageId] = useState("");
   const [excelFile, setExcelFile] = useState<File | null>(null);
-  const [excelPackageId, setExcelPackageId] = useState(config.packages[0]?.id ?? "");
+  const [excelPackageId, setExcelPackageId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const firstPackage = packagesForNetwork[0];
+    if (!firstPackage) return;
+
+    setSelectedPackageId((current) => (current && packagesForNetwork.some((item) => item.id === current) ? current : firstPackage.id));
+    setBulkPackageId((current) => (current && packagesForNetwork.some((item) => item.id === current) ? current : firstPackage.id));
+    setExcelPackageId((current) => (current && packagesForNetwork.some((item) => item.id === current) ? current : firstPackage.id));
+    setBulkRecipientPackages((current) => {
+      if (current.length === 0) return [firstPackage.id];
+      return current.map((item) => (packagesForNetwork.some((pkg) => pkg.id === item) ? item : firstPackage.id));
+    });
+  }, [packagesForNetwork]);
 
   useEffect(() => {
     const savedMode = localStorage.getItem(VIEW_MODE_KEY);
@@ -196,7 +207,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
 
-  const packagesForNetwork = (packageCatalog[network] ?? config.packages).filter((p) => !disabledNetworks.includes(network));
+  const packagesForNetwork = (packageCatalog[network] ?? []).filter((p) => !disabledNetworks.includes(network));
   const selectedPackage = useMemo(
     () => packagesForNetwork.find((p) => p.id === selectedPackageId) ?? packagesForNetwork[0],
     [packagesForNetwork, selectedPackageId]
@@ -590,7 +601,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                         <SelectValue placeholder="Select a package" />
                       </SelectTrigger>
                       <SelectContent>
-                        {config.packages.map((pkg) => (
+                        {packagesForNetwork.map((pkg) => (
                           <SelectItem key={pkg.id} value={pkg.id}>
                             {pkg.size} — {formatGHS(pkg.price)} ({pkg.validity})
                           </SelectItem>
@@ -678,7 +689,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                                 <SelectValue placeholder="Select a package" />
                               </SelectTrigger>
                               <SelectContent>
-                                {config.packages.map((pkg) => (
+                                {packagesForNetwork.map((pkg) => (
                                   <SelectItem key={pkg.id} value={pkg.id}>
                                     {pkg.size} — {formatGHS(pkg.price)} ({pkg.validity})
                                   </SelectItem>
@@ -710,7 +721,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                         <SelectValue placeholder="Select a package" />
                       </SelectTrigger>
                       <SelectContent>
-                        {config.packages.map((pkg) => (
+                        {packagesForNetwork.map((pkg) => (
                           <SelectItem key={pkg.id} value={pkg.id}>
                             {pkg.size} — {formatGHS(pkg.price)} ({pkg.validity})
                           </SelectItem>
@@ -786,7 +797,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                         <SelectValue placeholder="Select a package" />
                       </SelectTrigger>
                       <SelectContent>
-                        {config.packages.map((pkg) => (
+                        {packagesForNetwork.map((pkg) => (
                           <SelectItem key={pkg.id} value={pkg.id}>
                             {pkg.size} — {formatGHS(pkg.price)} ({pkg.validity})
                           </SelectItem>

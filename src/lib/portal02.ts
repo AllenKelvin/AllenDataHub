@@ -1,8 +1,7 @@
 const API_KEY =
   (typeof import.meta !== "undefined"
     ? import.meta.env?.VITE_PORTAL02_API_KEY || import.meta.env?.VITE_API_KEY || ""
-    : process.env.PORTAL02_API_KEY || process.env.API_KEY || "") ||
-  "dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH";
+    : process.env.PORTAL02_API_KEY || process.env.API_KEY || "") || "";
 
 const BASE_URL =
   (typeof import.meta !== "undefined"
@@ -11,8 +10,8 @@ const BASE_URL =
 
 const BACKEND_URL =
   (typeof import.meta !== "undefined"
-    ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "http://localhost:5000"
-    : process.env.BACKEND_URL || process.env.VITE_API_URL || "http://localhost:5000") || "http://localhost:5000";
+    ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "https://allen-data-hub-backend.onrender.com"
+    : process.env.BACKEND_URL || process.env.VITE_API_URL || "https://allen-data-hub-backend.onrender.com") || "https://allen-data-hub-backend.onrender.com";
 
 export const portal02OfferSlugs: Record<string, string> = {
   MTN: "master_beneficiary_data_bundle",
