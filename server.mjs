@@ -8,15 +8,115 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;
-const mongoUri = process.env.MONGO_URI || process.env.DATABASE_URL || 'mongodb+srv://jenniferfredson175_db_user:Clarck3223@platform.0hnpxgu.mongodb.net/?appName=platform';
+const mongoUri = process.env.MONGO_URI || process.env.DATABASE_URL || '';
 const mongoDbName = process.env.MONGO_DB_NAME || 'platform';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY || '';
+const FRONTEND_BASE_URL = process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'http://localhost:4173';
+const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
+const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
 app.use(express.json());
 
-const DEFAULT_PACKAGES = [];
+async function sendBrevoEmail({ toEmail, toName = '', subject, htmlContent, textContent = '', replyTo = '' }) {
+  if (!BREVO_API_KEY) {
+    return { ok: false, error: 'BREVO_API_KEY is not configured.' };
+  }
+
+  if (!toEmail || !subject) {
+    return { ok: false, error: 'Recipient email and subject are required.' };
+  }
+
+  try {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender: {
+          name: BREVO_SENDER_NAME,
+          email: BREVO_SENDER_EMAIL,
+        },
+        to: [{ email: toEmail, name: toName || toEmail }],
+        subject,
+        htmlContent: htmlContent || `<p>${textContent || 'AllenDataHub Notification'}</p>`,
+        textContent: textContent || htmlContent?.replace(/<[^>]+>/g, '') || 'AllenDataHub Notification',
+        ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        error: data.message || data.error || 'Brevo email request failed.',
+        details: data,
+      };
+    }
+
+    return {
+      ok: true,
+      messageId: data.messageId || data.id || null,
+      data,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to send email.',
+    };
+  }
+}
+
+const DEFAULT_PACKAGES = [
+  { id: 'mtn-1gb', name: 'MTN 1 GB', size: '1 GB', price: 4.5, userPrice: 4.5, agentPrice: 4.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-2gb', name: 'MTN 2 GB', size: '2 GB', price: 8.5, userPrice: 8.5, agentPrice: 8.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-3gb', name: 'MTN 3 GB', size: '3 GB', price: 12.5, userPrice: 12.5, agentPrice: 12.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-4gb', name: 'MTN 4 GB', size: '4 GB', price: 16.5, userPrice: 16.5, agentPrice: 16.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-5gb', name: 'MTN 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-6gb', name: 'MTN 6 GB', size: '6 GB', price: 24.5, userPrice: 24.5, agentPrice: 24.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-7gb', name: 'MTN 7 GB', size: '7 GB', price: 28.5, userPrice: 28.5, agentPrice: 28.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-8gb', name: 'MTN 8 GB', size: '8 GB', price: 32.5, userPrice: 32.5, agentPrice: 32.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-10gb', name: 'MTN 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-15gb', name: 'MTN 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-20gb', name: 'MTN 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-25gb', name: 'MTN 25 GB', size: '25 GB', price: 100.5, userPrice: 100.5, agentPrice: 100.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-30gb', name: 'MTN 30 GB', size: '30 GB', price: 120.5, userPrice: 120.5, agentPrice: 120.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-40gb', name: 'MTN 40 GB', size: '40 GB', price: 160.5, userPrice: 160.5, agentPrice: 160.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-50gb', name: 'MTN 50 GB', size: '50 GB', price: 200.5, userPrice: 200.5, agentPrice: 200.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'mtn-100gb', name: 'MTN 100 GB', size: '100 GB', price: 400.5, userPrice: 400.5, agentPrice: 400.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
+
+  { id: 'telecel-5gb', name: 'Telecel 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-10gb', name: 'Telecel 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-15gb', name: 'Telecel 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-20gb', name: 'Telecel 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-25gb', name: 'Telecel 25 GB', size: '25 GB', price: 100.5, userPrice: 100.5, agentPrice: 100.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-30gb', name: 'Telecel 30 GB', size: '30 GB', price: 120.5, userPrice: 120.5, agentPrice: 120.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-40gb', name: 'Telecel 40 GB', size: '40 GB', price: 160.5, userPrice: 160.5, agentPrice: 160.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-50gb', name: 'Telecel 50 GB', size: '50 GB', price: 200.5, userPrice: 200.5, agentPrice: 200.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'telecel-100gb', name: 'Telecel 100 GB', size: '100 GB', price: 400.5, userPrice: 400.5, agentPrice: 400.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
+
+  { id: 'at-1gb', name: 'AirtelTigo 1 GB', size: '1 GB', price: 4.5, userPrice: 4.5, agentPrice: 4.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-2gb', name: 'AirtelTigo 2 GB', size: '2 GB', price: 8.5, userPrice: 8.5, agentPrice: 8.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-3gb', name: 'AirtelTigo 3 GB', size: '3 GB', price: 12.5, userPrice: 12.5, agentPrice: 12.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-4gb', name: 'AirtelTigo 4 GB', size: '4 GB', price: 16.5, userPrice: 16.5, agentPrice: 16.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-5gb', name: 'AirtelTigo 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-6gb', name: 'AirtelTigo 6 GB', size: '6 GB', price: 24.5, userPrice: 24.5, agentPrice: 24.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-7gb', name: 'AirtelTigo 7 GB', size: '7 GB', price: 28.5, userPrice: 28.5, agentPrice: 28.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-8gb', name: 'AirtelTigo 8 GB', size: '8 GB', price: 32.5, userPrice: 32.5, agentPrice: 32.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-9gb', name: 'AirtelTigo 9 GB', size: '9 GB', price: 36.5, userPrice: 36.5, agentPrice: 36.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-10gb', name: 'AirtelTigo 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-11gb', name: 'AirtelTigo 11 GB', size: '11 GB', price: 44.5, userPrice: 44.5, agentPrice: 44.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-12gb', name: 'AirtelTigo 12 GB', size: '12 GB', price: 48.5, userPrice: 48.5, agentPrice: 48.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-13gb', name: 'AirtelTigo 13 GB', size: '13 GB', price: 52.5, userPrice: 52.5, agentPrice: 52.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-14gb', name: 'AirtelTigo 14 GB', size: '14 GB', price: 56.5, userPrice: 56.5, agentPrice: 56.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-15gb', name: 'AirtelTigo 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+  { id: 'at-20gb', name: 'AirtelTigo 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
+];
 
 const DEFAULT_NETWORK_SETTINGS = [
   { network: 'MTN', enabled: true },
@@ -345,11 +445,19 @@ async function ensureSeedData() {
 
   for (const [collectionName, items] of seeds) {
     const collection = db.collection(collectionName);
-    const total = await collection.countDocuments();
-    if (total === 0 && items.length > 0) {
-      await collection.insertMany(items);
-      console.log(`✅ ${collectionName}: seeded with ${items.length} document(s)`);
+    if (!Array.isArray(items) || items.length === 0) continue;
+
+    for (const item of items) {
+      const filter = item.id ? { id: item.id } : { name: item.name, size: item.size, network: item.network };
+      await collection.updateOne(
+        filter,
+        { $set: { ...item, createdAt: item.createdAt || new Date().toISOString() } },
+        { upsert: true }
+      );
     }
+
+    const total = await collection.countDocuments();
+    console.log(`✅ ${collectionName}: ensured ${total} document(s) in MongoDB`);
   }
 
   const adminUser = await db.collection('users').findOne({ role: 'admin' });
@@ -575,7 +683,38 @@ app.post('/api/auth/register', async (req, res) => {
   };
 
   await db.collection('users').insertOne(newUser);
-  return res.status(201).json({ ok: true, verificationToken, user: sanitizeUser(newUser) });
+
+  const verificationUrl = `${FRONTEND_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(verificationToken)}&email=${encodeURIComponent(email)}`;
+  const emailResult = await sendBrevoEmail({
+    toEmail: email,
+    toName: fullName,
+    subject: 'Verify your email address',
+    htmlContent: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;">
+        <h2 style="margin:0 0 16px;color:#1f2937;">Welcome to AllenDataHub</h2>
+        <p style="margin:0 0 12px;color:#374151;">Hi ${fullName},</p>
+        <p style="margin:0 0 20px;color:#374151;">Please verify your email address by clicking the button below.</p>
+        <p style="margin:0 0 20px;">
+          <a href="${verificationUrl}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Verify Email</a>
+        </p>
+        <p style="margin:0;color:#6b7280;">If the button does not work, copy and paste this link into your browser:</p>
+        <p style="margin:8px 0 0;color:#4f46e5;word-break:break-all;">${verificationUrl}</p>
+      </div>
+    `,
+    textContent: `Welcome to AllenDataHub. Please verify your email by visiting: ${verificationUrl}`,
+  });
+
+  if (!emailResult.ok) {
+    console.warn('⚠️ Email verification send failed:', emailResult.error);
+  }
+
+  return res.status(201).json({
+    ok: true,
+    verificationToken,
+    verificationUrl,
+    emailSent: emailResult.ok,
+    user: sanitizeUser(newUser),
+  });
 });
 
 app.post('/api/auth/verify-email', async (req, res) => {

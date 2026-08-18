@@ -17,6 +17,15 @@ export function EmailVerificationPage() {
     const verify = async () => {
       const params = new URLSearchParams(window.location.search);
       const token = params.get("token");
+      const email = params.get("email");
+      const sent = params.get("sent") === "1";
+
+      if (sent && !token) {
+        setStatus("pending");
+        setMessage(`A verification email has been sent to ${email || "your inbox"}. Please click the link in that email to verify your account.`);
+        return;
+      }
+
       if (!token) {
         setStatus("error");
         setMessage("This verification link is invalid or expired.");
@@ -101,9 +110,8 @@ export default function RegisterPage() {
       return;
     }
 
-    const verificationToken = result.verificationToken || "";
     const emailParam = encodeURIComponent(email);
-    setLocation(`/verify-email?token=${encodeURIComponent(verificationToken)}&email=${emailParam}`);
+    setLocation(`/verify-email?email=${emailParam}&sent=1`);
   };
 
   return (
