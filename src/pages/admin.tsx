@@ -83,14 +83,19 @@ export default function AdminPage() {
     const next = disabledNetworks.includes(network)
       ? disabledNetworks.filter((item) => item !== network)
       : [...disabledNetworks, network];
+    setDisabledNetworks(next);
     const apiBase = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000";
-    const response = await fetch(`${apiBase}/api/admin/network-settings/${encodeURIComponent(network)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "x-user-id": user.id },
-      body: JSON.stringify({ enabled: !next.includes(network) }),
-    });
-    if (response.ok) {
-      setDisabledNetworks(next);
+    try {
+      const response = await fetch(`${apiBase}/api/admin/network-settings/${encodeURIComponent(network)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-user-id": user.id },
+        body: JSON.stringify({ enabled: !next.includes(network) }),
+      });
+      if (!response.ok) {
+        setDisabledNetworks(disabledNetworks);
+      }
+    } catch {
+      setDisabledNetworks(disabledNetworks);
     }
   };
 

@@ -213,9 +213,9 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
         if (!response.ok) return;
         const data = await response.json();
         const nextPackageMap = {
-          MTN: (data.packages ?? []).filter((item: DataPackage) => item.network === "MTN") || MTN_PACKAGES,
-          AirtelTigo: (data.packages ?? []).filter((item: DataPackage) => item.network === "AirtelTigo") || AT_PACKAGES,
-          Telecel: (data.packages ?? []).filter((item: DataPackage) => item.network === "Telecel") || TELECEL_PACKAGES,
+          MTN: (data.packages ?? []).filter((item: DataPackage) => item.network === "MTN"),
+          AirtelTigo: (data.packages ?? []).filter((item: DataPackage) => item.network === "AirtelTigo"),
+          Telecel: (data.packages ?? []).filter((item: DataPackage) => item.network === "Telecel"),
         } as Record<NetworkKey, DataPackage[]>;
         setPackageCatalog((current) => ({ ...current, ...nextPackageMap }));
       } catch {

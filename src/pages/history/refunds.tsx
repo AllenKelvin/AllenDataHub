@@ -38,27 +38,33 @@ export default function RefundsHistoryPage() {
   const [status, setStatus] = useState("all");
   const [tick, setTick] = useState(0);
 
-  useEffect(() => {
+  const loadRefunds = async () => {
     if (!user?.id) return;
     const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
-    fetch(`${apiBase}/api/refunds`, {
-      headers: { "x-user-id": user.id },
-    })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
+    try {
+      const response = await fetch(`${apiBase}/api/refunds`, {
+        headers: { "x-user-id": user.id },
+      });
+      if (response.ok) {
+        const data = await response.json();
         if (Array.isArray(data?.refunds)) setRefunds(data.refunds);
-      })
-      .catch(() => undefined);
-  }, [tick, user?.id]);
+      }
+    } catch (error) {
+      console.error("Failed to load refunds:", error);
+    }
+  };
 
   useEffect(() => {
-    const refreshHandler = () => setTick((current) => current + 1);
+    loadRefunds();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const refreshHandler = () => loadRefunds();
     window.addEventListener("datahub:refresh", refreshHandler);
     return () => window.removeEventListener("datahub:refresh", refreshHandler);
-  }, []);
+  }, [user?.id]);
 
   const filtered = useMemo(() => {
-    void tick;
     return refunds.filter((refund) => {
       const q = search.trim().toLowerCase();
       const matchesSearch =
@@ -70,10 +76,10 @@ export default function RefundsHistoryPage() {
       const matchesStatus = status === "all" || refund.status === status;
       return matchesSearch && matchesStatus;
     });
-  }, [search, status, tick]);
+  }, [search, status, refunds]);
 
   const refresh = () => {
-    setTick((t) => t + 1);
+    loadRefunds();
     toast({ title: "Refreshed", description: "Refund history updated." });
   };
 
