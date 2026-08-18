@@ -103,6 +103,8 @@ export function OrdersHistoryPage({
     });
   }, [applied, baseOrders, network]);
 
+  const visibleOrders = filtered.slice(0, 10);
+
   const applyFilters = () => {
     setApplied({
       search,
@@ -222,14 +224,14 @@ export function OrdersHistoryPage({
         <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <h2 className="text-lg font-semibold text-violet-700 dark:text-violet-400">Order History</h2>
           <p className="text-sm text-slate-500">
-            Showing {filtered.length} of {baseOrders.length} orders
+            Showing {visibleOrders.length} of {baseOrders.length} orders
             {applied.startDate || applied.endDate
               ? ` · dates ${applied.startDate || "…"} → ${applied.endDate || "…"}`
               : ""}
           </p>
         </div>
 
-        {filtered.length === 0 ? (
+        {visibleOrders.length === 0 ? (
           <div className="p-6">
             <EmptyState
               icon={ShoppingBag}
@@ -261,7 +263,7 @@ export function OrdersHistoryPage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((order) => (
+              {visibleOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium text-blue-600">{order.id}</TableCell>
                   <TableCell>{order.size}</TableCell>

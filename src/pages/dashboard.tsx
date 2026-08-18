@@ -1,21 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
   CheckCircle2,
   Clock3,
   Copy,
   Download,
   Eye,
-  Filter,
   MessageSquareWarning,
   MoreHorizontal,
   Plus,
@@ -42,12 +32,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export default function DashboardPage() {
   const { user, updateUser } = useAuth();
   const firstName = user?.fullName?.split(" ")[0] || "Dealer";
-  const isMobile = useIsMobile();
   const [dashboard, setDashboard] = useState({
     walletBalance: user?.walletBalance ?? 0,
     walletChange: 0,
@@ -152,114 +148,95 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-5">
-        {!isMobile ? (
-          <Card className="rounded-2xl border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-3">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg dark:text-slate-100">Orders Overview</CardTitle>
-              <Button variant="outline" size="sm" className="gap-2 rounded-lg dark:border-slate-700 dark:text-slate-200">
-                <Filter className="h-3.5 w-3.5" />
-                Filter
+        <Card className="min-w-0 rounded-2xl border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-3">
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-lg dark:text-slate-100">Recent Orders</CardTitle>
+            <Link href="/user/history/orders">
+              <Button variant="link" className="h-auto p-0 text-sm font-medium text-violet-600 dark:text-violet-300">
+                View all
               </Button>
-            </CardHeader>
-            <CardContent className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dashboard.recentOrders.length > 0 ? dashboard.recentOrders.map((order) => ({ month: order.status, orders: order.amount })) : []}>
-                  <defs>
-                    <linearGradient id="ordersFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="orders" stroke="#6366f1" strokeWidth={3} fill="url(#ordersFill)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="rounded-2xl border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-3">
-            <CardHeader className="flex items-center justify-between gap-2">
-              <CardTitle className="text-lg dark:text-slate-100">Recent Orders</CardTitle>
-              <Link href="/user/history/orders">
-                <Button variant="link" className="h-auto p-0 text-sm font-medium text-violet-600 dark:text-violet-300">
-                  View all
-                </Button>
-              </Link>
-            </CardHeader>
-            <CardContent className="pb-2">
-              <div className="overflow-x-auto pb-1">
-                <div className="flex min-w-max gap-3">
-                  {recentOrders.map((order) => (
-                    <div key={order.id} className="min-w-[180px] rounded-2xl border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/80">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">#{order.id}</p>
-                        <StatusBadge status={order.status} />
-                      </div>
-                      <div className="mt-3 space-y-1">
-                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{order.network}</p>
-                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{order.recipient}</p>
-                        <p className="text-base font-bold text-violet-600 dark:text-violet-300">{formatGHS(order.amount)}</p>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{order.size}</span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-52 dark:border-slate-700 dark:bg-slate-900">
-                            <DropdownMenuItem onClick={() => window.alert(`Complaint raised for ${order.id}. An admin will review it shortly.`)} className="gap-2 dark:text-slate-200">
-                              <MessageSquareWarning className="h-4 w-4" />
-                              Complain to admin
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={async () => {
-                              if (!user || !order.id) return;
-                              try {
-                                const response = await fetch(`${(typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000"}/api/orders/${order.id}/cancel`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json", "x-user-id": user.id },
-                                });
-                                const payload = await response.json().catch(() => ({}));
-                                if (!response.ok) {
-                                  throw new Error(payload?.error || "Unable to cancel order.");
+            </Link>
+          </CardHeader>
+          <CardContent className="overflow-hidden p-0 pb-2">
+            {recentOrders.length === 0 ? (
+              <p className="px-6 pb-4 text-sm text-slate-500">No recent orders yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[760px]">
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 dark:bg-slate-800/50">
+                      <TableHead>Order ID</TableHead>
+                      <TableHead>Size</TableHead>
+                      <TableHead>Recipient</TableHead>
+                      <TableHead>Network</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentOrders.map((order) => (
+                      <TableRow key={order.id}>
+                        <TableCell className="font-medium text-blue-600">{order.id}</TableCell>
+                        <TableCell>{order.size}</TableCell>
+                        <TableCell className="font-mono text-xs">{order.recipient}</TableCell>
+                        <TableCell>{order.network}</TableCell>
+                        <TableCell><StatusBadge status={order.status} /></TableCell>
+                        <TableCell className="font-semibold">{formatCedi(order.amount)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-slate-500">{order.date}</TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52 dark:border-slate-700 dark:bg-slate-900">
+                              <DropdownMenuItem onClick={() => window.alert(`Complaint raised for ${order.id}. An admin will review it shortly.`)} className="gap-2 dark:text-slate-200">
+                                <MessageSquareWarning className="h-4 w-4" />
+                                Complain to admin
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={async () => {
+                                if (!user || !order.id) return;
+                                try {
+                                  const response = await fetch(`${(typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000"}/api/orders/${order.id}/cancel`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", "x-user-id": user.id },
+                                  });
+                                  const payload = await response.json().catch(() => ({}));
+                                  if (!response.ok) throw new Error(payload?.error || "Unable to cancel order.");
+                                  updateUser({ walletBalance: Number(payload.walletBalance ?? user.walletBalance) });
+                                  setDashboard((current) => ({
+                                    ...current,
+                                    recentOrders: current.recentOrders.map((item) => item.id === order.id ? { ...item, status: "Cancelled" } : item),
+                                  }));
+                                  window.alert(`Order ${order.id} was cancelled and ${formatGHS(Number(order.amount || 0))} was returned to your wallet.`);
+                                } catch (error) {
+                                  window.alert(error instanceof Error ? error.message : "Unable to cancel order.");
                                 }
-                                updateUser({ walletBalance: Number(payload.walletBalance ?? user.walletBalance) });
-                                setDashboard((current) => ({
-                                  ...current,
-                                  recentOrders: current.recentOrders.map((item) => item.id === order.id ? { ...item, status: "Cancelled" } : item),
-                                }));
-                                window.alert(`Order ${order.id} was cancelled and ${formatGHS(Number(order.amount || 0))} was returned to your wallet.`);
-                              } catch (error) {
-                                window.alert(error instanceof Error ? error.message : "Unable to cancel order.");
-                              }
-                            }} className="gap-2 dark:text-slate-200">
-                              <Trash2 className="h-4 w-4" />
-                              Cancel order
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={async () => {
+                              }} className="gap-2 dark:text-slate-200">
+                                <Trash2 className="h-4 w-4" />
+                                Cancel order
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={async () => {
                                 await navigator.clipboard.writeText(order.id);
                                 window.alert(`Order ID copied: ${order.id}`);
-                              }}
-                              className="gap-2 dark:text-slate-200"
-                            >
-                              <Copy className="h-4 w-4" />
-                              Copy order ID
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                              }} className="gap-2 dark:text-slate-200">
+                                <Copy className="h-4 w-4" />
+                                Copy order ID
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="rounded-2xl border-slate-100 shadow-sm lg:col-span-2">
           <CardHeader>
