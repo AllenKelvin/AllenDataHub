@@ -241,6 +241,77 @@ async function purchaseWithPortal02({ phone, size, network, reference, webhookUr
   }
 }
 
+async function cancelPortal02Order({ network, orderId, reference }) {
+  if (!PORTAL02_API_KEY) {
+    return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
+  }
+
+  const normalizedNetwork = network === 'AirtelTigo' ? 'AirtelTigo' : network;
+  const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork] || String(normalizedNetwork || '').toLowerCase();
+  const baseUrl = String(PORTAL02_BASE_URL).replace(/\/$/, '');
+  const vendorId = orderId || reference;
+  const requestBodies = [];
+
+  if (reference) requestBodies.push({ reference, orderId: vendorId });
+  if (vendorId) requestBodies.push({ orderId: vendorId, reference: reference || vendorId });
+  if (!requestBodies.length) {
+    return { success: false, error: 'No Portal-02 order identifier was found for cancellation.' };
+  }
+
+  const candidateRequests = [
+    { url: `${baseUrl}/order/${endpoint}/cancel`, method: 'POST' },
+    { url: `${baseUrl}/order/cancel`, method: 'POST' },
+    { url: `${baseUrl}/cancel/${endpoint}`, method: 'POST' },
+    { url: `${baseUrl}/order/${endpoint}`, method: 'DELETE' },
+  ].filter(Boolean);
+
+  for (const candidate of candidateRequests) {
+    for (const payload of requestBodies) {
+      try {
+        const response = await fetch(candidate.url, {
+          method: candidate.method,
+          headers: {
+            'x-api-key': PORTAL02_API_KEY,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ ...payload, network: normalizedNetwork }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          return {
+            success: true,
+            status: data.status || data.state || 'cancelled',
+            orderId: data.orderId || data.id || vendorId,
+            reference: data.reference || reference || vendorId,
+            raw: data,
+          };
+        }
+
+        const errorText = data.message || data.error || `Portal-02 cancel failed with status ${response.status}`;
+        if (response.status === 404 || response.status === 405) {
+          continue;
+        }
+        return {
+          success: false,
+          error: errorText,
+          statusCode: response.status,
+          raw: data,
+        };
+      } catch (error) {
+        const errMessage = error instanceof Error ? error.message : 'Portal-02 cancellation network error.';
+        if (candidate !== candidateRequests[candidateRequests.length - 1]) {
+          continue;
+        }
+        return { success: false, error: errMessage };
+      }
+    }
+  }
+
+  return { success: false, error: 'Portal-02 cancellation endpoint was not available for this order.' };
+}
+
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(String(password), salt, 100000, 64, 'sha512').toString('hex');
@@ -1100,8 +1171,23 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
   const balBefore = Number(user?.walletBalance || 0);
   const balAfter = Number((balBefore + refundAmount).toFixed(2));
 
+  const portalCancelResult = await cancelPortal02Order({
+    network: order.network,
+    orderId: order.portalOrderId || order.reference || order.id,
+    reference: order.portalReference || order.reference || order.id,
+  });
+
   await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
-  await db.collection('orders').updateOne({ id }, { $set: { status: 'Cancelled', balAfter } });
+  await db.collection('orders').updateOne({ id }, {
+    $set: {
+      status: 'Cancelled',
+      balAfter,
+      portalCancelStatus: portalCancelResult.success ? 'cancelled' : 'failed',
+      portalCancelResponse: portalCancelResult,
+      portalCancelError: portalCancelResult.success ? null : portalCancelResult.error,
+      updatedAt: new Date().toISOString(),
+    },
+  });
 
   const refund = {
     id: makeId('rfnd'),
@@ -1122,7 +1208,13 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
   await db.collection('refunds').insertOne(refund);
   await createNotification(user.id, 'Order refunded', `GHS ${refundAmount.toFixed(2)} returned to your wallet for order ${id}.`, 'refund');
 
-  res.json({ ok: true, refund, walletBalance: balAfter, orderStatus: 'Cancelled' });
+  res.json({
+    ok: true,
+    refund,
+    walletBalance: balAfter,
+    orderStatus: 'Cancelled',
+    portalCancelResult,
+  });
 });
 
 app.post('/api/orders/:id/refund', requireUser, async (req, res) => {
