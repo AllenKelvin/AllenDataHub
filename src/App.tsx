@@ -35,6 +35,7 @@ import Settings from "@/pages/settings";
 import AdminPage from "@/pages/admin";
 import { EmailVerificationPage } from "@/pages/register";
 import NotFound from "@/pages/not-found";
+import PaymentReturn from "@/pages/payment-return";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -121,6 +122,7 @@ function Router() {
       <Route path="/login">{() => <Guest component={Login} />}</Route>
       <Route path="/register">{() => <Guest component={Register} />}</Route>
       <Route path="/verify-email">{() => <Guest component={EmailVerificationPage} />}</Route>
+      <Route path="/payment-return">{() => <PaymentReturn />}</Route>
 
       <Route path="/user/dashboard">{() => <Protected component={Dashboard} />}</Route>
       <Route path="/user/wallet">{() => <Protected component={Wallet} />}</Route>

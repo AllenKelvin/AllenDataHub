@@ -23,7 +23,11 @@ const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKE
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buffer) => {
+    req.rawBody = Buffer.from(buffer);
+  },
+}));
 
 async function sendBrevoEmail({ toEmail, toName = '', subject, htmlContent, textContent = '', replyTo = '' }) {
   if (!BREVO_API_KEY) {
@@ -1463,13 +1467,123 @@ app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
   return initializePaystackPayment(req, res);
 });
 
+app.post('/api/webhooks/paystack', async (req, res) => {
+  const signature = String(req.headers['x-paystack-signature'] || '');
+  const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+  const expectedSignature = crypto.createHmac('sha512', PAYSTACK_SECRET).update(rawBody).digest('hex');
+  const signatureValid = Boolean(signature) && signature.length === expectedSignature.length && crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+  const event = String(req.body?.event || 'unknown');
+  const reference = String(req.body?.data?.reference || '');
+
+  console.log(JSON.stringify({
+    tag: 'PAYSTACK_WEBHOOK_RECEIVED',
+    event,
+    reference,
+    signatureValid,
+    receivedAt: new Date().toISOString(),
+  }));
+
+  if (!signatureValid) {
+    console.error(JSON.stringify({
+      tag: 'PAYSTACK_WEBHOOK_REJECTED',
+      reason: 'invalid_signature',
+      event,
+      reference,
+    }));
+    return res.status(401).json({ ok: false, error: 'Invalid webhook signature.' });
+  }
+
+  if (event !== 'charge.success') {
+    console.log(JSON.stringify({ tag: 'PAYSTACK_WEBHOOK_IGNORED', event, reference }));
+    return res.json({ ok: true, ignored: true });
+  }
+
+  const payment = req.body?.data || {};
+  const metadata = payment.metadata || {};
+  const deposit = reference ? await db?.collection('deposits').findOne({ reference }) : null;
+  const userId = String(metadata.userId || deposit?.userId || '');
+  const creditAmount = Number(deposit?.amount || metadata.creditAmount || toMainCurrencyFromPesewas(payment.amount));
+
+  if (!reference || !userId || creditAmount <= 0) {
+    console.error(JSON.stringify({
+      tag: 'PAYSTACK_WEBHOOK_FORWARD_FAILED',
+      reason: 'missing_reference_user_or_amount',
+      event,
+      reference,
+      userId,
+      creditAmount,
+    }));
+    return res.status(400).json({ ok: false, error: 'Missing payment reference, user, or amount.' });
+  }
+
+  try {
+    const result = await creditWalletForPaystackSuccess({
+      userId,
+      amount: creditAmount,
+      reference,
+      source: 'paystack_webhook',
+      metadata: {
+        project: 'ALLENDATAHUB',
+        event,
+        amountPesewas: Number(payment.amount || 0),
+        webhookForwarded: true,
+      },
+    });
+
+    if (!result.ok) {
+      console.error(JSON.stringify({
+        tag: 'PAYSTACK_WEBHOOK_FORWARD_FAILED',
+        reason: result.error,
+        event,
+        reference,
+        userId,
+      }));
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    console.log(JSON.stringify({
+      tag: 'PAYSTACK_WEBHOOK_FORWARDED',
+      event,
+      reference,
+      userId,
+      amount: creditAmount,
+      alreadyProcessed: Boolean(result.alreadyProcessed),
+      balanceAfter: result.balAfter,
+    }));
+    return res.json({ ok: true, forwarded: true, alreadyProcessed: Boolean(result.alreadyProcessed) });
+  } catch (error) {
+    console.error(JSON.stringify({
+      tag: 'PAYSTACK_WEBHOOK_FORWARD_FAILED',
+      reason: error instanceof Error ? error.message : 'Unknown webhook processing error',
+      event,
+      reference,
+      userId,
+    }));
+    return res.status(500).json({ ok: false, error: 'Webhook processing failed.' });
+  }
+});
+
 app.post('/api/internal/paystack-success', async (req, res) => {
+  const bridgePayload = req.body || {};
+  console.log(JSON.stringify({
+    tag: 'CLOUDNUM_FORWARD_ATTEMPT',
+    reference: String(bridgePayload?.data?.reference || bridgePayload?.reference || ''),
+    receivedAt: new Date().toISOString(),
+  }));
+
   const providedSecret = req.headers['x-internal-secret'];
   if (!providedSecret || String(providedSecret) !== String(INTERNAL_BRIDGE_SECRET || '')) {
+    console.error(JSON.stringify({
+      tag: 'CLOUDNUM_FORWARD_REJECTED',
+      reason: 'invalid_or_missing_internal_secret',
+    }));
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
 
-  const payload = req.body || {};
+  const payload = bridgePayload;
   const eventData = payload.data || payload;
   const userId = String(eventData?.metadata?.userId || payload?.metadata?.userId || payload?.userId || '');
   const reference = String(eventData?.reference || payload?.reference || '');
@@ -1494,8 +1608,22 @@ app.post('/api/internal/paystack-success', async (req, res) => {
   });
 
   if (!result.ok) {
+    console.error(JSON.stringify({
+      tag: 'CLOUDNUM_FORWARD_FAILED',
+      reference,
+      userId,
+      reason: result.error,
+    }));
     return res.status(400).json({ ok: false, error: result.error });
   }
+
+  console.log(JSON.stringify({
+    tag: 'CLOUDNUM_FORWARD_RECEIVED',
+    reference,
+    userId,
+    amount,
+    alreadyProcessed: Boolean(result.alreadyProcessed),
+  }));
 
   return res.json({
     ok: true,
