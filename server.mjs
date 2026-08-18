@@ -82,52 +82,6 @@ async function sendBrevoEmail({ toEmail, toName = '', subject, htmlContent, text
   }
 }
 
-const DEFAULT_PACKAGES = [
-  { id: 'mtn-1gb', name: 'MTN 1 GB', size: '1 GB', price: 4.5, userPrice: 4.5, agentPrice: 4.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-2gb', name: 'MTN 2 GB', size: '2 GB', price: 8.5, userPrice: 8.5, agentPrice: 8.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-3gb', name: 'MTN 3 GB', size: '3 GB', price: 12.5, userPrice: 12.5, agentPrice: 12.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-4gb', name: 'MTN 4 GB', size: '4 GB', price: 16.5, userPrice: 16.5, agentPrice: 16.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-5gb', name: 'MTN 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-6gb', name: 'MTN 6 GB', size: '6 GB', price: 24.5, userPrice: 24.5, agentPrice: 24.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-7gb', name: 'MTN 7 GB', size: '7 GB', price: 28.5, userPrice: 28.5, agentPrice: 28.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-8gb', name: 'MTN 8 GB', size: '8 GB', price: 32.5, userPrice: 32.5, agentPrice: 32.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-10gb', name: 'MTN 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-15gb', name: 'MTN 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-20gb', name: 'MTN 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-25gb', name: 'MTN 25 GB', size: '25 GB', price: 100.5, userPrice: 100.5, agentPrice: 100.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-30gb', name: 'MTN 30 GB', size: '30 GB', price: 120.5, userPrice: 120.5, agentPrice: 120.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-40gb', name: 'MTN 40 GB', size: '40 GB', price: 160.5, userPrice: 160.5, agentPrice: 160.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-50gb', name: 'MTN 50 GB', size: '50 GB', price: 200.5, userPrice: 200.5, agentPrice: 200.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'mtn-100gb', name: 'MTN 100 GB', size: '100 GB', price: 400.5, userPrice: 400.5, agentPrice: 400.2, validity: 'Non-Expiry', network: 'MTN', enabled: true, createdAt: new Date().toISOString() },
-
-  { id: 'telecel-5gb', name: 'Telecel 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-10gb', name: 'Telecel 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-15gb', name: 'Telecel 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-20gb', name: 'Telecel 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-25gb', name: 'Telecel 25 GB', size: '25 GB', price: 100.5, userPrice: 100.5, agentPrice: 100.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-30gb', name: 'Telecel 30 GB', size: '30 GB', price: 120.5, userPrice: 120.5, agentPrice: 120.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-40gb', name: 'Telecel 40 GB', size: '40 GB', price: 160.5, userPrice: 160.5, agentPrice: 160.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-50gb', name: 'Telecel 50 GB', size: '50 GB', price: 200.5, userPrice: 200.5, agentPrice: 200.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'telecel-100gb', name: 'Telecel 100 GB', size: '100 GB', price: 400.5, userPrice: 400.5, agentPrice: 400.2, validity: 'Non-Expiry', network: 'Telecel', enabled: true, createdAt: new Date().toISOString() },
-
-  { id: 'at-1gb', name: 'AirtelTigo 1 GB', size: '1 GB', price: 4.5, userPrice: 4.5, agentPrice: 4.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-2gb', name: 'AirtelTigo 2 GB', size: '2 GB', price: 8.5, userPrice: 8.5, agentPrice: 8.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-3gb', name: 'AirtelTigo 3 GB', size: '3 GB', price: 12.5, userPrice: 12.5, agentPrice: 12.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-4gb', name: 'AirtelTigo 4 GB', size: '4 GB', price: 16.5, userPrice: 16.5, agentPrice: 16.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-5gb', name: 'AirtelTigo 5 GB', size: '5 GB', price: 20.1, userPrice: 20.1, agentPrice: 19.7, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-6gb', name: 'AirtelTigo 6 GB', size: '6 GB', price: 24.5, userPrice: 24.5, agentPrice: 24.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-7gb', name: 'AirtelTigo 7 GB', size: '7 GB', price: 28.5, userPrice: 28.5, agentPrice: 28.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-8gb', name: 'AirtelTigo 8 GB', size: '8 GB', price: 32.5, userPrice: 32.5, agentPrice: 32.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-9gb', name: 'AirtelTigo 9 GB', size: '9 GB', price: 36.5, userPrice: 36.5, agentPrice: 36.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-10gb', name: 'AirtelTigo 10 GB', size: '10 GB', price: 40.5, userPrice: 40.5, agentPrice: 40.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-11gb', name: 'AirtelTigo 11 GB', size: '11 GB', price: 44.5, userPrice: 44.5, agentPrice: 44.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-12gb', name: 'AirtelTigo 12 GB', size: '12 GB', price: 48.5, userPrice: 48.5, agentPrice: 48.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-13gb', name: 'AirtelTigo 13 GB', size: '13 GB', price: 52.5, userPrice: 52.5, agentPrice: 52.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-14gb', name: 'AirtelTigo 14 GB', size: '14 GB', price: 56.5, userPrice: 56.5, agentPrice: 56.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-15gb', name: 'AirtelTigo 15 GB', size: '15 GB', price: 60.5, userPrice: 60.5, agentPrice: 60.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-  { id: 'at-20gb', name: 'AirtelTigo 20 GB', size: '20 GB', price: 80.5, userPrice: 80.5, agentPrice: 80.2, validity: 'Non-Expiry', network: 'AirtelTigo', enabled: true, createdAt: new Date().toISOString() },
-];
-
 const DEFAULT_NETWORK_SETTINGS = [
   { network: 'MTN', enabled: true },
   { network: 'AirtelTigo', enabled: true },
@@ -648,8 +602,6 @@ async function ensureSeedData() {
   // await mergeLegacyCollections();
 
   const seeds = [
-    ['products', DEFAULT_PACKAGES],
-    ['packages', DEFAULT_PACKAGES],
     ['network_settings', DEFAULT_NETWORK_SETTINGS],
     ['api_config', [DEFAULT_API_CONFIG]],
   ];
@@ -1082,14 +1034,14 @@ app.get('/api/referrals', requireUser, async (req, res) => {
 
 // ─── Packages & Network Settings ────────────────────────────────────────────
 
-app.get('/api/packages', async (req, res) => {
+app.get('/api/products', async (req, res) => {
   if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
   const products = await db.collection('products').find({ enabled: { $ne: false } }).toArray();
   const userId = String(req.headers['x-user-id'] || '');
   const account = userId ? await getUserById(userId) : null;
   res.json({
     ok: true,
-    packages: products.map((product) => ({
+    products: products.map((product) => ({
       ...product,
       userPrice: Number(product.userPrice ?? product.price ?? 0),
       agentPrice: Number(product.agentPrice ?? product.price ?? 0),

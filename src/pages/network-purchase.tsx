@@ -15,9 +15,6 @@ import { useCart } from "@/lib/cart";
 import { formatGHS } from "@/lib/formatters";
 import { StatusBadge, WalletPill } from "@/components/ui-helpers";
 
-const MTN_PACKAGES: DataPackage[] = [];
-const AT_PACKAGES: DataPackage[] = [];
-const TELECEL_PACKAGES: DataPackage[] = [];
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,7 +58,7 @@ const NETWORK_CONFIG: Record<
     subtitle: "Purchase MTN data packages instantly for yourself or your customers.",
     offerName: "Master Beneficiary Data Bundle",
     validity: "90 Days",
-    packages: MTN_PACKAGES,
+    packages: [],
     accent: {
       border: "border-amber-400",
       ring: "ring-amber-400/40",
@@ -78,7 +75,7 @@ const NETWORK_CONFIG: Record<
     subtitle: "Purchase AirtelTigo data packages instantly for yourself or your customers.",
     offerName: "Master Beneficiary Data Bundle",
     validity: "60 Days",
-    packages: AT_PACKAGES,
+    packages: [],
     accent: {
       border: "border-blue-400",
       ring: "ring-blue-400/40",
@@ -95,7 +92,7 @@ const NETWORK_CONFIG: Record<
     subtitle: "Purchase Telecel data packages instantly for yourself or your customers.",
     offerName: "Master Beneficiary Data Bundle",
     validity: "60 Days",
-    packages: TELECEL_PACKAGES,
+    packages: [],
     accent: {
       border: "border-red-500",
       ring: "ring-red-500/40",
@@ -131,10 +128,11 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     return saved === "grid" ? "grid" : "list";
   });
   const [packageCatalog, setPackageCatalog] = useState<Record<NetworkKey, DataPackage[]>>({
-    MTN: MTN_PACKAGES,
-    AirtelTigo: AT_PACKAGES,
-    Telecel: TELECEL_PACKAGES,
+    MTN: [],
+    AirtelTigo: [],
+    Telecel: [],
   });
+  const [catalogError, setCatalogError] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [phone, setPhone] = useState("");
   const [recurring, setRecurring] = useState(false);
@@ -187,28 +185,36 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     const loadPackages = async () => {
       try {
         const apiBase = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000";
-        const response = await fetch(`${apiBase}/api/packages`, {
+        const response = await fetch(`${apiBase}/api/products`, {
           headers: user?.id ? { "x-user-id": user.id } : undefined,
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setCatalogError("Unable to load products from the database.");
+          return;
+        }
         const data = await response.json();
+        if (!Array.isArray(data?.products)) {
+          setCatalogError("The database returned an invalid product catalog.");
+          return;
+        }
+        setCatalogError("");
         const nextPackageMap = {
-          MTN: (data.packages ?? []).filter((item: DataPackage) => item.network === "MTN").map((item: DataPackage) => ({
+          MTN: (data.products ?? []).filter((item: DataPackage) => item.network === "MTN").map((item: DataPackage) => ({
             ...item,
             price: Number(item.price),
           })),
-          AirtelTigo: (data.packages ?? []).filter((item: DataPackage) => item.network === "AirtelTigo").map((item: DataPackage) => ({
+          AirtelTigo: (data.products ?? []).filter((item: DataPackage) => item.network === "AirtelTigo").map((item: DataPackage) => ({
             ...item,
             price: Number(item.price),
           })),
-          Telecel: (data.packages ?? []).filter((item: DataPackage) => item.network === "Telecel").map((item: DataPackage) => ({
+          Telecel: (data.products ?? []).filter((item: DataPackage) => item.network === "Telecel").map((item: DataPackage) => ({
             ...item,
             price: Number(item.price),
           })),
         } as Record<NetworkKey, DataPackage[]>;
         setPackageCatalog((current) => ({ ...current, ...nextPackageMap }));
       } catch {
-        // keep fallback data
+        setCatalogError("Unable to load products from the database.");
       }
     };
 
@@ -453,6 +459,12 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
           <WalletPill balance={user?.walletBalance ?? 0} />
         </CardContent>
       </Card>
+
+      {catalogError && (
+        <Card className="border-rose-200 bg-rose-50">
+          <CardContent className="p-4 text-sm text-rose-700">{catalogError}</CardContent>
+        </Card>
+      )}
 
       {/* Select Offer */}
       <Card
