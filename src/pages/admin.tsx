@@ -25,8 +25,18 @@ export default function AdminPage() {
     email?: string;
     role?: string;
     apiPrice: number;
+    apiPricing: Record<string, number>;
     keys: Array<{ id: string; name?: string; keyPreview?: string; status?: string; lastUsed?: string | null }>;
   }>>([]);
+  const [apiProducts, setApiProducts] = useState<Array<{
+    id: string;
+    name: string;
+    network: string;
+    size: string;
+    userPrice: number;
+    agentPrice: number;
+  }>>([]);
+  const [selectedApiAccountId, setSelectedApiAccountId] = useState("");
   const [allOrders, setAllOrders] = useState<Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }>>([]);
   const [disabledNetworks, setDisabledNetworks] = useState<string[]>([]);
   const [priceForm, setPriceForm] = useState({ userPrice: "4", agentPrice: "3.5", network: "MTN", label: "1GB" });
@@ -37,13 +47,14 @@ export default function AdminPage() {
     const loadAdminData = async () => {
       if (!user?.id) return;
       try {
-        const [overviewData, requestsData, networkData, configData, ordersData, accountsData] = await Promise.all([
+        const [overviewData, requestsData, networkData, configData, ordersData, accountsData, productsData] = await Promise.all([
           apiFetch<{ summary?: typeof summary }>('/api/admin/overview', { userId: user.id }),
           apiFetch<{ requests?: Array<{ id: string; email?: string; requestType?: string; createdAt?: string; status?: string }> }>('/api/admin/requests', { userId: user.id }),
           apiFetch<{ settings?: Array<{ network: string; enabled?: boolean }> }>('/api/network-settings', { userId: user.id }),
           apiFetch<{ config?: { enabled?: boolean; price?: number; note?: string } }>('/api/admin/api-config', { userId: user.id }),
           apiFetch<{ orders?: Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }> }>('/api/orders', { userId: user.id }),
           apiFetch<{ accounts?: typeof apiAccounts }>('/api/admin/api-accounts', { userId: user.id }),
+          apiFetch<{ products?: typeof apiProducts }>('/api/admin/api-products', { userId: user.id }),
         ]);
 
         setSummary(overviewData.summary || { users: 0, orders: 0, refunds: 0, notifications: 0, apiKeys: 0, products: 0, networkSettings: 0, disabledNetworks: [] });
@@ -59,13 +70,17 @@ export default function AdminPage() {
           note: String(configData?.config?.note ?? "API access active"),
         });
         setApiAccounts(Array.isArray(accountsData?.accounts) ? accountsData.accounts : []);
+        setApiProducts(Array.isArray(productsData?.products) ? productsData.products : []);
+        if (!selectedApiAccountId && accountsData?.accounts?.[0]?.id) {
+          setSelectedApiAccountId(accountsData.accounts[0].id);
+        }
       } catch {
         setApiRequests([]);
         setDisabledNetworks([]);
       }
     };
     void loadAdminData();
-  }, [user?.id]);
+  }, [selectedApiAccountId, user?.id]);
 
   const referralSummary = useMemo(() => {
     return users.map((entry) => ({
@@ -194,19 +209,22 @@ export default function AdminPage() {
     }
   };
 
-  const saveAccountApiPrice = async (accountId: string, value: string) => {
+  const saveAccountProductPrice = async (accountId: string, productId: string, value: string) => {
     if (!user?.id) return;
-    const apiPrice = Number(value);
-    if (!Number.isFinite(apiPrice) || apiPrice < 0) return;
+    const price = Number(value);
+    if (!Number.isFinite(price) || price < 0) return;
     try {
       const response = await fetch(`${(import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000"}/api/admin/api-accounts/${encodeURIComponent(accountId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-user-id": user.id },
-        body: JSON.stringify({ apiPrice }),
+        body: JSON.stringify({ productId, price }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || "Unable to save API price.");
-      setApiAccounts((current) => current.map((account) => account.id === accountId ? { ...account, apiPrice: Number(data.apiPrice ?? apiPrice) } : account));
+      setApiAccounts((current) => current.map((account) => account.id === accountId ? {
+        ...account,
+        apiPricing: { ...account.apiPricing, [productId]: Number(data.price ?? price) },
+      } : account));
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Unable to save API price.");
     }
@@ -214,6 +232,15 @@ export default function AdminPage() {
 
   // Filter non-admin users for display
   const nonAdminUsers = users.filter((u) => u.role !== "admin");
+  const selectedApiAccount = apiAccounts.find((account) => account.id === selectedApiAccountId);
+
+  const getDisplayedApiPrice = (product: typeof apiProducts[number]) => {
+    if (!selectedApiAccount) return product.userPrice;
+    const override = selectedApiAccount.apiPricing?.[product.id];
+    if (Number.isFinite(Number(override))) return Number(override);
+    const basePrice = selectedApiAccount.role === "agent" ? product.agentPrice : product.userPrice;
+    return Number((basePrice + selectedApiAccount.apiPrice).toFixed(2));
+  };
 
   return (
     <div className="space-y-6">
@@ -510,46 +537,65 @@ export default function AdminPage() {
 
               <div className="overflow-hidden rounded-xl border border-slate-200">
                 <div className="border-b border-slate-200 bg-white px-4 py-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">API accounts and keys</h3>
-                  <p className="mt-1 text-xs text-slate-500">Set the extra API fee charged on each order for a user or agent account.</p>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">API accounts and product pricing</h3>
+                  <p className="mt-1 text-xs text-slate-500">Select an account and set the final API price for every MTN, Telecel, and AirtelTigo product.</p>
+                </div>
+                <div className="border-b border-slate-200 bg-slate-50 p-4">
+                  <Label htmlFor="api-account">Account</Label>
+                  <select
+                    id="api-account"
+                    value={selectedApiAccountId}
+                    onChange={(event) => setSelectedApiAccountId(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
+                  >
+                    {apiAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.fullName || account.id} ({account.role || "user"})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedApiAccount && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {selectedApiAccount.email || selectedApiAccount.id} · {selectedApiAccount.keys.length} API key(s)
+                    </p>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-left text-sm">
+                  <table className="w-full min-w-[820px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-4 py-3">Account</th>
-                        <th className="px-4 py-3">Role</th>
-                        <th className="px-4 py-3">API keys</th>
-                        <th className="px-4 py-3">API fee / order</th>
+                        <th className="px-4 py-3">Network</th>
+                        <th className="px-4 py-3">Product</th>
+                        <th className="px-4 py-3">Standard price</th>
+                        <th className="px-4 py-3">Account API price</th>
                         <th className="px-4 py-3">Save</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {apiAccounts.map((account) => (
-                        <tr key={account.id} className="border-t border-slate-100 bg-white">
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{account.fullName || account.id}</p>
-                            <p className="text-xs text-slate-500">{account.email || "No email"}</p>
-                          </td>
-                          <td className="px-4 py-3 capitalize">{account.role || "user"}</td>
-                          <td className="px-4 py-3">
-                            {account.keys.length === 0 ? "None" : account.keys.map((key) => `${key.name || key.id} (${key.status || "Active"})`).join(", ")}
-                          </td>
+                      {apiProducts.map((product) => (
+                        <tr key={product.id} className="border-t border-slate-100 bg-white">
+                          <td className="px-4 py-3 font-medium">{product.network}</td>
+                          <td className="px-4 py-3">{product.name} · {product.size}</td>
+                          <td className="px-4 py-3 text-slate-500">GHS {selectedApiAccount?.role === "agent" ? product.agentPrice.toFixed(2) : product.userPrice.toFixed(2)}</td>
                           <td className="px-4 py-3">
                             <Input
-                              aria-label={`API fee for ${account.fullName || account.id}`}
-                              defaultValue={String(account.apiPrice)}
+                              aria-label={`${product.name} API price`}
+                              value={String(getDisplayedApiPrice(product))}
                               min="0"
                               step="0.01"
                               type="number"
                               className="h-9 w-32 rounded-lg"
                               onChange={(event) => {
-                                setApiAccounts((current) => current.map((item) => item.id === account.id ? { ...item, apiPrice: Number(event.target.value || 0) } : item));
+                                const nextPrice = Number(event.target.value || 0);
+                                setApiAccounts((current) => current.map((account) => account.id === selectedApiAccountId ? {
+                                  ...account,
+                                  apiPricing: { ...account.apiPricing, [product.id]: nextPrice },
+                                } : account));
                               }}
                             />
                           </td>
                           <td className="px-4 py-3">
-                            <Button size="sm" className="rounded-lg" onClick={() => saveAccountApiPrice(account.id, String(account.apiPrice))}>Save</Button>
+                            <Button size="sm" className="rounded-lg" disabled={!selectedApiAccount} onClick={() => saveAccountProductPrice(selectedApiAccountId, product.id, String(getDisplayedApiPrice(product)))}>Save</Button>
                           </td>
                         </tr>
                       ))}
@@ -557,6 +603,7 @@ export default function AdminPage() {
                   </table>
                 </div>
                 {apiAccounts.length === 0 && <p className="px-4 py-4 text-sm text-slate-500">No user or agent API accounts found.</p>}
+                {apiAccounts.length > 0 && apiProducts.length === 0 && <p className="px-4 py-4 text-sm text-slate-500">No products found.</p>}
               </div>
             </CardContent>
           </Card>

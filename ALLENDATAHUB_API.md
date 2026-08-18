@@ -50,7 +50,7 @@ Example response:
 }
 ```
 
-`apiFee` is the account-specific fee configured by an administrator. It is included in the amount charged for API orders.
+`apiFee` is the fallback account fee configured by an administrator. An administrator can also override the final price for each product and account.
 
 ## 4. List packages
 
@@ -68,7 +68,7 @@ curl -X GET "https://allen-data-hub-backend.onrender.com/api/v1/packages?network
   -H "Authorization: Bearer up_live_your_key"
 ```
 
-Use the returned `network` and `size` values when creating an order. The returned `price` includes the package price and the account API fee.
+Use the returned `network` and `size` values when creating an order. The returned `price` is the final price for that account and product.
 
 ## 5. Create an order
 
@@ -105,9 +105,9 @@ Administrators use **Admin > API** to:
 - Set the fallback API fee.
 - View all user and agent API accounts.
 - View each account's API keys and key status.
-- Set an account-specific API fee per order.
+- Set a different final API price for every product and account.
 
-The account-specific value takes precedence over the global fallback fee.
+The account-specific product price takes precedence over the global fallback fee. Products without an override use the account's role price plus the fallback API fee.
 
 ## Errors
 

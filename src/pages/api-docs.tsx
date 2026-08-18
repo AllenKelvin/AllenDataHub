@@ -79,7 +79,7 @@ export default function ApiDocsPage() {
             <h2 className="font-semibold text-violet-700 dark:text-violet-300">Base URL</h2>
             <p className="mt-1 font-mono text-sm text-slate-700 dark:text-slate-100">https://allen-data-hub-backend.onrender.com/api/v1</p>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
-              Authenticate with a key from API Keys. Package prices include the account API fee configured by an administrator.
+              Authenticate with a key from API Keys. Package prices use account-specific product pricing configured by an administrator.
             </p>
           </div>
         </div>

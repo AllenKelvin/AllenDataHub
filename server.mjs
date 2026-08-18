@@ -693,6 +693,17 @@ function toMainCurrencyFromPesewas(value) {
   return Number((amount / 100).toFixed(2));
 }
 
+function getApiPriceForProduct(user, product, config = DEFAULT_API_CONFIG) {
+  const overrides = user?.apiPricing && typeof user.apiPricing === 'object' ? user.apiPricing : {};
+  const override = Number(overrides[product.id]);
+  if (Number.isFinite(override) && override >= 0) return Number(override.toFixed(2));
+
+  const rolePrice = user?.role === 'agent' ? 'agentPrice' : 'userPrice';
+  const basePrice = Number(product?.[rolePrice] ?? product?.price ?? 0);
+  const apiFee = Number(user?.apiPrice ?? config?.price ?? 0);
+  return Number((basePrice + apiFee).toFixed(2));
+}
+
 async function creditWalletForPaystackSuccess({ userId, amount, reference, source = 'paystack', metadata = {} }) {
   if (!db || !userId) {
     return { ok: false, error: 'Missing userId for wallet credit.' };
@@ -1140,7 +1151,6 @@ app.get('/api/v1/packages', requireApiKey, async (req, res) => {
     .find(filter)
     .sort({ network: 1, size: 1 })
     .toArray();
-  const rolePrice = req.user.role === 'agent' ? 'agentPrice' : 'userPrice';
   const apiFee = Number(req.user.apiPrice ?? req.apiConfig.price ?? 0);
   res.json({
     ok: true,
@@ -1151,8 +1161,8 @@ app.get('/api/v1/packages', requireApiKey, async (req, res) => {
       network: product.network,
       size: product.size,
       validity: product.validity,
-      price: Number(product[rolePrice] ?? product.price ?? 0) + apiFee,
-      basePrice: Number(product[rolePrice] ?? product.price ?? 0),
+      price: getApiPriceForProduct(req.user, product, req.apiConfig),
+      basePrice: Number(product[req.user.role === 'agent' ? 'agentPrice' : 'userPrice'] ?? product.price ?? 0),
     })),
   });
 });
@@ -1170,14 +1180,12 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
   });
   if (!product) return res.status(404).json({ ok: false, error: 'Package not found.' });
 
-  const rolePrice = req.user.role === 'agent' ? 'agentPrice' : 'userPrice';
-  const basePrice = Number(product[rolePrice] ?? product.price ?? 0);
-  const apiFee = Number(req.user.apiPrice ?? req.apiConfig.price ?? 0);
+  const orderPrice = getApiPriceForProduct(req.user, product, req.apiConfig);
   const apiRequest = {
     ...req,
     body: {
       ...req.body,
-      amount: Number((basePrice + apiFee).toFixed(2)),
+      amount: orderPrice,
       packageName: packageName || product.name,
       source: 'api',
     },
@@ -1869,6 +1877,7 @@ app.get('/api/admin/api-accounts', requireAdmin, async (_req, res) => {
       email: account.email,
       role: account.role,
       apiPrice: Number(account.apiPrice ?? 0),
+      apiPricing: account.apiPricing && typeof account.apiPricing === 'object' ? account.apiPricing : {},
       keys: keys.filter((key) => key.userId === account.id).map((key) => ({
         id: key.id,
         name: key.name,
@@ -1881,18 +1890,43 @@ app.get('/api/admin/api-accounts', requireAdmin, async (_req, res) => {
   });
 });
 
+app.get('/api/admin/api-products', requireAdmin, async (_req, res) => {
+  const products = await (await getCollectionByNames(['products', 'packages']))
+    .find({ enabled: { $ne: false } })
+    .sort({ network: 1, size: 1 })
+    .toArray();
+  res.json({
+    ok: true,
+    products: products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      network: product.network,
+      size: product.size,
+      userPrice: Number(product.userPrice ?? product.price ?? 0),
+      agentPrice: Number(product.agentPrice ?? product.price ?? 0),
+    })),
+  });
+});
+
 app.put('/api/admin/api-accounts/:userId', requireAdmin, async (req, res) => {
-  const apiPrice = Number(req.body?.apiPrice);
-  if (!Number.isFinite(apiPrice) || apiPrice < 0) {
-    return res.status(400).json({ ok: false, error: 'API price must be a non-negative number.' });
+  const { productId } = req.body || {};
+  const price = Number(req.body?.price);
+  if (!productId || !Number.isFinite(price) || price < 0) {
+    return res.status(400).json({ ok: false, error: 'productId and a non-negative product price are required.' });
   }
   const account = await getUserById(req.params.userId);
   if (!account || !['user', 'agent'].includes(account.role)) {
     return res.status(404).json({ ok: false, error: 'API account not found.' });
   }
-  const nextPrice = Number(apiPrice.toFixed(2));
-  await db.collection('users').updateOne({ id: account.id }, { $set: { apiPrice: nextPrice } });
-  res.json({ ok: true, userId: account.id, apiPrice: nextPrice });
+  const product = await (await getCollectionByNames(['products', 'packages'])).findOne({ id: String(productId), enabled: { $ne: false } });
+  if (!product) return res.status(404).json({ ok: false, error: 'Product not found.' });
+
+  const nextPrice = Number(price.toFixed(2));
+  await db.collection('users').updateOne(
+    { id: account.id },
+    { $set: { [`apiPricing.${product.id}`]: nextPrice } }
+  );
+  res.json({ ok: true, userId: account.id, productId: product.id, price: nextPrice });
 });
 
 // ─── Admin ──────────────────────────────────────────────────────────────────
