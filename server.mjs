@@ -1090,7 +1090,10 @@ app.get('/api/packages', async (req, res) => {
     ok: true,
     packages: visiblePackages.map((product) => ({
       ...product,
-      price: account ? getApiPriceForProduct(account, product) : Number(product.price ?? product.userPrice ?? 0),
+      userPrice: Number(product.userPrice ?? product.price ?? 0),
+      agentPrice: Number(product.agentPrice ?? product.price ?? 0),
+      accountPrice: account ? getApiPriceForProduct(account, product) : null,
+      price: account ? getApiPriceForProduct(account, product) : Number(product.userPrice ?? product.price ?? 0),
     })),
   });
 });

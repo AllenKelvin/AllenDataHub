@@ -28,6 +28,9 @@ export interface DataPackage {
   name: string;
   size: string;
   price: number;
+  userPrice?: number;
+  agentPrice?: number;
+  accountPrice?: number | null;
   validity: string;
   network: "MTN" | "AirtelTigo" | "Telecel";
 }
