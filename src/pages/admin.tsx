@@ -115,17 +115,36 @@ export default function AdminPage() {
     window.alert(`Refund processed for order ${orderId}.`);
   };
 
-  const handleWalletUpdate = () => {
+  const handleWalletUpdate = async () => {
     const amount = Number(walletAction.amount || 0);
     if (!walletAction.userId || !amount || Number.isNaN(amount)) return;
+
     const target = users.find((item) => item.id === walletAction.userId);
     if (!target) return;
 
-    const updated = walletAction.type === "credit"
-      ? target.walletBalance + amount
-      : Math.max(0, target.walletBalance - amount);
+    const apiBase = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000";
+    try {
+      const response = await fetch(`${apiBase}/api/admin/wallet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": user.id },
+        body: JSON.stringify({
+          userId: target.id,
+          type: walletAction.type,
+          amount,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        window.alert(payload?.error || "Unable to update wallet balance.");
+        return;
+      }
 
-    updateUserById(target.id, { walletBalance: Number(updated.toFixed(2)) });
+      const updatedBalance = Number(payload.walletBalance ?? target.walletBalance);
+      updateUserById(target.id, { walletBalance: updatedBalance });
+      window.alert(`Wallet ${walletAction.type === "credit" ? "credited" : "debited"} successfully.`);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to update wallet balance.");
+    }
   };
 
   const addPackage = async () => {

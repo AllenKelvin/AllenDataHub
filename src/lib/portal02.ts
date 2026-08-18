@@ -1,6 +1,18 @@
-const API_KEY = (typeof import.meta !== "undefined" && import.meta.env?.VITE_PORTAL02_API_KEY) || "dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH";
-const BASE_URL = (typeof import.meta !== "undefined" && import.meta.env?.VITE_PORTAL02_BASE_URL) || "https://www.portal-02.com/api/v1";
-const BACKEND_URL = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || (typeof import.meta !== "undefined" && import.meta.env?.VITE_BACKEND_URL) || "http://localhost:5000";
+const API_KEY =
+  (typeof import.meta !== "undefined"
+    ? import.meta.env?.VITE_PORTAL02_API_KEY || import.meta.env?.VITE_API_KEY || ""
+    : process.env.PORTAL02_API_KEY || process.env.API_KEY || "") ||
+  "dk_WZqU3-BTai3q4IuEoOXqc6IHVfGkAmaH";
+
+const BASE_URL =
+  (typeof import.meta !== "undefined"
+    ? import.meta.env?.VITE_PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1"
+    : process.env.PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1") || "https://www.portal-02.com/api/v1";
+
+const BACKEND_URL =
+  (typeof import.meta !== "undefined"
+    ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "http://localhost:5000"
+    : process.env.BACKEND_URL || process.env.VITE_API_URL || "http://localhost:5000") || "http://localhost:5000";
 
 export const portal02OfferSlugs: Record<string, string> = {
   MTN: "master_beneficiary_data_bundle",

@@ -606,7 +606,7 @@ app.put('/api/users/:id', requireUser, async (req, res) => {
     return res.status(403).json({ ok: false, error: 'Not allowed.' });
   }
 
-  const allowed = ['fullName', 'email', 'phone', 'whatsapp', 'momo', 'initials', 'network'];
+  const allowed = ['fullName', 'email', 'phone', 'whatsapp', 'momo', 'initials', 'network', 'walletBalance', 'commissionEarned'];
   const patch = {};
   for (const key of allowed) {
     if (req.body?.[key] !== undefined) patch[key] = req.body[key];
