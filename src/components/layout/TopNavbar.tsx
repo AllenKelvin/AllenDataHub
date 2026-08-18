@@ -47,7 +47,7 @@ export function TopNavbar({
   }, []);
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 dark:border-slate-800 dark:bg-slate-900">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
       <Button
         variant="ghost"
         size="icon"

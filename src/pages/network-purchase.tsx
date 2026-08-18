@@ -13,11 +13,11 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 import { formatGHS } from "@/lib/formatters";
+import { StatusBadge, WalletPill } from "@/components/ui-helpers";
 
 const MTN_PACKAGES: DataPackage[] = [];
 const AT_PACKAGES: DataPackage[] = [];
 const TELECEL_PACKAGES: DataPackage[] = [];
-import { StatusBadge, WalletPill } from "@/components/ui-helpers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -145,6 +145,8 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
   const [excelPackageId, setExcelPackageId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const packagesForNetwork = (packageCatalog[network] ?? []).filter((p) => !disabledNetworks.includes(network));
+
   useEffect(() => {
     const firstPackage = packagesForNetwork[0];
     if (!firstPackage) return;
@@ -207,7 +209,6 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     localStorage.setItem(VIEW_MODE_KEY, viewMode);
   }, [viewMode]);
 
-  const packagesForNetwork = (packageCatalog[network] ?? []).filter((p) => !disabledNetworks.includes(network));
   const selectedPackage = useMemo(
     () => packagesForNetwork.find((p) => p.id === selectedPackageId) ?? packagesForNetwork[0],
     [packagesForNetwork, selectedPackageId]

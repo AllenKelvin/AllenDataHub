@@ -13,7 +13,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isMobile = useIsMobile();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 dark:bg-slate-950">
       <aside
         className={cn(
           "hidden md:flex flex-col shrink-0 transition-all duration-200",
@@ -43,8 +43,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             }
           }}
         />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1400px] p-4 md:p-6">{children}</div>
+        <main className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto w-full max-w-[1400px] px-3 py-4 sm:px-4 md:p-6">{children}</div>
         </main>
       </div>
 
