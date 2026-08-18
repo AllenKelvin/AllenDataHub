@@ -195,15 +195,15 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
         const nextPackageMap = {
           MTN: (data.packages ?? []).filter((item: DataPackage) => item.network === "MTN").map((item: DataPackage) => ({
             ...item,
-            price: Number(item.accountPrice ?? (user?.role === "agent" ? item.agentPrice : item.userPrice) ?? item.price),
+            price: Number(item.price),
           })),
           AirtelTigo: (data.packages ?? []).filter((item: DataPackage) => item.network === "AirtelTigo").map((item: DataPackage) => ({
             ...item,
-            price: Number(item.accountPrice ?? (user?.role === "agent" ? item.agentPrice : item.userPrice) ?? item.price),
+            price: Number(item.price),
           })),
           Telecel: (data.packages ?? []).filter((item: DataPackage) => item.network === "Telecel").map((item: DataPackage) => ({
             ...item,
-            price: Number(item.accountPrice ?? (user?.role === "agent" ? item.agentPrice : item.userPrice) ?? item.price),
+            price: Number(item.price),
           })),
         } as Record<NetworkKey, DataPackage[]>;
         setPackageCatalog((current) => ({ ...current, ...nextPackageMap }));

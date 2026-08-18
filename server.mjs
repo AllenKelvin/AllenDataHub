@@ -724,8 +724,11 @@ function getApiPriceForProduct(user, product, config = DEFAULT_API_CONFIG) {
   const override = Number(overrides[product.id]);
   if (Number.isFinite(override) && override >= 0) return Number(override.toFixed(2));
 
-  const rolePrice = user?.role === 'agent' ? 'agentPrice' : 'userPrice';
-  return Number(product?.[rolePrice] ?? product?.price ?? 0);
+  const isAgent = String(user?.role || '').trim().toLowerCase() === 'agent';
+  const selectedPrice = Number(isAgent ? product?.agentPrice : product?.userPrice);
+  if (Number.isFinite(selectedPrice) && selectedPrice >= 0) return Number(selectedPrice.toFixed(2));
+
+  return Number(product?.price ?? 0);
 }
 
 async function creditWalletForPaystackSuccess({ userId, amount, reference, source = 'paystack', metadata = {} }) {
