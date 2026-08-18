@@ -38,13 +38,23 @@ export function TopNavbar({
 
   useEffect(() => {
     const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
-    fetch(`${apiBase}/api/notifications`)
+    fetch(`${apiBase}/api/notifications`, { headers: user?.id ? { "x-user-id": user.id } : undefined })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (Array.isArray(data?.notifications)) setNotifications(data.notifications);
       })
       .catch(() => undefined);
-  }, []);
+  }, [user?.id]);
+
+  const markNotificationsRead = async () => {
+    if (!user?.id) return;
+    const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
+    await fetch(`${apiBase}/api/notifications/read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-user-id": user.id },
+    }).catch(() => undefined);
+    setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+  };
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900 sm:px-4">
@@ -88,7 +98,7 @@ export function TopNavbar({
                   variant="ghost"
                   size="sm"
                   className="h-auto px-2 py-1 text-[11px] text-violet-600 dark:text-violet-300"
-                  onClick={() => setNotifications([])}
+                  onClick={markNotificationsRead}
                 >
                   Mark as read
                 </Button>

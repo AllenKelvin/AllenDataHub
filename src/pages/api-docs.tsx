@@ -10,19 +10,19 @@ const ENDPOINTS = [
     method: "GET",
     path: "/api/v1/wallet",
     description: "Fetch the authenticated dealer wallet balance and recent activity.",
-    example: `curl -X GET "https://api.example.com/v1/wallet" \\
+    example: `curl -X GET "https://allen-data-hub-backend.onrender.com/api/v1/wallet" \\
   -H "Authorization: Bearer YOUR_API_KEY"`,
   },
   {
     method: "POST",
     path: "/api/v1/orders",
     description: "Place a data bundle order for a recipient number.",
-    example: `curl -X POST "https://api.example.com/v1/orders" \\
+    example: `curl -X POST "https://allen-data-hub-backend.onrender.com/api/v1/orders" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "network": "MTN",
-    "size": "3GB",
+    "size": "3 GB",
     "recipient": "0249116309"
   }'`,
   },
@@ -30,14 +30,14 @@ const ENDPOINTS = [
     method: "GET",
     path: "/api/v1/orders/{id}",
     description: "Retrieve status for a single order by ID.",
-    example: `curl -X GET "https://api.example.com/v1/orders/ORD-3317560" \\
+    example: `curl -X GET "https://allen-data-hub-backend.onrender.com/api/v1/orders/ORD-3317560" \\
   -H "Authorization: Bearer YOUR_API_KEY"`,
   },
   {
     method: "GET",
     path: "/api/v1/packages",
     description: "List available packages filtered by network.",
-    example: `curl -X GET "https://api.example.com/v1/packages?network=MTN" \\
+    example: `curl -X GET "https://allen-data-hub-backend.onrender.com/api/v1/packages?network=MTN" \\
   -H "Authorization: Bearer YOUR_API_KEY"`,
   },
 ];
@@ -77,9 +77,9 @@ export default function ApiDocsPage() {
           </div>
           <div>
             <h2 className="font-semibold text-violet-700 dark:text-violet-300">Base URL</h2>
-            <p className="mt-1 font-mono text-sm text-slate-700 dark:text-slate-100">https://api.example.com/v1</p>
+            <p className="mt-1 font-mono text-sm text-slate-700 dark:text-slate-100">https://allen-data-hub-backend.onrender.com/api/v1</p>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-300">
-              Authenticate with an API key from the API Keys page. All requests require HTTPS.
+              Authenticate with a key from API Keys. Package prices include the account API fee configured by an administrator.
             </p>
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function ApiDocsPage() {
                 <span className="font-mono font-semibold text-slate-800">401</span> — Missing or invalid API key
               </li>
               <li>
-                <span className="font-mono font-semibold text-slate-800">402</span> — Insufficient wallet balance
+                <span className="font-mono font-semibold text-slate-800">400</span> — Insufficient wallet balance or business validation failure
               </li>
               <li>
                 <span className="font-mono font-semibold text-slate-800">422</span> — Validation error on payload

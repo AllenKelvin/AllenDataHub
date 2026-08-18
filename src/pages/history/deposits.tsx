@@ -28,8 +28,10 @@ import {
 } from "@/components/ui/table";
 import { formatCedi, formatGHS } from "@/lib/formatters";
 import type { Deposit } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
 
 export default function DepositsHistoryPage() {
+  const { user } = useAuth();
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -45,14 +47,15 @@ export default function DepositsHistoryPage() {
   });
 
   useEffect(() => {
+    if (!user?.id) return;
     const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
-    fetch(`${apiBase}/api/deposits`)
+    fetch(`${apiBase}/api/deposits`, { headers: { "x-user-id": user.id } })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (Array.isArray(data?.deposits)) setDeposits(data.deposits);
       })
       .catch(() => undefined);
-  }, []);
+  }, [user?.id]);
 
   const filtered = useMemo(() => {
     return deposits.filter((deposit) => {

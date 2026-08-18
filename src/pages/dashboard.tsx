@@ -86,6 +86,19 @@ export default function DashboardPage() {
         }));
       })
       .catch(() => undefined);
+
+    fetch(`${apiBase}/api/deposits`, {
+      headers: { "x-user-id": user.id },
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!Array.isArray(data?.deposits)) return;
+        setDashboard((prev) => ({
+          ...prev,
+          recentDeposits: data.deposits.slice(0, 5),
+        }));
+      })
+      .catch(() => undefined);
   }, [user?.id, user?.walletBalance]);
 
   const recentOrders = dashboard.recentOrders.slice(0, 5);

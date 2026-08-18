@@ -787,6 +787,32 @@ async function requireAdmin(req, res, next) {
   });
 }
 
+async function requireApiKey(req, res, next) {
+  if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
+  const authorization = String(req.headers.authorization || '');
+  const apiKey = authorization.startsWith('Bearer ')
+    ? authorization.slice(7).trim()
+    : String(req.headers['x-api-key'] || '').trim();
+  if (!apiKey) return res.status(401).json({ ok: false, error: 'Bearer API key is required.' });
+
+  const config = await db.collection('api_config').findOne({}) || DEFAULT_API_CONFIG;
+  if (!config.enabled) return res.status(403).json({ ok: false, error: 'API access is currently disabled.' });
+
+  const key = await db.collection('api-keys').findOne({ key: apiKey, status: 'Active' });
+  if (!key) return res.status(401).json({ ok: false, error: 'Invalid or revoked API key.' });
+  const user = await getUserById(key.userId);
+  if (!user) return res.status(401).json({ ok: false, error: 'API account was not found.' });
+
+  await db.collection('api-keys').updateOne(
+    { id: key.id },
+    { $set: { lastUsed: new Date().toISOString() } }
+  );
+  req.user = user;
+  req.apiKey = key;
+  req.apiConfig = config;
+  next();
+}
+
 async function createNotification(userId, title, message, type = 'info') {
   if (!db) return;
   await db.collection('notifications').insertOne({
@@ -1090,6 +1116,79 @@ app.get('/api/orders', requireUser, async (req, res) => {
   const filter = req.user.role === 'admin' ? {} : { userId: req.user.id };
   const orders = await db.collection('orders').find(filter).sort({ date: -1 }).toArray();
   res.json({ ok: true, orders });
+});
+
+// ─── Public dealer API ─────────────────────────────────────────────────────
+
+app.get('/api/v1/wallet', requireApiKey, async (req, res) => {
+  const deposits = await db.collection('deposits')
+    .find({ userId: req.user.id })
+    .sort({ date: -1 })
+    .limit(10)
+    .toArray();
+  res.json({
+    ok: true,
+    walletBalance: Number(req.user.walletBalance || 0),
+    recentDeposits: deposits,
+    apiFee: Number(req.user.apiPrice ?? req.apiConfig.price ?? 0),
+  });
+});
+
+app.get('/api/v1/packages', requireApiKey, async (req, res) => {
+  const filter = { enabled: { $ne: false }, ...(req.query.network ? { network: String(req.query.network) } : {}) };
+  const products = await (await getCollectionByNames(['products', 'packages']))
+    .find(filter)
+    .sort({ network: 1, size: 1 })
+    .toArray();
+  const rolePrice = req.user.role === 'agent' ? 'agentPrice' : 'userPrice';
+  const apiFee = Number(req.user.apiPrice ?? req.apiConfig.price ?? 0);
+  res.json({
+    ok: true,
+    apiFee,
+    packages: products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      network: product.network,
+      size: product.size,
+      validity: product.validity,
+      price: Number(product[rolePrice] ?? product.price ?? 0) + apiFee,
+      basePrice: Number(product[rolePrice] ?? product.price ?? 0),
+    })),
+  });
+});
+
+app.post('/api/v1/orders', requireApiKey, async (req, res) => {
+  const { network, size, recipient, packageName } = req.body || {};
+  if (!network || !size || !recipient) {
+    return res.status(422).json({ ok: false, error: 'network, size, and recipient are required.' });
+  }
+
+  const product = await (await getCollectionByNames(['products', 'packages'])).findOne({
+    network: String(network),
+    size: String(size).trim(),
+    enabled: { $ne: false },
+  });
+  if (!product) return res.status(404).json({ ok: false, error: 'Package not found.' });
+
+  const rolePrice = req.user.role === 'agent' ? 'agentPrice' : 'userPrice';
+  const basePrice = Number(product[rolePrice] ?? product.price ?? 0);
+  const apiFee = Number(req.user.apiPrice ?? req.apiConfig.price ?? 0);
+  const apiRequest = {
+    ...req,
+    body: {
+      ...req.body,
+      amount: Number((basePrice + apiFee).toFixed(2)),
+      packageName: packageName || product.name,
+      source: 'api',
+    },
+  };
+  return createSingleOrder(apiRequest, res);
+});
+
+app.get('/api/v1/orders/:id', requireApiKey, async (req, res) => {
+  const order = await db.collection('orders').findOne({ id: req.params.id, userId: req.user.id, source: 'api' });
+  if (!order) return res.status(404).json({ ok: false, error: 'API order not found.' });
+  res.json({ ok: true, order });
 });
 
 async function createSingleOrder(req, res) {
@@ -1696,6 +1795,14 @@ app.get('/api/notifications', requireUser, async (req, res) => {
   res.json({ ok: true, notifications });
 });
 
+app.post('/api/notifications/read', requireUser, async (req, res) => {
+  await db.collection('notifications').updateMany(
+    { userId: req.user.id, read: false },
+    { $set: { read: true, readAt: new Date().toISOString() } }
+  );
+  res.json({ ok: true });
+});
+
 // ─── API Keys ───────────────────────────────────────────────────────────────
 
 app.get('/api/api-keys', requireUser, async (req, res) => {
@@ -1737,16 +1844,55 @@ app.post('/api/api-keys/:id/revoke', requireUser, async (req, res) => {
 });
 
 app.get('/api/admin/api-users', requireAdmin, async (_req, res) => {
-  const keys = await db.collection('api-keys').find({ status: 'Active' }).toArray();
+  const keys = await db.collection('api-keys').find({}).sort({ createdAt: -1 }).toArray();
   const userIds = [...new Set(keys.map((k) => k.userId))];
   const users = await db.collection('users').find({ id: { $in: userIds } }).toArray();
   res.json({
     ok: true,
     apiUsers: users.map((u) => ({
       ...sanitizeUser(u),
-      activeKeys: keys.filter((k) => k.userId === u.id).length,
+      apiPrice: Number(u.apiPrice ?? 0),
+      keys: keys.filter((k) => k.userId === u.id).map((k) => ({ id: k.id, name: k.name, keyPreview: k.keyPreview, status: k.status, createdAt: k.createdAt, lastUsed: k.lastUsed })),
+      activeKeys: keys.filter((k) => k.userId === u.id && k.status === 'Active').length,
     })),
   });
+});
+
+app.get('/api/admin/api-accounts', requireAdmin, async (_req, res) => {
+  const keys = await db.collection('api-keys').find({}).sort({ createdAt: -1 }).toArray();
+  const users = await db.collection('users').find({ role: { $in: ['user', 'agent'] } }).sort({ fullName: 1 }).toArray();
+  res.json({
+    ok: true,
+    accounts: users.map((account) => ({
+      id: account.id,
+      fullName: account.fullName,
+      email: account.email,
+      role: account.role,
+      apiPrice: Number(account.apiPrice ?? 0),
+      keys: keys.filter((key) => key.userId === account.id).map((key) => ({
+        id: key.id,
+        name: key.name,
+        keyPreview: key.keyPreview,
+        status: key.status,
+        createdAt: key.createdAt,
+        lastUsed: key.lastUsed,
+      })),
+    })),
+  });
+});
+
+app.put('/api/admin/api-accounts/:userId', requireAdmin, async (req, res) => {
+  const apiPrice = Number(req.body?.apiPrice);
+  if (!Number.isFinite(apiPrice) || apiPrice < 0) {
+    return res.status(400).json({ ok: false, error: 'API price must be a non-negative number.' });
+  }
+  const account = await getUserById(req.params.userId);
+  if (!account || !['user', 'agent'].includes(account.role)) {
+    return res.status(404).json({ ok: false, error: 'API account not found.' });
+  }
+  const nextPrice = Number(apiPrice.toFixed(2));
+  await db.collection('users').updateOne({ id: account.id }, { $set: { apiPrice: nextPrice } });
+  res.json({ ok: true, userId: account.id, apiPrice: nextPrice });
 });
 
 // ─── Admin ──────────────────────────────────────────────────────────────────

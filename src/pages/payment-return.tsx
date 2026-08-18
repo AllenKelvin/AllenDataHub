@@ -10,6 +10,7 @@ export default function PaymentReturnPage() {
   const [, setLocation] = useLocation();
   const [message, setMessage] = useState("Confirming your Paystack payment...");
   const [failed, setFailed] = useState(false);
+  const [succeeded, setSucceeded] = useState(false);
 
   useEffect(() => {
     const reference = new URLSearchParams(window.location.search).get("reference");
@@ -41,7 +42,10 @@ export default function PaymentReturnPage() {
           throw new Error(data?.error || "Payment verification failed.");
         }
         await refreshUser();
-        if (active) setMessage("Payment confirmed. Returning to your wallet...");
+        if (active) {
+          setSucceeded(true);
+          setMessage("Payment confirmed. Returning to your wallet...");
+        }
         window.setTimeout(() => {
           if (active) setLocation("/user/wallet");
         }, 900);
@@ -62,7 +66,7 @@ export default function PaymentReturnPage() {
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
         {failed ? (
           <XCircle className="mx-auto h-12 w-12 text-rose-500" />
-        ) : message.startsWith("Payment confirmed") ? (
+        ) : succeeded ? (
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
         ) : (
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-violet-600" />
