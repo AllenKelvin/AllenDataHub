@@ -293,13 +293,9 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     }
 
     if (user) {
-      const nextBalance = Math.max(0, user.walletBalance - selectedPackage.price);
-      updateUser({ walletBalance: nextBalance });
-      if (user.referredBy) {
-        applyReferralCommission(user.referredBy, selectedPackage.price);
-      }
+      let nextBalance = user.walletBalance;
       try {
-        await saveOrderRecord({
+        const payload = await saveOrderRecord({
           recipient: phone,
           size: selectedPackage.size,
           amount: selectedPackage.price,
@@ -307,15 +303,28 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
           packageName: selectedPackage.name,
           userId: user.id,
         });
+
+        if (payload?.walletBalance != null) {
+          nextBalance = Number(payload.walletBalance);
+          updateUser({ walletBalance: nextBalance });
+        } else {
+          nextBalance = Math.max(0, user.walletBalance - selectedPackage.price);
+          updateUser({ walletBalance: nextBalance });
+        }
+
+        if (user.referredBy) {
+          applyReferralCommission(user.referredBy, selectedPackage.price);
+        }
+
+        window.alert(
+          `Order placed successfully!\n${selectedPackage.size} for ${phone}\n` +
+            `Amount: ${formatGHS(selectedPackage.price)}\n` +
+            `New wallet balance: ${formatGHS(nextBalance)}` +
+            (recurring ? "\n(Recurring order scheduled)" : "")
+        );
       } catch (error) {
         window.alert(error instanceof Error ? error.message : "Unable to save order.");
       }
-      window.alert(
-        `Order placed successfully!\n${selectedPackage.size} for ${phone}\n` +
-          `Amount: ${formatGHS(selectedPackage.price)}\n` +
-          `New wallet balance: ${formatGHS(nextBalance)}` +
-          (recurring ? "\n(Recurring order scheduled)" : "")
-      );
     } else {
       window.alert("Please sign in to purchase directly.");
     }
@@ -350,13 +359,9 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
 
     const total = groupedOrders.reduce((sum, { pkg }) => sum + pkg.price, 0);
     if (user) {
-      const nextBalance = Math.max(0, user.walletBalance - total);
-      updateUser({ walletBalance: nextBalance });
-      if (user.referredBy) {
-        applyReferralCommission(user.referredBy, total);
-      }
+      let nextBalance = user.walletBalance;
       try {
-        await Promise.all(
+        const results = await Promise.all(
           groupedOrders.map(({ recipient, pkg }) =>
             saveOrderRecord({
               recipient,
@@ -368,14 +373,23 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
             })
           )
         );
+
+        const latestBalance = results.at(-1)?.walletBalance ?? user.walletBalance - total;
+        nextBalance = Number(latestBalance);
+        updateUser({ walletBalance: nextBalance });
+
+        if (user.referredBy) {
+          applyReferralCommission(user.referredBy, total);
+        }
+
+        window.alert(
+          `Bulk order placed!\n${groupedOrders.length} recipient(s)\n` +
+            `Total: ${formatGHS(total)}\n` +
+            `New wallet balance: ${formatGHS(nextBalance)}`
+        );
       } catch (error) {
         window.alert(error instanceof Error ? error.message : "Unable to save bulk order.");
       }
-      window.alert(
-        `Bulk order placed!\n${groupedOrders.length} recipient(s)\n` +
-          `Total: ${formatGHS(total)}\n` +
-          `New wallet balance: ${formatGHS(nextBalance)}`
-      );
     } else {
       window.alert("Please sign in to purchase directly.");
     }
