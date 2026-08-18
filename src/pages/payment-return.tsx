@@ -44,6 +44,7 @@ export default function PaymentReturnPage() {
         await refreshUser();
         if (active) {
           setSucceeded(true);
+          setFailed(false);
           setMessage("Payment confirmed. Returning to your wallet...");
         }
         window.setTimeout(() => {

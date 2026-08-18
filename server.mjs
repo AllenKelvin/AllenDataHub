@@ -151,6 +151,14 @@ const PORTAL02_NETWORK_ENDPOINTS = {
   AirtelTigo: 'at',
 };
 
+function normalizePortalNetwork(network) {
+  const value = String(network || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (value === 'mtn') return 'MTN';
+  if (value === 'telecel' || value === 'vodafone') return 'Telecel';
+  if (value === 'airteltigo' || value === 'airtel' || value === 'tigo' || value === 'at') return 'AirtelTigo';
+  return String(network || '').trim();
+}
+
 const PORTAL02_AVAILABLE_VOLUMES = {
   MTN: [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
   Telecel: [5, 10, 15, 20, 25, 30, 40, 50, 100],
@@ -183,7 +191,7 @@ async function purchaseWithPortal02({ phone, size, network, reference, webhookUr
     return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
   }
 
-  const normalizedNetwork = network === 'AirtelTigo' ? 'AirtelTigo' : network;
+  const normalizedNetwork = normalizePortalNetwork(network);
   const offerSlug = PORTAL02_OFFER_SLUGS[normalizedNetwork];
   const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork];
   const volume = extractPortalVolume(size);
@@ -253,7 +261,7 @@ async function cancelPortal02Order({ network, orderId, reference }) {
     return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
   }
 
-  const normalizedNetwork = network === 'AirtelTigo' ? 'AirtelTigo' : network;
+  const normalizedNetwork = normalizePortalNetwork(network);
   const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork] || String(normalizedNetwork || '').toLowerCase();
   const baseUrl = String(PORTAL02_BASE_URL).replace(/\/$/, '');
   const vendorId = String(orderId || '').trim();
@@ -262,11 +270,11 @@ async function cancelPortal02Order({ network, orderId, reference }) {
     return { success: false, error: 'No Portal-02 order identifier was found for cancellation.' };
   }
 
-  const requestBody = {
-    orderId: vendorId || vendorReference,
-    reference: vendorReference || vendorId,
-    network: normalizedNetwork,
-  };
+  const requestBodies = [
+    { orderId: vendorId || vendorReference, reference: vendorReference || vendorId, network: normalizedNetwork },
+    { order_id: vendorId || vendorReference, clientReference: vendorReference || vendorId, network: normalizedNetwork },
+    { orderId: vendorId || vendorReference, reference: vendorReference || vendorId, network: endpoint },
+  ];
   const candidateRequests = [
     ...(PORTAL02_CANCEL_URL ? [{ url: PORTAL02_CANCEL_URL, method: 'POST' }] : []),
     { url: `${baseUrl}/order/${endpoint}/cancel`, method: 'POST' },
@@ -276,61 +284,60 @@ async function cancelPortal02Order({ network, orderId, reference }) {
   ].filter(Boolean);
 
   for (const candidate of candidateRequests) {
-    console.log(JSON.stringify({
-      tag: 'PORTAL02_CANCEL_ATTEMPT',
-      url: candidate.url,
-      method: candidate.method,
-      network: normalizedNetwork,
-      orderId: vendorId,
-      reference: vendorReference,
-    }));
-    try {
-      const response = await fetch(candidate.url, {
-        method: candidate.method,
-        headers: {
-          'x-api-key': PORTAL02_API_KEY,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: candidate.method === 'DELETE' ? JSON.stringify(requestBody) : JSON.stringify(requestBody),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      const status = String(data.status || data.state || '').toLowerCase();
-      const explicitlyFailed = data.success === false || ['failed', 'error', 'rejected'].includes(status);
-      const cancellationConfirmed = ['cancelled', 'canceled', 'refunded', 'success', 'completed'].includes(status)
-        || data.cancelled === true
-        || data.canceled === true
-        || data.success === true;
-
-      if (response.ok && !explicitlyFailed && cancellationConfirmed) {
-        const result = {
-          success: true,
-          status: status || 'cancelled',
-          orderId: data.orderId || data.id || vendorId,
-          reference: data.reference || vendorReference || vendorId,
-          raw: data,
-        };
-        console.log(JSON.stringify({ tag: 'PORTAL02_CANCEL_CONFIRMED', ...result, url: candidate.url }));
-        return result;
-      }
-
-      const errorText = data.message || data.error || `Portal-02 cancel failed with status ${response.status}`;
-      console.error(JSON.stringify({
-        tag: 'PORTAL02_CANCEL_FAILED',
+    for (const requestBody of requestBodies) {
+      console.log(JSON.stringify({
+        tag: 'PORTAL02_CANCEL_ATTEMPT',
         url: candidate.url,
-        statusCode: response.status,
-        vendorStatus: status,
-        error: errorText,
+        method: candidate.method,
+        network: normalizedNetwork,
         orderId: vendorId,
         reference: vendorReference,
       }));
-      if (response.status !== 404 && response.status !== 405) {
-        return { success: false, error: errorText, statusCode: response.status, raw: data };
+      try {
+        const response = await fetch(candidate.url, {
+          method: candidate.method,
+          headers: {
+            'x-api-key': PORTAL02_API_KEY,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        const status = String(data.status || data.state || '').toLowerCase();
+        const explicitlyFailed = data.success === false || ['failed', 'error', 'rejected'].includes(status);
+        const cancellationConfirmed = ['cancelled', 'canceled', 'refunded', 'success', 'completed'].includes(status)
+          || data.cancelled === true
+          || data.canceled === true
+          || data.success === true;
+
+        if (response.ok && !explicitlyFailed && cancellationConfirmed) {
+          const result = {
+            success: true,
+            status: status || 'cancelled',
+            orderId: data.orderId || data.id || vendorId,
+            reference: data.reference || vendorReference || vendorId,
+            raw: data,
+          };
+          console.log(JSON.stringify({ tag: 'PORTAL02_CANCEL_CONFIRMED', ...result, url: candidate.url }));
+          return result;
+        }
+
+        const errorText = data.message || data.error || `Cancellation request failed with status ${response.status}`;
+        console.error(JSON.stringify({
+          tag: 'PORTAL02_CANCEL_FAILED',
+          url: candidate.url,
+          statusCode: response.status,
+          vendorStatus: status,
+          error: errorText,
+          orderId: vendorId,
+          reference: vendorReference,
+        }));
+      } catch (error) {
+        const errMessage = error instanceof Error ? error.message : 'Cancellation network error.';
+        console.error(JSON.stringify({ tag: 'PORTAL02_CANCEL_NETWORK_ERROR', url: candidate.url, error: errMessage }));
       }
-    } catch (error) {
-      const errMessage = error instanceof Error ? error.message : 'Portal-02 cancellation network error.';
-      console.error(JSON.stringify({ tag: 'PORTAL02_CANCEL_NETWORK_ERROR', url: candidate.url, error: errMessage }));
     }
   }
 
@@ -1417,7 +1424,7 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
     }));
     return res.status(502).json({
       ok: false,
-      error: `Portal-02 cancellation was not confirmed. ${portalCancelResult.error}`,
+      error: 'Unable to cancel this order right now. Please try again.',
       portalCancelResult,
     });
   }
