@@ -15,6 +15,9 @@ const FRONTEND_BASE_URL = process.env.FRONTEND_URL || process.env.VITE_APP_URL |
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
+const PORTAL02_API_KEY = process.env.PORTAL02_API_KEY || process.env.VITE_PORTAL02_API_KEY || '';
+const PORTAL02_BASE_URL = process.env.PORTAL02_BASE_URL || process.env.VITE_PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
+const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allen-data-hub-backend.onrender.com';
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
@@ -129,11 +132,113 @@ const DEFAULT_API_CONFIG = { enabled: true, price: 0.5, note: 'API access active
 let client;
 let db;
 
+const PORTAL02_OFFER_SLUGS = {
+  MTN: 'master_beneficiary_data_bundle',
+  Telecel: 'telecel_expiry_bundle',
+  AirtelTigo: 'ishare_data_bundle',
+};
+
+const PORTAL02_NETWORK_ENDPOINTS = {
+  MTN: 'mtn',
+  Telecel: 'telecel',
+  AirtelTigo: 'at',
+};
+
+const PORTAL02_AVAILABLE_VOLUMES = {
+  MTN: [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
+  Telecel: [5, 10, 15, 20, 25, 30, 40, 50, 100],
+  AirtelTigo: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20],
+};
+
 function makeId(prefix) {
   if (prefix === 'ord') {
     return `${prefix}_${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(2, 8)}`;
   }
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizePortalPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0') && digits.length === 10) return `233${digits.slice(1)}`;
+  if (digits.startsWith('+233')) return digits.replace(/^\+/, '');
+  if (digits.length === 9) return `233${digits}`;
+  return digits;
+}
+
+function extractPortalVolume(size) {
+  const numeric = Number(String(size || '').match(/(\d+(?:\.\d+)?)/)?.[1] || 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+async function purchaseWithPortal02({ phone, size, network, reference, webhookUrl }) {
+  if (!PORTAL02_API_KEY) {
+    return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
+  }
+
+  const normalizedNetwork = network === 'AirtelTigo' ? 'AirtelTigo' : network;
+  const offerSlug = PORTAL02_OFFER_SLUGS[normalizedNetwork];
+  const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork];
+  const volume = extractPortalVolume(size);
+  const phoneNumber = normalizePortalPhone(phone);
+
+  if (!offerSlug || !endpoint) {
+    return { success: false, error: `Unsupported Portal-02 network: ${network}` };
+  }
+
+  if (!phoneNumber || phoneNumber.length < 10) {
+    return { success: false, error: 'Phone number is invalid for Portal-02 purchase.' };
+  }
+
+  if (!PORTAL02_AVAILABLE_VOLUMES[normalizedNetwork]?.includes(volume)) {
+    return { success: false, error: `${volume}GB is not available for ${network}.` };
+  }
+
+  const url = `${String(PORTAL02_BASE_URL).replace(/\/$/, '')}/order/${endpoint}`;
+  const payload = {
+    type: 'single',
+    volume,
+    phone: phoneNumber,
+    offerSlug,
+    webhookUrl: webhookUrl || `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+    reference: reference || makeId('ord'),
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'x-api-key': PORTAL02_API_KEY,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.message || data.error || `Portal-02 request failed with status ${response.status}`,
+        statusCode: response.status,
+        details: data,
+      };
+    }
+
+    return {
+      success: true,
+      transactionId: data.orderId || data.id || payload.reference,
+      reference: data.reference || payload.reference,
+      status: data.status || 'pending',
+      raw: data,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Portal-02 network error.',
+      details: null,
+    };
+  }
 }
 
 function hashPassword(password) {
@@ -833,6 +938,16 @@ async function createSingleOrder(req, res) {
     return res.status(403).json({ ok: false, error: `${network} is currently disabled.` });
   }
 
+  const productExists = await db.collection('products').findOne({
+    network,
+    size: String(size || '').trim(),
+    enabled: { $ne: false },
+  });
+
+  if (!productExists) {
+    return res.status(404).json({ ok: false, error: 'Product not found for this network.' });
+  }
+
   const user = await getUserById(req.user.id);
   const balBefore = Number(user.walletBalance || 0);
 
@@ -841,11 +956,13 @@ async function createSingleOrder(req, res) {
   }
 
   const balAfter = Number((balBefore - orderAmount).toFixed(2));
+  const orderId = makeId('ord');
+  const vendorReference = `${network}-${orderId}`;
 
   await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
 
   const order = {
-    id: makeId('ord'),
+    id: orderId,
     size: size || '',
     recipient,
     network,
@@ -858,17 +975,46 @@ async function createSingleOrder(req, res) {
     date: new Date().toISOString(),
     userId: user.id,
     packageName: packageName || '',
+    reference: vendorReference,
     createdAt: new Date().toISOString(),
   };
 
   await db.collection('orders').insertOne(order);
+
+  const portalResult = await purchaseWithPortal02({
+    phone: recipient,
+    size,
+    network,
+    reference: vendorReference,
+    webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+  });
+
+  if (!portalResult.success) {
+    await db.collection('orders').updateOne({ id: orderId }, { $set: { status: 'Failed', portalError: portalResult.error, vendorStatus: 'failed', updatedAt: new Date().toISOString() } });
+    return res.status(502).json({ ok: false, error: portalResult.error, portalResult });
+  }
+
+  await db.collection('orders').updateOne(
+    { id: orderId },
+    {
+      $set: {
+        portalOrderId: portalResult.transactionId,
+        portalReference: portalResult.reference,
+        portalStatus: portalResult.status,
+        portalResponse: portalResult.raw,
+        status: 'Pending',
+        updatedAt: new Date().toISOString(),
+      },
+    }
+  );
+
   await createNotification(user.id, 'Order placed', `${size} for ${recipient} on ${network}.`, 'order');
 
   if (user.referredBy) {
     await applyReferralCommission(user.referredBy, orderAmount);
   }
 
-  return res.status(201).json({ ok: true, order, walletBalance: balAfter });
+  return res.status(201).json({ ok: true, order: { ...order, portalOrderId: portalResult.transactionId, portalStatus: portalResult.status }, walletBalance: balAfter, portalResult });
 }
 
 app.post('/api/orders', requireUser, async (req, res) => {
@@ -1345,7 +1491,43 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
 });
 
 app.post('/api/webhooks/portal02', async (req, res) => {
-  res.json({ ok: true, received: req.body || {}, platform: 'Portal-02.com' });
+  const payload = req.body || {};
+  const root = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  const event = root?.event || root?.event_type || payload?.event || payload?.event_type || payload?.type || 'status.updated';
+  const orderId = root?.orderId || root?.order_id || root?.id || payload?.orderId || payload?.order_id || payload?.id || null;
+  const reference = root?.reference || root?.clientReference || payload?.reference || payload?.clientReference || null;
+  const status = String(root?.status || payload?.status || 'pending');
+
+  const statusMap = {
+    pending: 'Pending',
+    processing: 'Processing',
+    delivered: 'Completed',
+    failed: 'Failed',
+    cancelled: 'Cancelled',
+    canceled: 'Cancelled',
+    refunded: 'Refunded',
+    resolved: 'Completed',
+  };
+
+  const nextStatus = statusMap[String(status).toLowerCase()] || 'Pending';
+
+  if (db) {
+    await db.collection('orders').updateOne(
+      { $or: [{ id: orderId }, { reference }, { portalOrderId: orderId }, { portalReference: reference }] },
+      {
+        $set: {
+          status: nextStatus,
+          portalStatus: status,
+          event,
+          vendorUpdatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { upsert: false }
+    );
+  }
+
+  res.json({ ok: true, received: { event, orderId, reference, status: nextStatus }, platform: 'Portal-02.com' });
 });
 
 app.listen(port, async () => {
