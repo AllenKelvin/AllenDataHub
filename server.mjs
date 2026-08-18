@@ -1084,14 +1084,12 @@ app.get('/api/referrals', requireUser, async (req, res) => {
 
 app.get('/api/packages', async (req, res) => {
   if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
-  const packageCollection = await getCollectionByNames(['products', 'packages']);
-  const packages = await packageCollection.find({ enabled: { $ne: false } }).toArray();
+  const products = await db.collection('products').find({ enabled: { $ne: false } }).toArray();
   const userId = String(req.headers['x-user-id'] || '');
   const account = userId ? await getUserById(userId) : null;
-  const visiblePackages = packages.length ? packages : DEFAULT_PACKAGES;
   res.json({
     ok: true,
-    packages: visiblePackages.map((product) => ({
+    packages: products.map((product) => ({
       ...product,
       userPrice: Number(product.userPrice ?? product.price ?? 0),
       agentPrice: Number(product.agentPrice ?? product.price ?? 0),
@@ -1155,8 +1153,7 @@ app.post('/api/admin/packages', requireAdmin, async (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  const packageCollection = await getCollectionByNames(['products', 'packages']);
-  await packageCollection.insertOne(doc);
+  await db.collection('products').insertOne(doc);
   res.status(201).json({ ok: true, package: doc });
 });
 
@@ -1185,7 +1182,7 @@ app.get('/api/v1/wallet', requireApiKey, async (req, res) => {
 
 app.get('/api/v1/packages', requireApiKey, async (req, res) => {
   const filter = { enabled: { $ne: false }, ...(req.query.network ? { network: String(req.query.network) } : {}) };
-  const products = await (await getCollectionByNames(['products', 'packages']))
+  const products = await db.collection('products')
     .find(filter)
     .sort({ network: 1, size: 1 })
     .toArray();
@@ -1209,7 +1206,7 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
     return res.status(422).json({ ok: false, error: 'network, size, and recipient are required.' });
   }
 
-  const product = await (await getCollectionByNames(['products', 'packages'])).findOne({
+  const product = await db.collection('products').findOne({
     network: String(network),
     size: String(size).trim(),
     enabled: { $ne: false },
@@ -1945,7 +1942,7 @@ app.get('/api/admin/api-accounts', requireAdmin, async (_req, res) => {
 });
 
 app.get('/api/admin/api-products', requireAdmin, async (_req, res) => {
-  const products = await (await getCollectionByNames(['products', 'packages']))
+  const products = await db.collection('products')
     .find({ enabled: { $ne: false } })
     .sort({ network: 1, size: 1 })
     .toArray();
@@ -1972,7 +1969,7 @@ app.put('/api/admin/api-accounts/:userId', requireAdmin, async (req, res) => {
   if (!account || !['user', 'agent'].includes(account.role)) {
     return res.status(404).json({ ok: false, error: 'API account not found.' });
   }
-  const product = await (await getCollectionByNames(['products', 'packages'])).findOne({ id: String(productId), enabled: { $ne: false } });
+  const product = await db.collection('products').findOne({ id: String(productId), enabled: { $ne: false } });
   if (!product) return res.status(404).json({ ok: false, error: 'Product not found.' });
 
   const nextPrice = Number(price.toFixed(2));
@@ -1992,7 +1989,7 @@ app.get('/api/admin/overview', requireAdmin, async (_req, res) => {
     db.collection('refunds').find({}).toArray(),
     db.collection('notifications').find({}).toArray(),
     db.collection('api-keys').find({}).toArray(),
-    (await getCollectionByNames(['products', 'packages'])).find({}).toArray(),
+    db.collection('products').find({}).toArray(),
     db.collection('network_settings').find({}).toArray(),
   ]);
 
