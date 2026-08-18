@@ -29,7 +29,7 @@ import { formatGHS } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 
 const ADMIN_FEE = 0.04;
-const MIN_TOPUP = 10;
+const MIN_TOPUP = 5;
 
 const SEND_CLAIM_ADVANTAGES = [
   "Instant wallet credit after claim",
@@ -242,7 +242,7 @@ export default function WalletPage() {
               Contact support to enroll in volume rebates, partner float, or loyalty boosts tailored to your dealer account.
             </p>
             <a
-              href="https://wa.me/233546051806"
+              href="https://wa.me/233592786175"
               target="_blank"
               rel="noreferrer"
               className="mt-4 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-50"

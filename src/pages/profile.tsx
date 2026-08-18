@@ -338,7 +338,7 @@ export default function ProfilePage() {
               >
                 Edit Preferences
               </Button>
-              <a href={`https://wa.me/233${user.phone.replace(/^0/, "")}`} target="_blank" rel="noreferrer">
+              <a href="https://wa.me/233592786175" target="_blank" rel="noreferrer">
                 <Button type="button" variant="outline" className="w-full rounded-xl sm:w-auto">
                   Contact Support
                 </Button>

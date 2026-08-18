@@ -1364,8 +1364,8 @@ async function initializePaystackPayment(req, res) {
   if (!req.user && !req.body?.userId) {
     return res.status(401).json({ ok: false, error: 'Authentication required.' });
   }
-  if (amount < 10) {
-    return res.status(400).json({ ok: false, error: 'Minimum top-up is GHS 10.' });
+  if (amount < 5) {
+    return res.status(400).json({ ok: false, error: 'Minimum top-up is GHS 5.' });
   }
 
   const user = req.user || (await getUserById(String(req.body?.userId)));

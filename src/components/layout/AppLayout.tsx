@@ -5,7 +5,7 @@ import { TopNavbar } from "./TopNavbar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
-const WHATSAPP_URL = "https://wa.me/233000000000?text=Hi%2C%20I%20need%20support%20with%20my%20User%20Panel%20account.";
+const WHATSAPP_URL = "https://wa.me/233592786175";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
