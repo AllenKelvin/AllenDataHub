@@ -58,7 +58,7 @@ export interface Deposit {
   method: string;
   platform: string;
   reference: string;
-  status: "Credited" | "Pending" | "Failed";
+  status: "Credited" | "Completed" | "Pending" | "Failed";
   balBefore: number;
   balAfter: number;
   handledBy: string;

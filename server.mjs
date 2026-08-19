@@ -695,7 +695,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
   }
 
   const existing = await db.collection('deposits').findOne({ reference });
-  if (existing?.status === 'Credited') {
+  if (existing?.status === 'Credited' || existing?.status === 'Completed') {
     return {
       ok: true,
       alreadyProcessed: true,
@@ -705,6 +705,26 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
       balAfter: Number(existing.balAfter ?? user.walletBalance ?? 0),
       creditAmount: Number(existing.amount || 0),
     };
+  }
+
+  const claim = await db.collection('deposits').updateOne(
+    { reference, status: 'Pending' },
+    { $set: { status: 'Processing', processingAt: new Date().toISOString() } }
+  );
+  if (claim.matchedCount === 0) {
+    const current = await db.collection('deposits').findOne({ reference });
+    if (current?.status === 'Credited' || current?.status === 'Completed') {
+      return {
+        ok: true,
+        alreadyProcessed: true,
+        reference,
+        userId,
+        balBefore: Number(current.balBefore ?? user.walletBalance ?? 0),
+        balAfter: Number(current.balAfter ?? user.walletBalance ?? 0),
+        creditAmount: Number(current.amount || 0),
+      };
+    }
+    return { ok: false, pending: true, error: 'This payment is already being processed.' };
   }
 
   const amountValue = Number(amount || 0);
@@ -722,7 +742,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
     method: 'card',
     platform: 'paystack',
     reference,
-    status: 'Credited',
+    status: 'Completed',
     balBefore,
     balAfter,
     handledBy: source,
@@ -1537,14 +1557,9 @@ async function initializePaystackPayment(req, res) {
   );
 
   if (!PAYSTACK_SECRET) {
-    return res.json({
-      ok: true,
-      demo: true,
-      reference,
-      amount: totalPay,
-      email,
-      callbackUrl: `${callbackUrl}?reference=${encodeURIComponent(reference)}&amount=${encodeURIComponent(String(amount))}`,
-      message: 'Paystack key not configured. Use the demo completion endpoint.',
+    return res.status(503).json({
+      ok: false,
+      error: 'Paystack is not configured. Wallet funding is temporarily unavailable.',
     });
   }
 
@@ -1603,8 +1618,10 @@ app.post('/api/payments/paystack/initialize', requireUser, async (req, res) => {
 app.post('/api/webhooks/paystack', async (req, res) => {
   const signature = String(req.headers['x-paystack-signature'] || '');
   const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
-  const expectedSignature = crypto.createHmac('sha512', PAYSTACK_SECRET).update(rawBody).digest('hex');
-  const signatureValid = Boolean(signature) && signature.length === expectedSignature.length && crypto.timingSafeEqual(
+  const expectedSignature = PAYSTACK_SECRET
+    ? crypto.createHmac('sha512', PAYSTACK_SECRET).update(rawBody).digest('hex')
+    : '';
+  const signatureValid = Boolean(PAYSTACK_SECRET && signature) && signature.length === expectedSignature.length && crypto.timingSafeEqual(
     Buffer.from(signature),
     Buffer.from(expectedSignature)
   );
@@ -1774,7 +1791,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
 
   const deposit = await db.collection('deposits').findOne({ reference, userId: req.user.id });
   if (!deposit) return res.status(404).json({ ok: false, error: 'Deposit not found.' });
-  if (deposit.status === 'Credited') {
+  if (deposit.status === 'Credited' || deposit.status === 'Completed') {
     const user = await getUserById(req.user.id);
     return res.json({ ok: true, alreadyCredited: true, balBefore: deposit.balBefore, balAfter: user.walletBalance, deposit });
   }
@@ -1790,8 +1807,52 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     } catch {
       verified = false;
     }
-  } else {
-    verified = true;
+  }
+
+  if (!verified) {
+    return res.status(202).json({ ok: true, pending: true, reference, deposit });
+  }
+
+  res.json({
+    ok: true,
+    verified: true,
+    pending: false,
+    reference,
+    amount: Number(deposit.amount || 0),
+    deposit,
+  });
+});
+
+app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
+  const { reference } = req.body || {};
+  if (!reference) return res.status(400).json({ ok: false, error: 'Reference is required.' });
+
+  const deposit = await db.collection('deposits').findOne({ reference, userId: req.user.id });
+  if (!deposit) return res.status(404).json({ ok: false, error: 'Deposit not found.' });
+
+  if (deposit.status === 'Credited' || deposit.status === 'Completed') {
+    const user = await getUserById(req.user.id);
+    return res.json({
+      ok: true,
+      alreadyProcessed: true,
+      reference,
+      balBefore: deposit.balBefore,
+      balAfter: user?.walletBalance ?? deposit.balAfter,
+      creditAmount: Number(deposit.amount || 0),
+    });
+  }
+
+  let verified = false;
+  if (PAYSTACK_SECRET) {
+    try {
+      const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+        headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` },
+      });
+      const data = await verifyRes.json();
+      verified = data.status && data.data?.status === 'success';
+    } catch {
+      verified = false;
+    }
   }
 
   if (!verified) {
@@ -1802,8 +1863,8 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     userId: req.user.id,
     amount: Number(deposit.amount || 0),
     reference,
-    source: 'paystack_verify',
-    metadata: { verifiedFrom: 'paystack_api' },
+    source: 'paystack_return',
+    metadata: { verifiedFrom: 'paystack_return_button' },
   });
   if (!result.ok) return res.status(400).json(result);
   res.json(result);

@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCedi, formatGHS } from "@/lib/formatters";
+import { formatCedi, formatGHS, shortenId } from "@/lib/formatters";
 import type { Deposit } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
@@ -75,8 +75,9 @@ export default function DepositsHistoryPage() {
   }, [applied, deposits]);
 
   const totals = useMemo(() => {
-    const totalDeposits = deposits.length;
-    const totalAmount = deposits.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+    const completedDeposits = deposits.filter((deposit) => deposit.status === "Completed" || deposit.status === "Credited");
+    const totalDeposits = completedDeposits.length;
+    const totalAmount = completedDeposits.reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
     const avgDeposit = totalDeposits > 0 ? totalAmount / totalDeposits : 0;
     return { totalDeposits, recent: Math.min(totalDeposits, 6), totalAmount, avgDeposit };
   }, [deposits]);
@@ -152,7 +153,8 @@ export default function DepositsHistoryPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="Credited">Credited</SelectItem>
+              <SelectItem value="Completed">Completed</SelectItem>
+              <SelectItem value="Credited">Credited (legacy)</SelectItem>
               <SelectItem value="Pending">Pending</SelectItem>
               <SelectItem value="Failed">Failed</SelectItem>
             </SelectContent>
@@ -235,7 +237,7 @@ export default function DepositsHistoryPage() {
             <TableBody>
               {filtered.map((deposit) => (
                 <TableRow key={deposit.id}>
-                  <TableCell className="font-medium text-blue-600">{deposit.id}</TableCell>
+                  <TableCell className="font-medium text-blue-600" title={deposit.id}>{shortenId(deposit.id)}</TableCell>
                   <TableCell className="font-semibold text-emerald-600">
                     {formatCedi(deposit.amount)}
                   </TableCell>

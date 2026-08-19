@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/lib/auth";
-import { formatGHS } from "@/lib/formatters";
+import { formatGHS, shortenId } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 
 const ADMIN_FEE = 0.04;
@@ -101,7 +101,7 @@ export default function WalletPage() {
   const filteredDeposits = useMemo(() => {
     return userDeposits.filter((deposit) => {
       if (filter === "all") return true;
-      if (filter === "credited") return deposit.status === "Credited";
+      if (filter === "credited") return deposit.status === "Credited" || deposit.status === "Completed";
       if (filter === "pending") return deposit.status === "Pending";
       return deposit.platform === filter || deposit.method === filter;
     });
@@ -407,7 +407,7 @@ export default function WalletPage() {
                   key={deposit.id}
                   className="border-b border-slate-50 transition hover:bg-slate-50/60"
                 >
-                  <td className="px-5 py-3.5 font-medium text-slate-800">{deposit.id}</td>
+                  <td className="px-5 py-3.5 font-medium text-slate-800" title={deposit.id}>{shortenId(deposit.id)}</td>
                   <td className="px-5 py-3.5 capitalize text-slate-600">
                     {deposit.platform}
                     <span className="ml-1 text-xs text-slate-400">({deposit.method})</span>
