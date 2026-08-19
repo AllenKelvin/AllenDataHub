@@ -1,0 +1,19 @@
+{
+  "name": "AllenDataHub",
+  "short_name": "AllenDataHub",
+  "description": "Manage your data bundles, wallet and utility orders.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#075985",
+  "theme_color": "#075985",
+  "icons": [
+    {
+      "src": "/favicon.jpg",
+      "sizes": "720x1280",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
