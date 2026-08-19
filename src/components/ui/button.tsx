@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
+import { Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -38,17 +39,48 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  processing?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, processing = false, onClick, children, disabled, ...props }, ref) => {
+    const [isProcessing, setIsProcessing] = React.useState(processing)
+    const busy = processing || isProcessing
     const Comp = asChild ? Slot : "button"
+
+    React.useEffect(() => {
+      setIsProcessing(processing)
+    }, [processing])
+
+    const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (!onClick || busy) return
+
+      setIsProcessing(true)
+      try {
+        const result = (onClick as unknown as (event: React.MouseEvent<HTMLButtonElement>) => unknown)(event)
+        if (result && typeof (result as Promise<unknown>).then === "function") {
+          void (result as Promise<unknown>).finally(() => setIsProcessing(false))
+        } else {
+          queueMicrotask(() => setIsProcessing(false))
+        }
+      } catch (error) {
+        setIsProcessing(false)
+        throw error
+      }
+    }
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        disabled={disabled || busy}
+        aria-busy={busy || undefined}
+        onClick={handleClick}
         {...props}
-      />
+      >
+        {busy && !asChild ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+        {children}
+      </Comp>
     )
   }
 )

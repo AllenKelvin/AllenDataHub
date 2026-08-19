@@ -41,6 +41,7 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [momo, setMomo] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -79,22 +80,27 @@ export default function ProfilePage() {
     }
   };
 
-  const handleSave = (e: FormEvent) => {
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
-    updateUser({
-      fullName,
-      email,
-      phone,
-      whatsapp: whatsapp || undefined,
-      momo: momo || undefined,
-      initials: fullName
-        .split(" ")
-        .map((p) => p[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase(),
-    });
-    toast({ title: "Profile updated", description: "Your changes have been saved." });
+    setIsSaving(true);
+    try {
+      await updateUser({
+        fullName,
+        email,
+        phone,
+        whatsapp: whatsapp || undefined,
+        momo: momo || undefined,
+        initials: fullName
+          .split(" ")
+          .map((p) => p[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+      });
+      toast({ title: "Profile updated", description: "Your changes have been saved." });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -282,9 +288,10 @@ export default function ProfilePage() {
             </div>
             <Button
               type="submit"
+              processing={isSaving}
               className="mt-6 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-md hover:from-blue-700 hover:to-violet-700"
             >
-              Save Changes
+              {isSaving ? "Saving..." : "Save Changes"}
             </Button>
           </form>
 

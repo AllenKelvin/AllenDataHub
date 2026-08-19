@@ -37,7 +37,7 @@ export default function AdminPage() {
   }>>([]);
   const [selectedApiAccountId, setSelectedApiAccountId] = useState("");
   const [editingApiProducts, setEditingApiProducts] = useState<Set<string>>(new Set());
-  const [allOrders, setAllOrders] = useState<Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }>>([]);
+  const [allOrders, setAllOrders] = useState<Array<{ id: string; userId?: string; username?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; createdAt?: string; source?: string; balBefore?: number; balAfter?: number }>>([]);
   const [disabledNetworks, setDisabledNetworks] = useState<string[]>([]);
   const [priceForm, setPriceForm] = useState({ userPrice: "4", agentPrice: "3.5", network: "MTN", label: "1GB" });
   const [apiSettings, setApiSettings] = useState({ enabled: true, note: "API access active" });
@@ -52,7 +52,7 @@ export default function AdminPage() {
           apiFetch<{ requests?: Array<{ id: string; email?: string; requestType?: string; createdAt?: string; status?: string }> }>('/api/admin/requests', { userId: user.id }),
           apiFetch<{ settings?: Array<{ network: string; enabled?: boolean }> }>('/api/network-settings', { userId: user.id }),
           apiFetch<{ config?: { enabled?: boolean; note?: string } }>('/api/admin/api-config', { userId: user.id }),
-          apiFetch<{ orders?: Array<{ id: string; userId?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; source?: string; balBefore?: number; balAfter?: number }> }>('/api/orders', { userId: user.id }),
+          apiFetch<{ orders?: Array<{ id: string; userId?: string; username?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; createdAt?: string; source?: string; balBefore?: number; balAfter?: number }> }>('/api/orders', { userId: user.id }),
           apiFetch<{ accounts?: typeof apiAccounts }>('/api/admin/api-accounts', { userId: user.id }),
           apiFetch<{ products?: typeof apiProducts }>('/api/admin/api-products', { userId: user.id }),
         ]);
@@ -421,9 +421,12 @@ export default function AdminPage() {
                       <tr>
                         <th className="px-3 py-2">Order</th>
                         <th className="px-3 py-2">User</th>
+                        <th className="px-3 py-2">Date / time</th>
                         <th className="px-3 py-2">Recipient</th>
                         <th className="px-3 py-2">Network</th>
                         <th className="px-3 py-2">Amount</th>
+                        <th className="px-3 py-2">Balance before</th>
+                        <th className="px-3 py-2">Balance after</th>
                         <th className="px-3 py-2">Status</th>
                         <th className="px-3 py-2 text-right">Action</th>
                       </tr>
@@ -432,10 +435,13 @@ export default function AdminPage() {
                       {allOrders.map((order) => (
                         <tr key={order.id} className="border-t border-slate-200">
                           <td className="px-3 py-2 font-medium text-violet-600">{order.id}</td>
-                          <td className="px-3 py-2">{order.userId || "—"}</td>
+                          <td className="px-3 py-2">{order.username || "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-500">{new Date(order.createdAt || order.date || Date.now()).toLocaleString()}</td>
                           <td className="px-3 py-2">{order.recipient}</td>
                           <td className="px-3 py-2">{order.network}</td>
                           <td className="px-3 py-2">{formatGHS(order.amount)}</td>
+                          <td className="px-3 py-2">{formatGHS(order.balBefore ?? 0)}</td>
+                          <td className="px-3 py-2">{formatGHS(order.balAfter ?? 0)}</td>
                           <td className="px-3 py-2"><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-700">{order.status}</span></td>
                           <td className="px-3 py-2 text-right">
                             <Button

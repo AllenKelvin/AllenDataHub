@@ -656,7 +656,7 @@ async function getUserById(userId) {
 }
 
 function getPaystackReferenceForUser(userId) {
-  return `ALLEN_${Date.now()}_${String(userId || 'guest')}`;
+  return `ALLEN_${String(userId || 'guest')}_${makeId('pay')}`;
 }
 
 function getPaystackEmailForUser(user) {
@@ -1113,7 +1113,22 @@ app.post('/api/admin/packages', requireAdmin, async (req, res) => {
 
 app.get('/api/orders', requireUser, async (req, res) => {
   const filter = req.user.role === 'admin' ? {} : { userId: req.user.id };
-  const orders = await db.collection('orders').find(filter).sort({ date: -1 }).toArray();
+  const orders = await db.collection('orders').find(filter).sort({ date: -1, createdAt: -1 }).toArray();
+  if (req.user.role === 'admin') {
+    const users = await db.collection('users').find({}, { projection: { id: 1, username: 1, fullName: 1, email: 1 } }).toArray();
+    const usersById = new Map(users.map((entry) => [entry.id, entry]));
+    return res.json({
+      ok: true,
+      orders: orders.map((order) => {
+        const owner = usersById.get(order.userId);
+        return {
+          ...order,
+          username: owner?.username || owner?.fullName || owner?.email || order.userId,
+          createdAt: order.createdAt || order.date,
+        };
+      }),
+    });
+  }
   res.json({ ok: true, orders });
 });
 
@@ -1491,10 +1506,26 @@ async function initializePaystackPayment(req, res) {
 
   const fee = Number((amount * 0.04).toFixed(2));
   const totalPay = Number((amount + fee).toFixed(2));
-  const reference = getPaystackReferenceForUser(user.id);
+  const existingPending = await db.collection('deposits').findOne(
+    { userId: user.id, amount, status: 'Pending', platform: 'paystack' },
+    { sort: { createdAt: -1 } }
+  );
+  const reference = existingPending?.reference || getPaystackReferenceForUser(user.id);
   const balBefore = Number(user.walletBalance || 0);
   const email = getPaystackEmailForUser(user);
   const callbackUrl = String(req.body?.callbackUrl || PAYSTACK_CALLBACK_URL || 'https://allendatahub.com/payment-return');
+
+  if (existingPending?.authorizationUrl) {
+    return res.json({
+      ok: true,
+      authorizationUrl: existingPending.authorizationUrl,
+      reference,
+      amount: totalPay,
+      email,
+      callbackUrl,
+      source: 'paystack_existing_pending',
+    });
+  }
 
   await db.collection('deposits').updateOne(
     { reference },
@@ -1557,6 +1588,11 @@ async function initializePaystackPayment(req, res) {
     if (!data.status) {
       return res.status(400).json({ ok: false, error: data.message || 'Paystack initialization failed.' });
     }
+
+    await db.collection('deposits').updateOne(
+      { reference },
+      { $set: { authorizationUrl: data.data.authorization_url, initializedAt: new Date().toISOString() } }
+    );
 
     return res.json({
       ok: true,
@@ -1774,22 +1810,18 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
   }
 
   if (!verified) {
-    return res.status(400).json({ ok: false, error: 'Payment verification failed.' });
+    return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  const user = await getUserById(req.user.id);
-  const balBefore = Number(deposit.balBefore ?? user.walletBalance ?? 0);
-  const creditAmount = Number(deposit.amount || 0);
-  const balAfter = Number((balBefore + creditAmount).toFixed(2));
-
-  await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
-  await db.collection('deposits').updateOne(
-    { reference },
-    { $set: { status: 'Credited', balAfter, creditedAt: new Date().toISOString() } }
-  );
-  await createNotification(user.id, 'Wallet credited', `GHS ${creditAmount.toFixed(2)} added to your wallet.`, 'deposit');
-
-  res.json({ ok: true, balBefore, balAfter, creditAmount, deposit: { ...deposit, status: 'Credited', balAfter } });
+  const result = await creditWalletForPaystackSuccess({
+    userId: req.user.id,
+    amount: Number(deposit.amount || 0),
+    reference,
+    source: 'paystack_verify',
+    metadata: { verifiedFrom: 'paystack_api' },
+  });
+  if (!result.ok) return res.status(400).json(result);
+  res.json(result);
 });
 
 // ─── Refunds & Notifications ────────────────────────────────────────────────

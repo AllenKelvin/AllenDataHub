@@ -30,34 +30,47 @@ export default function PaymentReturnPage() {
     }
 
     let active = true;
-    fetch(`${getApiBase()}/api/payments/paystack/verify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-user-id": user.id,
-      },
-      body: JSON.stringify({ reference }),
-    })
-      .then(async (response) => {
+    const verifyPayment = async () => {
+      for (let attempt = 0; attempt < 10 && active; attempt += 1) {
+        const response = await fetch(`${getApiBase()}/api/payments/paystack/verify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": user.id,
+          },
+          body: JSON.stringify({ reference }),
+        });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data?.ok) {
-          throw new Error(data?.error || "Payment verification failed.");
-        }
-        if (active) {
+
+        if (data?.ok && !data?.pending) {
           setSucceeded(true);
           setFailed(false);
           setMessage("Payment confirmed. Returning to your wallet...");
+          void refreshUser().catch(() => undefined);
+          window.setTimeout(() => {
+            if (active) setLocation("/user/wallet");
+          }, 900);
+          return;
         }
-        void refreshUser().catch(() => undefined);
-        window.setTimeout(() => {
-          if (active) setLocation("/user/wallet");
-        }, 900);
-      })
-      .catch((error) => {
-        if (!active) return;
-        setFailed(true);
-        setMessage(error instanceof Error ? error.message : "Payment verification failed.");
-      });
+
+        if (!response.ok && response.status !== 202) {
+          throw new Error(data?.error || "Payment verification failed.");
+        }
+
+        setMessage("Payment received. Waiting for Paystack confirmation...");
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
+
+      if (active) {
+        setMessage("Payment is still being confirmed. Your wallet will update automatically once Paystack settles it.");
+      }
+    };
+
+    void verifyPayment().catch((error) => {
+      if (!active) return;
+      setFailed(true);
+      setMessage(error instanceof Error ? error.message : "Payment verification failed.");
+    });
 
     return () => {
       active = false;
