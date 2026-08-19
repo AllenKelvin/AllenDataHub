@@ -120,10 +120,11 @@ const PORTAL02_AVAILABLE_VOLUMES = {
 };
 
 function makeId(prefix) {
+  const randomPart = crypto.randomBytes(10).toString('hex');
   if (prefix === 'ord') {
-    return `${prefix}_${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}_${Date.now().toString(36).slice(-6)}_${randomPart}`;
   }
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}_${Date.now()}_${randomPart}`;
 }
 
 function normalizePortalPhone(value) {
@@ -1506,26 +1507,10 @@ async function initializePaystackPayment(req, res) {
 
   const fee = Number((amount * 0.04).toFixed(2));
   const totalPay = Number((amount + fee).toFixed(2));
-  const existingPending = await db.collection('deposits').findOne(
-    { userId: user.id, amount, status: 'Pending', platform: 'paystack' },
-    { sort: { createdAt: -1 } }
-  );
-  const reference = existingPending?.reference || getPaystackReferenceForUser(user.id);
+  const reference = getPaystackReferenceForUser(user.id);
   const balBefore = Number(user.walletBalance || 0);
   const email = getPaystackEmailForUser(user);
   const callbackUrl = String(req.body?.callbackUrl || PAYSTACK_CALLBACK_URL || 'https://allendatahub.com/payment-return');
-
-  if (existingPending?.authorizationUrl) {
-    return res.json({
-      ok: true,
-      authorizationUrl: existingPending.authorizationUrl,
-      reference,
-      amount: totalPay,
-      email,
-      callbackUrl,
-      source: 'paystack_existing_pending',
-    });
-  }
 
   await db.collection('deposits').updateOne(
     { reference },
