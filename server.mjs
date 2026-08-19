@@ -657,7 +657,7 @@ async function getUserById(userId) {
 }
 
 function getPaystackReferenceForUser(userId) {
-  return `ALLEN_${String(userId || 'guest')}_${makeId('pay')}`;
+  return `ALLEN_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 }
 
 function getPaystackEmailForUser(user) {
