@@ -40,12 +40,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 export default function DashboardPage() {
   const { user, updateUser } = useAuth();
   const firstName = user?.fullName?.split(" ")[0] || "Dealer";
-  const isMobile = useIsMobile();
   const [dashboard, setDashboard] = useState({
     walletBalance: user?.walletBalance ?? 0,
     walletChange: 0,
@@ -257,40 +255,27 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-lg">Recent Deposits</CardTitle>
           </CardHeader>
-          <CardContent className={isMobile ? "pb-2" : "space-y-3"}>
-            {isMobile ? (
-              <div className="overflow-x-auto pb-1">
-                <div className="flex min-w-max gap-3">
-                  {dashboard.recentDeposits.slice(0, 5).map((d) => (
-                    <div key={d.id} className="min-w-[170px] rounded-2xl border border-slate-200 bg-emerald-50/80 p-3 dark:border-slate-700 dark:bg-emerald-950/20">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Deposit</p>
-                        <StatusBadge status={d.status.toLowerCase()} />
-                      </div>
-                      <p className="mt-3 text-base font-bold text-emerald-600 dark:text-emerald-300">{formatGHS(d.amount).replace("GHS ", "GHS")}</p>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{d.date}</p>
-                    </div>
-                  ))}
+          <CardContent className="space-y-3">
+            {dashboard.recentDeposits.slice(0, 5).map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-slate-500">{d.id}</p>
+                  <p className="font-semibold text-emerald-600">{formatGHS(d.amount).replace("GHS ", "GHS")}</p>
+                  <p className="truncate text-xs text-slate-500">{d.date}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusBadge status={d.status.toLowerCase()} />
+                  <button className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700">
+                    <Eye className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-            ) : (
-              dashboard.recentDeposits.slice(0, 5).map((d) => (
-                <div
-                  key={d.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
-                >
-                  <div>
-                    <p className="font-semibold text-emerald-600">{formatGHS(d.amount).replace("GHS ", "GHS")}</p>
-                    <p className="text-xs text-slate-500">{d.date}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={d.status.toLowerCase()} />
-                    <button className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700">
-                      <Eye className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
+            ))}
+            {dashboard.recentDeposits.length === 0 && (
+              <p className="text-sm text-slate-500">No recent deposits yet.</p>
             )}
           </CardContent>
         </Card>

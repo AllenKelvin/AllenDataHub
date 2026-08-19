@@ -6,13 +6,15 @@ import { getApiBase } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 export default function PaymentReturnPage() {
-  const { user, refreshUser } = useAuth();
+  const { user, isLoading, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const [message, setMessage] = useState("Confirming your Paystack payment...");
   const [failed, setFailed] = useState(false);
   const [succeeded, setSucceeded] = useState(false);
 
   useEffect(() => {
+    if (isLoading) return;
+
     const reference = new URLSearchParams(window.location.search).get("reference");
 
     if (!user?.id) {
@@ -41,12 +43,12 @@ export default function PaymentReturnPage() {
         if (!response.ok || !data?.ok) {
           throw new Error(data?.error || "Payment verification failed.");
         }
-        await refreshUser();
         if (active) {
           setSucceeded(true);
           setFailed(false);
           setMessage("Payment confirmed. Returning to your wallet...");
         }
+        void refreshUser().catch(() => undefined);
         window.setTimeout(() => {
           if (active) setLocation("/user/wallet");
         }, 900);
@@ -60,7 +62,7 @@ export default function PaymentReturnPage() {
     return () => {
       active = false;
     };
-  }, [refreshUser, setLocation, user?.id]);
+  }, [isLoading, refreshUser, setLocation, user?.id]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">

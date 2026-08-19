@@ -239,6 +239,10 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
   const addSelectedPackageToCart = (pkg: DataPackage, recipient?: string) => {
     const targetRecipient = recipient ?? "General";
     const promptedNumber = window.prompt("Enter the 10-digit recipient number to add to cart:", "");
+    if (promptedNumber === null || !promptedNumber.trim()) {
+      return;
+    }
+
     const normalized = promptedNumber ? normalizePhone(promptedNumber) : "";
     if (normalized && !isValidPhone(normalized)) {
       window.alert("Enter a valid 10-digit phone number.");
