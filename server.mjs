@@ -2125,9 +2125,10 @@ app.post('/api/webhooks/portal02', async (req, res) => {
   res.json({ ok: true, received: { event, orderId, reference, status: nextStatus }, platform: 'Portal-02.com' });
 });
 
-app.listen(port, async () => {
-  console.log(`\n🚀 AllenDataHub API Server`);
-  console.log(`📡 Server running on http://127.0.0.1:${port}`);
+await startMongo();
+
+console.log(`\n🚀 AllenDataHub API Server`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`📡 Server listening on 0.0.0.0:${port}`);
   console.log(`🏠 Database name: ${mongoDbName}\n`);
-  await startMongo();
 });
