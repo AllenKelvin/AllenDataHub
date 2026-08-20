@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, DollarSign, KeyRound, Shield, Users, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatGHS } from "@/lib/formatters";
+import { formatGHS, shortenId } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -434,7 +434,7 @@ export default function AdminPage() {
                     <tbody>
                       {allOrders.map((order) => (
                         <tr key={order.id} className="border-t border-slate-200">
-                          <td className="px-3 py-2 font-medium text-violet-600">{order.id}</td>
+                          <td className="px-3 py-2 font-medium text-violet-600" title={order.id}>{shortenId(order.id)}</td>
                           <td className="px-3 py-2">{order.username || "—"}</td>
                           <td className="whitespace-nowrap px-3 py-2 text-slate-500">{new Date(order.createdAt || order.date || Date.now()).toLocaleString()}</td>
                           <td className="px-3 py-2">{order.recipient}</td>

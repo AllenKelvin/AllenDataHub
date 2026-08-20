@@ -14,7 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { formatCedi, formatGHS, greetingForHour } from "@/lib/formatters";
+import { formatCedi, formatGHS, greetingForHour, shortenId } from "@/lib/formatters";
 
 const TOP_PACKAGES = [
   { name: "MTN 3GB", sales: 48, price: 12 },
@@ -191,7 +191,7 @@ export default function DashboardPage() {
                   <TableBody>
                     {recentOrders.map((order) => (
                       <TableRow key={order.id}>
-                        <TableCell className="font-medium text-blue-600">{order.id}</TableCell>
+                        <TableCell className="font-medium text-blue-600" title={order.id}>{shortenId(order.id)}</TableCell>
                         <TableCell>{order.size}</TableCell>
                         <TableCell className="font-mono text-xs">{order.recipient}</TableCell>
                         <TableCell>{order.network}</TableCell>
@@ -262,7 +262,7 @@ export default function DashboardPage() {
                 className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-medium text-slate-500">{d.id}</p>
+                  <p className="truncate text-xs font-medium text-slate-500" title={d.id}>{shortenId(d.id)}</p>
                   <p className="font-semibold text-emerald-600">{formatGHS(d.amount).replace("GHS ", "GHS")}</p>
                   <p className="truncate text-xs text-slate-500">{d.date}</p>
                 </div>

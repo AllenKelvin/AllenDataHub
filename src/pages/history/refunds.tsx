@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { EmptyState, MetricCard, PageHeader, StatusBadge } from "@/components/ui-helpers";
+import { shortenId } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -185,7 +186,7 @@ export default function RefundsHistoryPage() {
             <TableBody>
               {filtered.map((refund) => (
                 <TableRow key={refund.id}>
-                  <TableCell className="font-medium text-blue-600">{refund.orderId}</TableCell>
+                  <TableCell className="font-medium text-blue-600" title={refund.orderId}>{shortenId(refund.orderId)}</TableCell>
                   <TableCell className="font-mono text-xs">{refund.recipient}</TableCell>
                   <TableCell>{refund.bundle}</TableCell>
                   <TableCell className="font-semibold text-emerald-600">

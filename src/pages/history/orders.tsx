@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { EmptyState, MetricCard, PageHeader, StatusBadge } from "@/components/ui-helpers";
+import { shortenId } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -265,7 +266,7 @@ export function OrdersHistoryPage({
             <TableBody>
               {visibleOrders.map((order) => (
                 <TableRow key={order.id}>
-                  <TableCell className="font-medium text-blue-600">{order.id}</TableCell>
+                  <TableCell className="font-medium text-blue-600" title={order.id}>{shortenId(order.id)}</TableCell>
                   <TableCell>{order.size}</TableCell>
                   <TableCell className="font-mono text-xs">{order.recipient}</TableCell>
                   <TableCell>{order.network}</TableCell>
