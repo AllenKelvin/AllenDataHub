@@ -1258,8 +1258,6 @@ async function createSingleOrder(req, res) {
   const orderId = makeId('ord');
   const vendorReference = `${network}-${orderId}`;
 
-  await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
-
   const order = {
     id: orderId,
     size: size || '',
@@ -1267,7 +1265,7 @@ async function createSingleOrder(req, res) {
     network,
     status: 'Pending',
     source: source === 'api' ? 'api' : 'web',
-    paid: true,
+    paid: false,
     amount: chargedAmount,
     balBefore,
     balAfter,
@@ -1279,6 +1277,26 @@ async function createSingleOrder(req, res) {
   };
 
   await db.collection('orders').insertOne(order);
+
+  const debitResult = await db.collection('users').updateOne(
+    { id: user.id, walletBalance: { $gte: chargedAmount } },
+    { $inc: { walletBalance: -chargedAmount } },
+  );
+
+  if (debitResult.modifiedCount !== 1) {
+    await db.collection('orders').updateOne(
+      { id: orderId },
+      { $set: { status: 'Failed', paymentError: 'Wallet balance changed before payment was completed.', updatedAt: new Date().toISOString() } },
+    );
+    return res.status(409).json({ ok: false, error: 'Wallet balance changed. Please try again.' });
+  }
+
+  const chargedUser = await getUserById(user.id);
+  const actualBalAfter = Number(chargedUser?.walletBalance ?? balAfter);
+  await db.collection('orders').updateOne(
+    { id: orderId },
+    { $set: { paid: true, balBefore, balAfter: actualBalAfter, updatedAt: new Date().toISOString() } },
+  );
 
   const portalResult = await purchaseWithPortal02({
     phone: recipient,
@@ -1313,7 +1331,7 @@ async function createSingleOrder(req, res) {
     await applyReferralCommission(user.referredBy, chargedAmount);
   }
 
-  return res.status(201).json({ ok: true, order: { ...order, portalOrderId: portalResult.transactionId, portalStatus: portalResult.status }, walletBalance: balAfter, portalResult });
+  return res.status(201).json({ ok: true, order: { ...order, balAfter: actualBalAfter, paid: true, portalOrderId: portalResult.transactionId, portalStatus: portalResult.status }, walletBalance: actualBalAfter, portalResult });
 }
 
 app.post('/api/orders', requireUser, async (req, res) => {
@@ -1357,13 +1375,14 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
       network: item.network || 'MTN',
       status: 'Pending',
       source: 'web',
-      paid: true,
+      paid: false,
       amount: orderAmount,
       balBefore: runningBalance,
       balAfter,
       date: new Date().toISOString(),
       userId: user.id,
       packageName: item.packageName || '',
+      reference: `${item.network || 'network'}-${makeId('cart')}`,
       createdAt: new Date().toISOString(),
     };
     orders.push(order);
@@ -1371,14 +1390,63 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
   }
 
   await db.collection('orders').insertMany(orders);
-  await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: runningBalance } });
+
+  const debitResult = await db.collection('users').updateOne(
+    { id: user.id, walletBalance: { $gte: total } },
+    { $inc: { walletBalance: -total } },
+  );
+
+  if (debitResult.modifiedCount !== 1) {
+    await db.collection('orders').updateMany(
+      { id: { $in: orders.map((order) => order.id) } },
+      { $set: { status: 'Failed', paymentError: 'Wallet balance changed before payment was completed.', updatedAt: new Date().toISOString() } },
+    );
+    return res.status(409).json({ ok: false, error: 'Wallet balance changed. Please try again.' });
+  }
+
+  const chargedUser = await getUserById(user.id);
+  const actualRunningBalance = Number(chargedUser?.walletBalance ?? runningBalance);
+  await db.collection('orders').updateMany(
+    { id: { $in: orders.map((order) => order.id) } },
+    { $set: { paid: true, updatedAt: new Date().toISOString() } },
+  );
+  orders.forEach((order) => { order.paid = true; });
+
+  for (const order of orders) {
+    const portalResult = await purchaseWithPortal02({
+      phone: order.recipient,
+      size: order.size,
+      network: order.network,
+      reference: order.reference,
+      webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+    });
+
+    if (!portalResult.success) {
+      order.status = 'Failed';
+      await db.collection('orders').updateOne(
+        { id: order.id },
+        { $set: { status: 'Failed', portalError: portalResult.error, vendorStatus: 'failed', updatedAt: new Date().toISOString() } },
+      );
+      continue;
+    }
+
+    order.portalOrderId = portalResult.transactionId;
+    order.portalReference = portalResult.reference;
+    order.portalStatus = portalResult.status;
+    order.portalResponse = portalResult.raw;
+    await db.collection('orders').updateOne(
+      { id: order.id },
+      { $set: { portalOrderId: portalResult.transactionId, portalReference: portalResult.reference, portalStatus: portalResult.status, portalResponse: portalResult.raw, updatedAt: new Date().toISOString() } },
+    );
+  }
+
   await createNotification(user.id, 'Cart checkout', `${orders.length} order(s) placed from cart.`, 'order');
 
   if (user.referredBy) {
     await applyReferralCommission(user.referredBy, total);
   }
 
-  res.status(201).json({ ok: true, orders, walletBalance: runningBalance });
+  res.status(201).json({ ok: true, orders, walletBalance: actualRunningBalance });
 });
 
 app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
