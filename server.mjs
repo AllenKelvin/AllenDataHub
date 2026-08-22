@@ -1881,14 +1881,19 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  res.json({
-    ok: true,
-    verified: true,
-    pending: false,
-    reference,
+  const result = await creditWalletForPaystackSuccess({
+    userId: req.user.id,
     amount: Number(deposit.amount || 0),
-    deposit,
+    reference,
+    source: 'paystack_return_verify',
+    metadata: { verifiedFrom: 'paystack_return' },
   });
+  if (!result.ok && result.pending) {
+    return res.status(202).json({ ok: true, ...result, reference, deposit });
+  }
+  if (!result.ok) return res.status(400).json(result);
+
+  res.json({ ...result, verified: true, pending: false });
 });
 
 app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {

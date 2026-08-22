@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -12,11 +12,15 @@ export default function PaymentReturnPage() {
   const [failed, setFailed] = useState(false);
   const [succeeded, setSucceeded] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const handledReference = useRef<string | null>(null);
+  const paymentReference = new URLSearchParams(window.location.search).get("reference")
+    || new URLSearchParams(window.location.search).get("trxref");
 
   useEffect(() => {
     if (isLoading) return;
 
-    const reference = new URLSearchParams(window.location.search).get("reference");
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get("reference") || params.get("trxref");
 
     if (!user?.id) {
       setMessage("Please sign in again to view your wallet balance.");
@@ -29,6 +33,7 @@ export default function PaymentReturnPage() {
       setFailed(true);
       return;
     }
+    if (handledReference.current === reference) return;
 
     let active = true;
     const verifyPayment = async () => {
@@ -44,9 +49,11 @@ export default function PaymentReturnPage() {
         const data = await response.json().catch(() => ({}));
 
         if (data?.ok && data?.verified && !data?.pending) {
+          handledReference.current = reference;
           setSucceeded(true);
           setFailed(false);
-          setMessage("Payment successful. Return to your wallet to apply the funds.");
+          await refreshUser();
+          setMessage("Payment successful. Your wallet has been funded.");
           return;
         }
 
@@ -55,7 +62,7 @@ export default function PaymentReturnPage() {
         }
 
         setMessage("Payment received. Waiting for Paystack confirmation...");
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
       }
 
       if (active) {
@@ -75,7 +82,7 @@ export default function PaymentReturnPage() {
   }, [isLoading, refreshUser, setLocation, user?.id]);
 
   const completePayment = async () => {
-    const reference = new URLSearchParams(window.location.search).get("reference");
+    const reference = paymentReference;
     if (!reference || !user?.id) return;
     setCompleting(true);
     try {
@@ -114,9 +121,9 @@ export default function PaymentReturnPage() {
           {failed ? "Payment update" : "Paystack payment"}
         </h1>
         <p className="mt-2 text-sm text-slate-500">{message}</p>
-        {succeeded && !failed && (
+        {!failed && paymentReference && user?.id && (
           <Button className="mt-6 rounded-xl" onClick={() => void completePayment()} disabled={completing}>
-            {completing ? "Updating wallet..." : "Return to wallet"}
+            {completing ? "Confirming payment..." : succeeded ? "Return to wallet" : "Confirm and fund wallet"}
           </Button>
         )}
         {failed && (
