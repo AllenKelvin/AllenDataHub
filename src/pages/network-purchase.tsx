@@ -258,18 +258,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
       recipient: recipientValue,
     });
 
-    if (user) {
-      const nextBalance = Math.max(0, user.walletBalance - pkg.price);
-      updateUser({ walletBalance: nextBalance });
-      if (user.referredBy) {
-        applyReferralCommission(user.referredBy, pkg.price);
-      }
-      window.alert(
-        `Added ${pkg.size} to cart for ${recipientValue}.\nAmount: ${formatGHS(pkg.price)}\nWallet balance: ${formatGHS(nextBalance)}`
-      );
-    } else {
-      window.alert(`Added ${pkg.size} to cart.`);
-    }
+    window.alert(`Added ${pkg.size} to cart for ${recipientValue}.\nAmount: ${formatGHS(pkg.price)}`);
   };
 
   const saveOrderRecord = async (order: {
