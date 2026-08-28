@@ -20,7 +20,7 @@ const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
 const PORTAL02_API_KEY = process.env.PORTAL02_API_KEY || process.env.VITE_PORTAL02_API_KEY || '';
 const PORTAL02_BASE_URL = process.env.PORTAL02_BASE_URL || process.env.VITE_PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
 const PORTAL02_CANCEL_URL = process.env.PORTAL02_CANCEL_URL || '';
-const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
+const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://grownet-5256.onrender.com';
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
