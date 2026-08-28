@@ -33,6 +33,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -40,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth";
 import { formatCedi, formatGHS } from "@/lib/formatters";
+import { getApiBase } from "@/lib/api";
 import type { Order } from "@/lib/types";
 
 export type OrdersHistoryNetwork = Order["network"];
@@ -60,6 +69,7 @@ export function OrdersHistoryPage({
   const [networkFilter, setNetworkFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+    const [page, setPage] = useState(1);
   const [applied, setApplied] = useState({
     search: "",
     status: "all",
@@ -70,8 +80,7 @@ export function OrdersHistoryPage({
 
   useEffect(() => {
     if (!user?.id) return;
-    const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
-    fetch(`${apiBase}/api/orders`, {
+    fetch(`${getApiBase()}/api/orders`, {
       headers: { "x-user-id": user.id },
     })
       .then((response) => (response.ok ? response.json() : null))
@@ -104,7 +113,17 @@ export function OrdersHistoryPage({
     });
   }, [applied, baseOrders, network]);
 
-  const visibleOrders = filtered.slice(0, 10);
+  const pageSize = 10;
+  const pageCount = Math.ceil(filtered.length / pageSize);
+  const visibleOrders = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [network]);
+
+  useEffect(() => {
+    if (pageCount > 0 && page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const applyFilters = () => {
     setApplied({
@@ -114,6 +133,7 @@ export function OrdersHistoryPage({
       startDate,
       endDate,
     });
+    setPage(1);
   };
 
   return (
@@ -306,7 +326,7 @@ export function OrdersHistoryPage({
                         <DropdownMenuItem onClick={async () => {
                           if (!user || !order.id) return;
                           try {
-                            const response = await fetch(`${(typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "http://127.0.0.1:4000"}/api/orders/${order.id}/cancel`, {
+                            const response = await fetch(`${getApiBase()}/api/orders/${order.id}/cancel`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json", "x-user-id": user.id },
                             });
@@ -341,6 +361,50 @@ export function OrdersHistoryPage({
               ))}
             </TableBody>
           </Table>
+        )}
+        {pageCount > 1 && (
+          <div className="border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    aria-disabled={page === 1}
+                    className={page === 1 ? "pointer-events-none opacity-50" : undefined}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (page > 1) setPage(page - 1);
+                    }}
+                  />
+                </PaginationItem>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+                  <PaginationItem key={pageNumber}>
+                    <PaginationLink
+                      href="#"
+                      isActive={pageNumber === page}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setPage(pageNumber);
+                      }}
+                    >
+                      {pageNumber}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    aria-disabled={page === pageCount}
+                    className={page === pageCount ? "pointer-events-none opacity-50" : undefined}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      if (page < pageCount) setPage(page + 1);
+                    }}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
         )}
       </div>
     </div>
