@@ -1,5 +1,5 @@
-const viteEnv = typeof import.meta !== "undefined" ? import.meta.env ?? {} : {};
-const processEnv = typeof globalThis !== "undefined" && "process" in globalThis ? (globalThis as any).process?.env ?? {} : {};
+const viteEnv = typeof import.meta !== "undefined" ? (import.meta.env as Record<string, string | undefined> | undefined) ?? {} : {};
+const processEnv = typeof globalThis !== "undefined" && "process" in globalThis ? ((globalThis as any).process?.env as Record<string, string | undefined> | undefined) ?? {} : {};
 const envUri = viteEnv.VITE_MONGO_URI || viteEnv.VITE_DATABASE_URL || processEnv.MONGO_URI || processEnv.DATABASE_URL || "";
 const envDbName = viteEnv.VITE_MONGO_DB_NAME || processEnv.MONGO_DB_NAME || "platform";
 

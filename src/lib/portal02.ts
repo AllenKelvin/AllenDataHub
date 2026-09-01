@@ -1,17 +1,19 @@
+const runtimeProcess = typeof globalThis !== "undefined" && "process" in globalThis ? (globalThis as any).process : undefined;
+
 const API_KEY =
   (typeof import.meta !== "undefined"
     ? import.meta.env?.VITE_PORTAL02_API_KEY || import.meta.env?.VITE_API_KEY || ""
-    : process.env.PORTAL02_API_KEY || process.env.API_KEY || "") || "";
+    : runtimeProcess?.env?.PORTAL02_API_KEY || runtimeProcess?.env?.API_KEY || "") || "";
 
 const BASE_URL =
   (typeof import.meta !== "undefined"
     ? import.meta.env?.VITE_PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1"
-    : process.env.PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1") || "https://www.portal-02.com/api/v1";
+    : runtimeProcess?.env?.PORTAL02_BASE_URL || "https://www.portal-02.com/api/v1") || "https://www.portal-02.com/api/v1";
 
 const BACKEND_URL =
   (typeof import.meta !== "undefined"
     ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "https://allendatahub.onrender.com"
-    : process.env.BACKEND_URL || process.env.VITE_API_URL || "https://allendatahub.onrender.com") || "https://allendatahub.onrender.com";
+    : runtimeProcess?.env?.BACKEND_URL || runtimeProcess?.env?.VITE_API_URL || "https://allendatahub.onrender.com") || "https://allendatahub.onrender.com";
 
 export const portal02OfferSlugs: Record<string, string> = {
   MTN: "master_beneficiary_data_bundle",

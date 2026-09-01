@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { User } from "./types";
+import type { User, UserRole } from "./types";
 import { apiFetch, authHeaders, getApiBase } from "./api";
 
 interface AuthContextType {
   user: User | null;
   users: User[];
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string; userRole?: "user" | "agent" | "admin" }>;
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string; userRole?: UserRole }>;
   register: (payload: {
     fullName: string;
     email: string;
