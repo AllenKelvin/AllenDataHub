@@ -141,6 +141,16 @@ function extractPortalVolume(size) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizePortalOrderErrorMessage(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return raw;
+
+  return raw
+    .replace(/\s+order\.\s*$/i, '')
+    .replace(/ before placing another order\.?$/i, ' before placing another')
+    .replace(/\s+$/g, '');
+}
+
 async function purchaseWithPortal02({ phone, size, network, reference, webhookUrl }) {
   if (!PORTAL02_API_KEY) {
     return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
@@ -1308,8 +1318,9 @@ async function createSingleOrder(req, res) {
   });
 
   if (!portalResult.success) {
-    await db.collection('orders').updateOne({ id: orderId }, { $set: { status: 'Failed', portalError: portalResult.error, vendorStatus: 'failed', updatedAt: new Date().toISOString() } });
-    return res.status(502).json({ ok: false, error: portalResult.error, portalResult });
+    const portalErrorMessage = normalizePortalOrderErrorMessage(portalResult.error);
+    await db.collection('orders').updateOne({ id: orderId }, { $set: { status: 'Failed', portalError: portalErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } });
+    return res.status(Number(portalResult.statusCode || 502)).json({ ok: false, error: portalErrorMessage });
   }
 
   await db.collection('orders').updateOne(
@@ -1424,10 +1435,14 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
 
     if (!portalResult.success) {
       order.status = 'Failed';
+      const portalErrorMessage = normalizePortalOrderErrorMessage(portalResult.error);
       await db.collection('orders').updateOne(
         { id: order.id },
-        { $set: { status: 'Failed', portalError: portalResult.error, vendorStatus: 'failed', updatedAt: new Date().toISOString() } },
+        { $set: { status: 'Failed', portalError: portalErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } },
       );
+      if (portalResult.statusCode === 409) {
+        return res.status(409).json({ ok: false, error: portalErrorMessage });
+      }
       continue;
     }
 
