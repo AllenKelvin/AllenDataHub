@@ -10,8 +10,8 @@ const BASE_URL =
 
 const BACKEND_URL =
   (typeof import.meta !== "undefined"
-    ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "https://grownet-5256.onrender.com"
-    : process.env.BACKEND_URL || process.env.VITE_API_URL || "https://grownet-5256.onrender.com") || "https://grownet-5256.onrender.com";
+    ? import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL || "https://allendatahub.onrender.com"
+    : process.env.BACKEND_URL || process.env.VITE_API_URL || "https://allendatahub.onrender.com") || "https://allendatahub.onrender.com";
 
 export const portal02OfferSlugs: Record<string, string> = {
   MTN: "master_beneficiary_data_bundle",

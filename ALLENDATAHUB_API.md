@@ -7,7 +7,7 @@ The AllenDataHub API lets users and agents integrate wallet checks, package look
 Use the deployed backend URL supplied by your Render service:
 
 ```text
-https://grownet-5256.onrender.com/api/v1
+https://allendatahub.onrender.com/api/v1
 ```
 
 For local development:
@@ -35,7 +35,7 @@ The alternative header `x-api-key` is also accepted.
 ## 3. Check wallet balance
 
 ```bash
-curl -X GET "https://grownet-5256.onrender.com/api/v1/wallet" \
+curl -X GET "https://allendatahub.onrender.com/api/v1/wallet" \
   -H "Authorization: Bearer up_live_your_key"
 ```
 
@@ -56,14 +56,14 @@ An administrator can override the final price for each product and account. Acco
 List every enabled package:
 
 ```bash
-curl -X GET "https://grownet-5256.onrender.com/api/v1/packages" \
+curl -X GET "https://allendatahub.onrender.com/api/v1/packages" \
   -H "Authorization: Bearer up_live_your_key"
 ```
 
 Filter by network:
 
 ```bash
-curl -X GET "https://grownet-5256.onrender.com/api/v1/packages?network=MTN" \
+curl -X GET "https://allendatahub.onrender.com/api/v1/packages?network=MTN" \
   -H "Authorization: Bearer up_live_your_key"
 ```
 
@@ -74,7 +74,7 @@ Use the returned `network` and `size` values when creating an order. The returne
 The API calculates the price from the live product catalog. Do not send a client-controlled amount.
 
 ```bash
-curl -X POST "https://grownet-5256.onrender.com/api/v1/orders" \
+curl -X POST "https://allendatahub.onrender.com/api/v1/orders" \
   -H "Authorization: Bearer up_live_your_key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -90,7 +90,7 @@ The request validates the network and package, checks the wallet balance, debits
 ## 6. Get order status
 
 ```bash
-curl -X GET "https://grownet-5256.onrender.com/api/v1/orders/ord_123" \
+curl -X GET "https://allendatahub.onrender.com/api/v1/orders/ord_123" \
   -H "Authorization: Bearer up_live_your_key"
 ```
 
