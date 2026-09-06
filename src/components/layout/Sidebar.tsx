@@ -32,8 +32,9 @@ interface NavLink {
 const mainLinks: NavLink[] = [
   { label: "Dashboard", href: "/user/dashboard", icon: LayoutDashboard, iconClass: "text-blue-600", activeClass: "bg-blue-50 text-blue-700 border-l-blue-600" },
   { label: "Wallet", href: "/user/wallet", icon: Wallet, iconClass: "text-emerald-600", activeClass: "bg-emerald-50 text-emerald-700 border-l-emerald-600" },
-  { label: "Mini-store", href: "/dashboard/mini-store", icon: Store, iconClass: "text-teal-600", activeClass: "bg-teal-50 text-teal-700 border-l-teal-600" },
 ];
+
+const miniStoreLink: NavLink = { label: "Mini-store", href: "/dashboard/mini-store", icon: Store, iconClass: "text-teal-600", activeClass: "bg-teal-50 text-teal-700 border-l-teal-600" };
 
 const networkLinks: NavLink[] = [
   { label: "MTN", href: "/user/mtn", icon: Grid3X3, iconClass: "text-amber-500", activeClass: "bg-amber-50 text-amber-800 border-l-amber-500" },
@@ -111,7 +112,8 @@ export function Sidebar({
   const { user } = useAuth();
   const [location] = useLocation();
   const isAdmin = user?.role === "admin";
-  const visibleLinks = isAdmin ? adminLinks : [...mainLinks, ...networkLinks, ...extraLinks, ...devLinks];
+  const isAgent = user?.role === "agent";
+  const visibleLinks = isAdmin ? adminLinks : [...mainLinks, ...(isAgent ? [miniStoreLink] : []), ...networkLinks, ...extraLinks, ...devLinks];
   const historyOpenDefault = location.startsWith("/user/history");
   const [historyOpen, setHistoryOpen] = useState(historyOpenDefault);
 
@@ -169,7 +171,7 @@ export function Sidebar({
         ) : (
           <>
             <div className="space-y-0.5">
-              {mainLinks.map((item) => (
+              {[...mainLinks, ...(isAgent ? [miniStoreLink] : [])].map((item) => (
                 <NavItem
                   key={item.href}
                   item={item}

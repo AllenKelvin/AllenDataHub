@@ -90,6 +90,9 @@ function Protected({ component: Component }: { component: React.ComponentType })
   }
 
   if (!user) return <Redirect to="/login" />;
+  if (Component === MiniStoreDashboard && user.role !== "agent") {
+    return <Redirect to="/user/dashboard" />;
+  }
   if (user.role === "admin" && Component !== AdminPage) {
     return <Redirect to="/admin" />;
   }

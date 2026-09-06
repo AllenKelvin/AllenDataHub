@@ -862,7 +862,7 @@ async function requireApiKey(req, res, next) {
 
 async function requireAgent(req, res, next) {
   await requireUser(req, res, () => {
-    if (!['agent', 'dealer'].includes(String(req.user.role || '').toLowerCase())) {
+    if (String(req.user.role || '').toLowerCase() !== 'agent') {
       return res.status(403).json({ ok: false, error: 'Agent access required.' });
     }
     next();
