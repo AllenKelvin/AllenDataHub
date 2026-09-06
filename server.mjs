@@ -1152,7 +1152,10 @@ app.post('/api/agent/store', requireAgent, async (req, res) => {
 
 app.get('/api/agent/store', requireAgent, async (req, res) => {
   const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
-  res.json({ ok: true, store: store ? { ...store, link: getStorePublicUrl(store.slug) } : null });
+  if (!store) return res.json({ ok: true, store: null });
+  const products = await db.collection('products').find({ enabled: { $ne: false } }).toArray();
+  const pricing = await getStorePricing(String(store._id || store.agentId), products);
+  res.json({ ok: true, store: { ...store, link: getStorePublicUrl(store.slug), pricing } });
 });
 
 app.post('/api/agent/store/pricing', requireAgent, async (req, res) => {
