@@ -11,7 +11,6 @@ const port = process.env.PORT || 4000;
 const mongoUri = process.env.MONGO_URI || process.env.DATABASE_URL || '';
 const mongoDbName = process.env.MONGO_DB_NAME || 'platform';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET || process.env.PAYSTACK_SECRET_KEY || '';
-const INTERNAL_BRIDGE_SECRET = process.env.INTERNAL_BRIDGE_SECRET || '';
 const ALLENDAHUB_FRONTEND_URL = process.env.ALLENDAHUB_FRONTEND_URL || process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'https://allendatahub.com';
 const PAYSTACK_CALLBACK_URL = process.env.PAYSTACK_CALLBACK_URL || `${ALLENDAHUB_FRONTEND_URL.replace(/\/$/, '')}/payment-return`;
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
@@ -1880,7 +1879,9 @@ app.post('/api/webhooks/paystack', async (req, res) => {
   if (storeId) {
     const orderId = String(metadata.orderId || '');
     const order = orderId ? await db?.collection('orders').findOne({ id: orderId, storeId }) : null;
-    const store = await db?.collection('agent_stores').findOne({ $or: [{ _id: storeId }, { agentId: storeId }] });
+    const storeIds = [{ agentId: storeId }];
+    if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
+    const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
     const claim = await db.collection('orders').updateOne(
       { id: order.id, paid: { $ne: true } },
@@ -1975,75 +1976,6 @@ app.post('/api/webhooks/paystack', async (req, res) => {
   }
 });
 
-app.post('/api/internal/paystack-success', async (req, res) => {
-  const bridgePayload = req.body || {};
-  console.log(JSON.stringify({
-    tag: 'CLOUDNUM_FORWARD_ATTEMPT',
-    reference: String(bridgePayload?.data?.reference || bridgePayload?.reference || ''),
-    receivedAt: new Date().toISOString(),
-  }));
-
-  const providedSecret = req.headers['x-internal-secret'];
-  if (!providedSecret || String(providedSecret) !== String(INTERNAL_BRIDGE_SECRET || '')) {
-    console.error(JSON.stringify({
-      tag: 'CLOUDNUM_FORWARD_REJECTED',
-      reason: 'invalid_or_missing_internal_secret',
-    }));
-    return res.status(401).json({ ok: false, error: 'Unauthorized' });
-  }
-
-  const payload = bridgePayload;
-  const eventData = payload.data || payload;
-  const userId = String(eventData?.metadata?.userId || payload?.metadata?.userId || payload?.userId || '');
-  const reference = String(eventData?.reference || payload?.reference || '');
-  const amountPesewas = Number(eventData?.amount || payload?.amount || 0);
-  const amount = Number((toMainCurrencyFromPesewas(amountPesewas)).toFixed(2));
-
-  if (!reference || !userId) {
-    return res.status(400).json({ ok: false, error: 'Missing payment reference or metadata.userId.' });
-  }
-
-  const result = await creditWalletForPaystackSuccess({
-    userId,
-    amount,
-    reference,
-    source: 'internal_bridge',
-    metadata: {
-      project: 'ALLENDATAHUB',
-      forwardedFrom: 'cloudnum',
-      verifiedFrom: 'internal_bridge',
-      amountPesewas,
-    },
-  });
-
-  if (!result.ok) {
-    console.error(JSON.stringify({
-      tag: 'CLOUDNUM_FORWARD_FAILED',
-      reference,
-      userId,
-      reason: result.error,
-    }));
-    return res.status(400).json({ ok: false, error: result.error });
-  }
-
-  console.log(JSON.stringify({
-    tag: 'CLOUDNUM_FORWARD_RECEIVED',
-    reference,
-    userId,
-    amount,
-    alreadyProcessed: Boolean(result.alreadyProcessed),
-  }));
-
-  return res.json({
-    ok: true,
-    alreadyProcessed: !!result.alreadyProcessed,
-    userId,
-    reference,
-    amount,
-    balanceAfter: result.balAfter,
-  });
-});
-
 app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
   const { reference } = req.body || {};
   if (!reference) return res.status(400).json({ ok: false, error: 'Reference is required.' });
@@ -2072,19 +2004,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  const result = await creditWalletForPaystackSuccess({
-    userId: req.user.id,
-    amount: Number(deposit.amount || 0),
-    reference,
-    source: 'paystack_return_verify',
-    metadata: { verifiedFrom: 'paystack_return' },
-  });
-  if (!result.ok && result.pending) {
-    return res.status(202).json({ ok: true, ...result, reference, deposit });
-  }
-  if (!result.ok) return res.status(400).json(result);
-
-  res.json({ ...result, verified: true, pending: false });
+  res.json({ ok: true, verified: true, pending: false, reference, deposit, message: 'Payment verified. Wallet credit is handled by the Paystack webhook.' });
 });
 
 app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
@@ -2095,15 +2015,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
   if (!deposit) return res.status(404).json({ ok: false, error: 'Deposit not found.' });
 
   if (deposit.status === 'Credited' || deposit.status === 'Completed') {
-    const user = await getUserById(req.user.id);
-    return res.json({
-      ok: true,
-      alreadyProcessed: true,
-      reference,
-      balBefore: deposit.balBefore,
-      balAfter: user?.walletBalance ?? deposit.balAfter,
-      creditAmount: Number(deposit.amount || 0),
-    });
+    return res.json({ ok: true, alreadyProcessed: true, reference, deposit, message: 'Wallet credit was processed by the Paystack webhook.' });
   }
 
   let verified = false;
@@ -2123,15 +2035,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
     return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  const result = await creditWalletForPaystackSuccess({
-    userId: req.user.id,
-    amount: Number(deposit.amount || 0),
-    reference,
-    source: 'paystack_return',
-    metadata: { verifiedFrom: 'paystack_return_button' },
-  });
-  if (!result.ok) return res.status(400).json(result);
-  res.json(result);
+  res.json({ ok: true, verified: true, pending: false, reference, deposit, message: 'Payment verified. Wallet credit is handled by the Paystack webhook.' });
 });
 
 // ─── Refunds & Notifications ────────────────────────────────────────────────
