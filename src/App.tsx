@@ -36,6 +36,7 @@ import AdminPage from "@/pages/admin";
 import { EmailVerificationPage } from "@/pages/register";
 import NotFound from "@/pages/not-found";
 import PaymentReturn from "@/pages/payment-return";
+import MiniStoreDashboard, { PublicMiniStore } from "@/pages/mini-store";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -123,8 +124,10 @@ function Router() {
       <Route path="/register">{() => <Guest component={Register} />}</Route>
       <Route path="/verify-email">{() => <Guest component={EmailVerificationPage} />}</Route>
       <Route path="/payment-return">{() => <PaymentReturn />}</Route>
+      <Route path="/s/:slug">{(params) => <PublicMiniStore slug={params.slug} />}</Route>
 
       <Route path="/user/dashboard">{() => <Protected component={Dashboard} />}</Route>
+      <Route path="/dashboard/mini-store">{() => <Protected component={MiniStoreDashboard} />}</Route>
       <Route path="/user/wallet">{() => <Protected component={Wallet} />}</Route>
       <Route path="/user/cart">{() => <Protected component={Cart} />}</Route>
       <Route path="/user/profile">{() => <Protected component={Profile} />}</Route>

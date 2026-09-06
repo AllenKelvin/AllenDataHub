@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
 dotenv.config();
 
@@ -599,6 +599,9 @@ async function ensureSeedData() {
     'packages',
     'network_settings',
     'api_config',
+    'agent_stores',
+    'agent_pricing',
+    'store_ledger',
   ];
 
   for (const collectionName of requiredCollections) {
@@ -608,6 +611,11 @@ async function ensureSeedData() {
       console.log(`✅ created collection: ${collectionName}`);
     }
   }
+
+  await db.collection('agent_stores').createIndex({ agentId: 1 }, { unique: true });
+  await db.collection('agent_stores').createIndex({ slug: 1 }, { unique: true });
+  await db.collection('agent_pricing').createIndex({ storeId: 1, packageId: 1 }, { unique: true });
+  await db.collection('store_ledger').createIndex({ reference: 1 }, { unique: true });
 
   // TODO: Enable merge after network connectivity is restored
   // await mergeLegacyCollections();
@@ -664,6 +672,24 @@ async function ensureSeedData() {
 async function getUserById(userId) {
   if (!db || !userId) return null;
   return db.collection('users').findOne({ id: userId });
+}
+
+function slugifyStoreName(value) {
+  return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
+}
+
+function getStorePublicUrl(slug) {
+  return `${ALLENDAHUB_FRONTEND_URL.replace(/\/$/, '')}/s/${encodeURIComponent(slug)}`;
+}
+
+async function getStorePricing(storeId, products) {
+  const pricing = await db.collection('agent_pricing').find({ storeId }).toArray();
+  const pricingByPackage = new Map(pricing.map((entry) => [String(entry.packageId), entry]));
+  return products.map((product) => {
+    const basePrice = Number(product.agentPrice ?? product.userPrice ?? product.price ?? 0);
+    const custom = pricingByPackage.get(String(product.id));
+    return { ...product, basePrice, customPrice: custom ? Number(custom.customPrice) : basePrice };
+  });
 }
 
 function getPaystackReferenceForUser(userId) {
@@ -832,6 +858,15 @@ async function requireApiKey(req, res, next) {
   req.apiKey = key;
   req.apiConfig = config;
   next();
+}
+
+async function requireAgent(req, res, next) {
+  await requireUser(req, res, () => {
+    if (!['agent', 'dealer'].includes(String(req.user.role || '').toLowerCase())) {
+      return res.status(403).json({ ok: false, error: 'Agent access required.' });
+    }
+    next();
+  });
 }
 
 async function createNotification(userId, title, message, type = 'info') {
@@ -1091,6 +1126,105 @@ app.get('/api/network-settings', async (_req, res) => {
     return saved ? { ...defaultSetting, ...saved } : defaultSetting;
   });
   res.json({ ok: true, settings: merged });
+});
+
+// ─── Agent mini-store ──────────────────────────────────────────────────────
+
+app.post('/api/agent/store', requireAgent, async (req, res) => {
+  const storeName = String(req.body?.storeName || '').trim();
+  const contactPhone = String(req.body?.contactPhone || '').trim();
+  const whatsappNumber = String(req.body?.whatsappNumber || '').trim();
+  if (!storeName || !contactPhone || !whatsappNumber) return res.status(400).json({ ok: false, error: 'Store name, contact phone, and WhatsApp number are required.' });
+  const baseSlug = slugifyStoreName(storeName);
+  if (!baseSlug) return res.status(400).json({ ok: false, error: 'Store name must contain letters or numbers.' });
+  const existing = await db.collection('agent_stores').findOne({ agentId: req.user.id });
+  let slug = baseSlug;
+  let suffix = 2;
+  while (await db.collection('agent_stores').findOne({ slug, agentId: { $ne: req.user.id } })) {
+    slug = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+  const now = new Date().toISOString();
+  const store = { agentId: req.user.id, storeName, slug, contactPhone, whatsappNumber, walletBalance: Number(existing?.walletBalance || 0), isActive: existing?.isActive !== false, createdAt: existing?.createdAt || now, updatedAt: now };
+  await db.collection('agent_stores').updateOne({ agentId: req.user.id }, { $set: store }, { upsert: true });
+  res.status(existing ? 200 : 201).json({ ok: true, store: { ...store, link: getStorePublicUrl(slug) } });
+});
+
+app.get('/api/agent/store', requireAgent, async (req, res) => {
+  const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
+  res.json({ ok: true, store: store ? { ...store, link: getStorePublicUrl(store.slug) } : null });
+});
+
+app.post('/api/agent/store/pricing', requireAgent, async (req, res) => {
+  const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
+  if (!store) return res.status(404).json({ ok: false, error: 'Create your store profile first.' });
+  const entries = Array.isArray(req.body?.pricing) ? req.body.pricing : [];
+  if (entries.length === 0) return res.status(400).json({ ok: false, error: 'Pricing entries are required.' });
+  const products = await db.collection('products').find({ enabled: { $ne: false } }).toArray();
+  const productsById = new Map(products.map((product) => [String(product.id), product]));
+  for (const entry of entries) {
+    const product = productsById.get(String(entry.packageId));
+    const customPrice = Number(entry.customPrice);
+    const basePrice = Number(product?.agentPrice ?? product?.userPrice ?? product?.price ?? 0);
+    if (!product || !Number.isFinite(customPrice) || customPrice < basePrice) return res.status(422).json({ ok: false, error: `Custom price for ${entry.packageId} must be at least the package base price.` });
+  }
+  const storeKey = String(store._id || store.agentId);
+  const now = new Date().toISOString();
+  await Promise.all(entries.map((entry) => db.collection('agent_pricing').updateOne(
+    { storeId: storeKey, packageId: String(entry.packageId) },
+    { $set: { storeId: storeKey, packageId: String(entry.packageId), customPrice: Number(entry.customPrice), updatedAt: now }, $setOnInsert: { createdAt: now } },
+    { upsert: true },
+  )));
+  res.json({ ok: true, pricing: await getStorePricing(storeKey, products) });
+});
+
+app.get('/api/agent/store/analytics', requireAgent, async (req, res) => {
+  const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
+  if (!store) return res.json({ ok: true, analytics: { totalOrders: 0, totalCommissions: 0, walletBalance: 0 } });
+  const storeId = String(store._id || store.agentId);
+  const [sales, commission] = await Promise.all([
+    db.collection('orders').countDocuments({ storeId, paid: true }),
+    db.collection('store_ledger').aggregate([{ $match: { storeId, type: 'commission' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]).toArray(),
+  ]);
+  res.json({ ok: true, analytics: { totalOrders: sales, totalCommissions: Number(commission[0]?.total || 0), walletBalance: Number(store.walletBalance || 0) } });
+});
+
+app.get('/api/public/store/:slug', async (req, res) => {
+  const store = await db?.collection('agent_stores').findOne({ slug: String(req.params.slug).toLowerCase(), isActive: { $ne: false } });
+  if (!store) return res.status(404).json({ ok: false, error: 'Store not found.' });
+  const products = await db.collection('products').find({ enabled: { $ne: false } }).toArray();
+  const pricing = await getStorePricing(String(store._id || store.agentId), products);
+  res.json({ ok: true, store: { id: String(store._id || store.agentId), storeName: store.storeName, whatsappNumber: store.whatsappNumber, contactPhone: store.contactPhone, slug: store.slug }, packages: pricing.filter((product) => Number.isFinite(product.customPrice) && product.customPrice > 0) });
+});
+
+app.post('/api/public/checkout', async (req, res) => {
+  const storeId = String(req.body?.storeId || '');
+  const packageId = String(req.body?.packageId || '');
+  const recipientPhone = String(req.body?.recipientPhone || '').trim();
+  const storeIds = [{ agentId: storeId }];
+  if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
+  const store = await db?.collection('agent_stores').findOne({ $or: storeIds, isActive: { $ne: false } });
+  const product = await db?.collection('products').findOne({ id: packageId, enabled: { $ne: false } });
+  if (!store || !product || !recipientPhone) return res.status(400).json({ ok: false, error: 'Valid store, package, and recipient phone are required.' });
+  const storeKey = String(store._id || store.agentId);
+  const [priced] = await getStorePricing(storeKey, [product]);
+  const chargedPrice = Number(priced.customPrice);
+  const basePrice = Number(priced.basePrice);
+  const commission = Number(Math.max(0, chargedPrice - basePrice).toFixed(2));
+  const reference = `STORE_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+  const order = { id: makeId('ord'), storeId: storeKey, packageId, packageName: product.name, size: product.size, network: product.network, recipient: recipientPhone, source: 'mini-store', status: 'Pending', paid: false, amount: chargedPrice, basePrice, chargedPrice, agentCommission: commission, reference, date: new Date().toISOString(), createdAt: new Date().toISOString() };
+  await db.collection('orders').insertOne(order);
+  if (!PAYSTACK_SECRET) return res.status(503).json({ ok: false, error: 'Paystack is not configured.' });
+  try {
+    const response = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${order.id}@guest.allendatahub.com`, amount: Math.round(chargedPrice * 100), reference, callback_url: PAYSTACK_CALLBACK_URL, metadata: { project: 'ALLENDATAHUB', source: 'mini-store', orderId: order.id, storeId: storeKey, commission } }) });
+    const data = await response.json();
+    if (!data.status) throw new Error(data.message || 'Paystack initialization failed.');
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { authorizationUrl: data.data.authorization_url, initializedAt: new Date().toISOString() } });
+    res.status(201).json({ ok: true, authorizationUrl: data.data.authorization_url, reference, orderId: order.id });
+  } catch (error) {
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', paymentError: error instanceof Error ? error.message : 'Paystack initialization failed.' } });
+    res.status(502).json({ ok: false, error: error instanceof Error ? error.message : 'Paystack initialization failed.' });
+  }
 });
 
 app.put('/api/admin/network-settings/:network', requireAdmin, async (req, res) => {
@@ -1738,6 +1872,44 @@ app.post('/api/webhooks/paystack', async (req, res) => {
   const payment = req.body?.data || {};
   const metadata = payment.metadata || {};
   const deposit = reference ? await db?.collection('deposits').findOne({ reference }) : null;
+  const storeId = String(metadata.storeId || '');
+
+  if (storeId) {
+    const orderId = String(metadata.orderId || '');
+    const order = orderId ? await db?.collection('orders').findOne({ id: orderId, storeId }) : null;
+    const store = await db?.collection('agent_stores').findOne({ $or: [{ _id: storeId }, { agentId: storeId }] });
+    if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
+    const claim = await db.collection('orders').updateOne(
+      { id: order.id, paid: { $ne: true } },
+      { $set: { paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
+    );
+    if (claim.modifiedCount === 0) return res.json({ ok: true, alreadyProcessed: true });
+
+    const portalResult = await purchaseWithPortal02({
+      phone: order.recipient,
+      size: order.size,
+      network: order.network,
+      reference: order.reference,
+      webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+    });
+    if (!portalResult.success) {
+      await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', portalError: normalizePortalOrderErrorMessage(portalResult.error), updatedAt: new Date().toISOString() } });
+      return res.status(502).json({ ok: false, error: 'Payment received, but bundle dispatch failed.', details: portalResult.error });
+    }
+
+    const commission = Number(order.agentCommission ?? metadata.commission ?? 0);
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Processing', portalOrderId: portalResult.transactionId, portalReference: portalResult.reference, portalStatus: portalResult.status, portalResponse: portalResult.raw, updatedAt: new Date().toISOString() } });
+    if (commission > 0) {
+      await db.collection('agent_stores').updateOne({ _id: store._id }, { $inc: { walletBalance: commission } });
+      await db.collection('store_ledger').updateOne(
+        { reference },
+        { $setOnInsert: { id: makeId('ledger'), storeId: String(store._id || store.agentId), orderId: order.id, reference, type: 'commission', amount: commission, createdAt: new Date().toISOString() } },
+        { upsert: true },
+      );
+    }
+    return res.json({ ok: true, forwarded: true, storeOrder: true, commission });
+  }
+
   const userId = String(metadata.userId || deposit?.userId || '');
   const creditAmount = Number(deposit?.amount || metadata.creditAmount || toMainCurrencyFromPesewas(payment.amount));
 

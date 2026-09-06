@@ -15,6 +15,7 @@ import {
   CircleDot,
   Radio,
   Shield,
+  Store,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -31,6 +32,7 @@ interface NavLink {
 const mainLinks: NavLink[] = [
   { label: "Dashboard", href: "/user/dashboard", icon: LayoutDashboard, iconClass: "text-blue-600", activeClass: "bg-blue-50 text-blue-700 border-l-blue-600" },
   { label: "Wallet", href: "/user/wallet", icon: Wallet, iconClass: "text-emerald-600", activeClass: "bg-emerald-50 text-emerald-700 border-l-emerald-600" },
+  { label: "Mini-store", href: "/dashboard/mini-store", icon: Store, iconClass: "text-teal-600", activeClass: "bg-teal-50 text-teal-700 border-l-teal-600" },
 ];
 
 const networkLinks: NavLink[] = [
