@@ -40,7 +40,7 @@ export interface Order {
   size: string;
   recipient: string;
   network: "MTN" | "AirtelTigo" | "Telecel";
-  status: "Pending" | "Processing" | "Completed" | "Failed" | "Cancelled" | "Canceled" | "Refunded";
+  status: "Pending" | "PaymentPending" | "Processing" | "Completed" | "Failed" | "Cancelled" | "Canceled" | "Refunded";
   source: "web" | "api" | "mini-store";
   paid: boolean;
   amount: number;

@@ -1229,7 +1229,7 @@ app.post('/api/public/checkout', async (req, res) => {
     network: product.network,
     recipient: recipientPhone,
     source: 'mini-store',
-    status: 'Pending',
+    status: 'PaymentPending',
     paid: false,
     amount: chargedPrice,
     basePrice,
@@ -1304,7 +1304,10 @@ app.post('/api/admin/packages', requireAdmin, async (req, res) => {
 // ─── Orders ─────────────────────────────────────────────────────────────────
 
 app.get('/api/orders', requireUser, async (req, res) => {
-  const filter = req.user.role === 'admin' ? {} : { userId: req.user.id };
+  const visiblePaidStoreOrder = { $or: [{ source: { $ne: 'mini-store' } }, { source: 'mini-store', paid: true }] };
+  const filter = req.user.role === 'admin'
+    ? visiblePaidStoreOrder
+    : { userId: req.user.id, ...visiblePaidStoreOrder };
   const orders = await db.collection('orders').find(filter).sort({ date: -1, createdAt: -1 }).toArray();
   if (req.user.role === 'admin') {
     const users = await db.collection('users').find({}, { projection: { id: 1, username: 1, fullName: 1, email: 1 } }).toArray();
