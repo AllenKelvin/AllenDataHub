@@ -1200,6 +1200,16 @@ app.get('/api/public/store/:slug', async (req, res) => {
   res.json({ ok: true, store: { id: String(store._id || store.agentId), storeName: store.storeName, whatsappNumber: store.whatsappNumber, contactPhone: store.contactPhone, slug: store.slug }, packages: pricing.filter((product) => Number.isFinite(product.customPrice) && product.customPrice > 0) });
 });
 
+app.get('/api/public/order-status', async (req, res) => {
+  const reference = String(req.query?.reference || '').trim();
+  const slug = String(req.query?.slug || '').trim().toLowerCase();
+  if (!reference || !slug) return res.status(400).json({ ok: false, error: 'Order reference and store slug are required.' });
+  const store = await db?.collection('agent_stores').findOne({ slug, isActive: { $ne: false } });
+  const order = await db?.collection('orders').findOne({ reference, source: 'mini-store', storeId: store ? String(store._id || store.agentId) : '' });
+  if (!store || !order) return res.status(404).json({ ok: false, error: 'Order not found.' });
+  res.json({ ok: true, paid: order.paid === true, status: order.status, reference, store: { storeName: store.storeName, whatsappNumber: store.whatsappNumber, contactPhone: store.contactPhone } });
+});
+
 app.post('/api/public/checkout', async (req, res) => {
   const storeId = String(req.body?.storeId || '');
   const packageId = String(req.body?.packageId || '');
@@ -1242,7 +1252,9 @@ app.post('/api/public/checkout', async (req, res) => {
   await db.collection('orders').insertOne(order);
   if (!PAYSTACK_SECRET) return res.status(503).json({ ok: false, error: 'Paystack is not configured.' });
   try {
-    const response = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${order.id}@guest.allendatahub.com`, amount: Math.round(chargedPrice * 100), reference, callback_url: PAYSTACK_CALLBACK_URL, metadata: { project: 'ALLENDATAHUB', source: 'mini-store', orderId: order.id, storeId: storeKey, agentId: agent.id, agentEmail: agent.email || '', agentUsername: agent.username || '', commission } }) });
+    const callbackBase = String(PAYSTACK_CALLBACK_URL || ALLENDAHUB_FRONTEND_URL).replace(/\/payment-return\/?$/, '').replace(/\/$/, '');
+    const callbackUrl = `${callbackBase}/s/${encodeURIComponent(store.slug)}?reference=${encodeURIComponent(reference)}`;
+    const response = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${order.id}@guest.allendatahub.com`, amount: Math.round(chargedPrice * 100), reference, callback_url: callbackUrl, metadata: { project: 'ALLENDATAHUB', source: 'mini-store', orderId: order.id, storeId: storeKey, agentId: agent.id, agentEmail: agent.email || '', agentUsername: agent.username || '', commission } }) });
     const data = await response.json();
     if (!data.status) throw new Error(data.message || 'Paystack initialization failed.');
     await db.collection('orders').updateOne({ id: order.id }, { $set: { authorizationUrl: data.data.authorization_url, initializedAt: new Date().toISOString() } });
