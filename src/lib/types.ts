@@ -41,13 +41,19 @@ export interface Order {
   recipient: string;
   network: "MTN" | "AirtelTigo" | "Telecel";
   status: "Pending" | "Processing" | "Completed" | "Failed" | "Cancelled" | "Canceled" | "Refunded";
-  source: "web" | "api";
+  source: "web" | "api" | "mini-store";
   paid: boolean;
   amount: number;
   balBefore: number;
   balAfter: number;
   date: string;
   userId?: string;
+  username?: string;
+  userEmail?: string;
+  storeId?: string;
+  basePrice?: number;
+  chargedPrice?: number;
+  agentCommission?: number;
   packageName?: string;
 }
 

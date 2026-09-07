@@ -1208,17 +1208,40 @@ app.post('/api/public/checkout', async (req, res) => {
   const store = await db?.collection('agent_stores').findOne({ $or: storeIds, isActive: { $ne: false } });
   const product = await db?.collection('products').findOne({ id: packageId, enabled: { $ne: false } });
   if (!store || !product || !recipientPhone) return res.status(400).json({ ok: false, error: 'Valid store, package, and recipient phone are required.' });
+  const agent = await getUserById(String(store.agentId));
+  if (!agent) return res.status(404).json({ ok: false, error: 'The store owner account was not found.' });
   const storeKey = String(store._id || store.agentId);
   const [priced] = await getStorePricing(storeKey, [product]);
   const chargedPrice = Number(priced.customPrice);
   const basePrice = Number(priced.basePrice);
   const commission = Number(Math.max(0, chargedPrice - basePrice).toFixed(2));
   const reference = `STORE_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
-  const order = { id: makeId('ord'), storeId: storeKey, packageId, packageName: product.name, size: product.size, network: product.network, recipient: recipientPhone, source: 'mini-store', status: 'Pending', paid: false, amount: chargedPrice, basePrice, chargedPrice, agentCommission: commission, reference, date: new Date().toISOString(), createdAt: new Date().toISOString() };
+  const order = {
+    id: makeId('ord'),
+    userId: agent.id,
+    username: agent.username || agent.fullName || agent.email,
+    userEmail: agent.email || '',
+    storeId: storeKey,
+    packageId,
+    packageName: product.name,
+    size: product.size,
+    network: product.network,
+    recipient: recipientPhone,
+    source: 'mini-store',
+    status: 'Pending',
+    paid: false,
+    amount: chargedPrice,
+    basePrice,
+    chargedPrice,
+    agentCommission: commission,
+    reference,
+    date: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  };
   await db.collection('orders').insertOne(order);
   if (!PAYSTACK_SECRET) return res.status(503).json({ ok: false, error: 'Paystack is not configured.' });
   try {
-    const response = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${order.id}@guest.allendatahub.com`, amount: Math.round(chargedPrice * 100), reference, callback_url: PAYSTACK_CALLBACK_URL, metadata: { project: 'ALLENDATAHUB', source: 'mini-store', orderId: order.id, storeId: storeKey, commission } }) });
+    const response = await fetch('https://api.paystack.co/transaction/initialize', { method: 'POST', headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${order.id}@guest.allendatahub.com`, amount: Math.round(chargedPrice * 100), reference, callback_url: PAYSTACK_CALLBACK_URL, metadata: { project: 'ALLENDATAHUB', source: 'mini-store', orderId: order.id, storeId: storeKey, agentId: agent.id, agentEmail: agent.email || '', agentUsername: agent.username || '', commission } }) });
     const data = await response.json();
     if (!data.status) throw new Error(data.message || 'Paystack initialization failed.');
     await db.collection('orders').updateOne({ id: order.id }, { $set: { authorizationUrl: data.data.authorization_url, initializedAt: new Date().toISOString() } });
@@ -1883,11 +1906,18 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
     const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
+    if (order.paid && order.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
+    const ownership = { userId: order.userId || store.agentId };
+    if (order.username) ownership.username = order.username;
+    if (order.userEmail) ownership.userEmail = order.userEmail;
     const claim = await db.collection('orders').updateOne(
-      { id: order.id, paid: { $ne: true } },
-      { $set: { paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
+      { id: order.id, $or: [{ paid: { $ne: true } }, { portalOrderId: { $exists: false } }] },
+      { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
     );
-    if (claim.modifiedCount === 0) return res.json({ ok: true, alreadyProcessed: true });
+    if (claim.modifiedCount === 0) {
+      const currentOrder = await db.collection('orders').findOne({ id: order.id });
+      if (currentOrder?.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
+    }
 
     const portalResult = await purchaseWithPortal02({
       phone: order.recipient,
