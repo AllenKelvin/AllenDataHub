@@ -278,6 +278,7 @@ export function OrdersHistoryPage({
                 <TableHead>Paid</TableHead>
                 <TableHead>Bal Before</TableHead>
                 <TableHead>Amount</TableHead>
+                <TableHead>Commission</TableHead>
                 <TableHead>Bal After</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -308,6 +309,9 @@ export function OrdersHistoryPage({
                   <TableCell className="text-slate-500">{formatGHS(order.balBefore)}</TableCell>
                   <TableCell className="font-semibold text-slate-900 dark:text-white">
                     {formatCedi(order.amount)}
+                  </TableCell>
+                  <TableCell className="font-semibold text-emerald-600">
+                    {order.source === "mini-store" ? formatCedi(order.agentCommission || 0) : "-"}
                   </TableCell>
                   <TableCell className="text-slate-500">{formatGHS(order.balAfter)}</TableCell>
                   <TableCell className="whitespace-nowrap text-slate-500">{order.date}</TableCell>

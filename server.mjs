@@ -1184,11 +1184,12 @@ app.get('/api/agent/store/analytics', requireAgent, async (req, res) => {
   const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
   if (!store) return res.json({ ok: true, analytics: { totalOrders: 0, totalCommissions: 0, walletBalance: 0 } });
   const storeId = String(store._id || store.agentId);
+  const agent = await getUserById(req.user.id);
   const [sales, commission] = await Promise.all([
     db.collection('orders').countDocuments({ storeId, paid: true }),
     db.collection('store_ledger').aggregate([{ $match: { storeId, type: 'commission' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]).toArray(),
   ]);
-  res.json({ ok: true, analytics: { totalOrders: sales, totalCommissions: Number(commission[0]?.total || 0), walletBalance: Number(store.walletBalance || 0) } });
+  res.json({ ok: true, analytics: { totalOrders: sales, totalCommissions: Number(commission[0]?.total || 0), walletBalance: Number(agent?.walletBalance || 0) } });
 });
 
 app.get('/api/public/store/:slug', async (req, res) => {
@@ -1314,6 +1315,11 @@ app.get('/api/orders', requireUser, async (req, res) => {
         const owner = usersById.get(order.userId);
         return {
           ...order,
+          ...(order.source === 'mini-store' ? {
+            amount: Number(order.basePrice ?? order.amount ?? 0),
+            chargedPrice: undefined,
+            agentCommission: undefined,
+          } : {}),
           username: owner?.username || owner?.fullName || owner?.email || order.userId,
           createdAt: order.createdAt || order.date,
         };
@@ -1934,12 +1940,17 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     const commission = Number(order.agentCommission ?? metadata.commission ?? 0);
     await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Processing', portalOrderId: portalResult.transactionId, portalReference: portalResult.reference, portalStatus: portalResult.status, portalResponse: portalResult.raw, updatedAt: new Date().toISOString() } });
     if (commission > 0) {
-      await db.collection('agent_stores').updateOne({ _id: store._id }, { $inc: { walletBalance: commission } });
-      await db.collection('store_ledger').updateOne(
+      const ledgerClaim = await db.collection('store_ledger').updateOne(
         { reference },
         { $setOnInsert: { id: makeId('ledger'), storeId: String(store._id || store.agentId), orderId: order.id, reference, type: 'commission', amount: commission, createdAt: new Date().toISOString() } },
         { upsert: true },
       );
+      if (ledgerClaim.upsertedCount === 1) {
+        await Promise.all([
+          db.collection('users').updateOne({ id: store.agentId }, { $inc: { walletBalance: commission, commissionEarned: commission } }),
+          db.collection('agent_stores').updateOne({ _id: store._id }, { $inc: { walletBalance: commission } }),
+        ]);
+      }
     }
     return res.json({ ok: true, forwarded: true, storeOrder: true, commission });
   }
