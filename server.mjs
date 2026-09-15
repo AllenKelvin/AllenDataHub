@@ -166,10 +166,17 @@ async function purchaseWithHubnet({ phone, size, network, reference, webhookUrl 
       signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.status !== true || (data.message !== '0000' && data.code !== '0000')) {
+    const responseStatus = String(data.status || data.data?.status || '').toLowerCase();
+    const responseCode = String(data.message || data.code || data.data?.code || '').toLowerCase();
+    const accepted = data.status === true
+      || ['accepted', 'success', 'successful', 'processing', 'pending'].includes(responseStatus)
+      || responseCode === '0000'
+      || responseCode.includes('transaction initiated')
+      || responseCode.includes('successfully placed');
+    if (!response.ok || !accepted) {
       return {
         success: false,
-        error: data.reason || data.error || data.message || `Hubnet request failed with status ${response.status}`,
+        error: data.reason || data.error || data.message || data.data?.message || `Hubnet request failed with status ${response.status}`,
         statusCode: response.status,
         details: data,
       };
@@ -178,7 +185,7 @@ async function purchaseWithHubnet({ phone, size, network, reference, webhookUrl 
       success: true,
       transactionId: data.transaction_id || data.payment_id || data.reference || payload.reference,
       reference: data.reference || payload.reference,
-      status: 'pending',
+      status: ['processing', 'pending'].includes(responseStatus) ? responseStatus : 'pending',
       raw: data,
     };
   } catch (error) {
@@ -1846,11 +1853,16 @@ app.post('/api/webhooks/paystack', async (req, res) => {
 
   if (storeId) {
     const orderId = String(metadata.orderId || '');
-    const order = orderId ? await db?.collection('orders').findOne({ id: orderId, storeId }) : null;
+    const order = orderId
+      ? await db?.collection('orders').findOne({ id: orderId, storeId, source: 'mini-store' })
+      : null;
     const storeIds = [{ agentId: storeId }];
     if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
     const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
+    if (order.status === 'Failed' || order.fulfillmentStatus === 'failed') {
+      return res.json({ ok: true, ignored: true, reason: 'This order has already failed and will not be resent.' });
+    }
     if (order.vendorOrderId || order.portalOrderId || order.fulfillmentStatus === 'dispatching') {
       return res.json({ ok: true, alreadyProcessed: true });
     }
@@ -1858,7 +1870,7 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (order.username) ownership.username = order.username;
     if (order.userEmail) ownership.userEmail = order.userEmail;
     const claim = await db.collection('orders').updateOne(
-      { id: order.id, vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $ne: 'dispatching' } },
+      { id: order.id, source: 'mini-store', status: { $in: ['PaymentPending', 'Paid'] }, vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
       { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference, fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
     );
     if (claim.modifiedCount === 0) {
