@@ -1332,16 +1332,14 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
   }
 
   const orderPrice = getApiPriceForProduct(req.user, product, req.apiConfig);
-  const apiRequest = {
-    ...req,
-    body: {
-      ...req.body,
-      network: normalizedNetwork,
-      size: product.size,
-      amount: orderPrice,
-      packageName: packageName || product.name,
-      source: 'api',
-    },
+  const apiRequest = Object.create(req);
+  apiRequest.body = {
+    ...req.body,
+    network: normalizedNetwork,
+    size: product.size,
+    amount: orderPrice,
+    packageName: packageName || product.name,
+    source: 'api',
   };
   try {
     return await createSingleOrder(apiRequest, res);
