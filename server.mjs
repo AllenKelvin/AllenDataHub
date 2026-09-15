@@ -1312,9 +1312,15 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
     return res.status(422).json({ ok: false, error: 'network, size, and recipient are required.' });
   }
 
+  const normalizedNetwork = String(network).trim();
+  const requestedSize = String(size).trim();
   const product = await db.collection('products').findOne({
-    network: String(network),
-    size: String(size).trim(),
+    network: normalizedNetwork,
+    $or: [
+      { size: requestedSize },
+      { size: requestedSize.replace(/\s+/g, '') },
+      { size: requestedSize.replace(/gb$/i, ' GB') },
+    ],
     enabled: { $ne: false },
   });
   if (!product) return res.status(404).json({ ok: false, error: 'Package not found.' });
@@ -1330,12 +1336,27 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
     ...req,
     body: {
       ...req.body,
+      network: normalizedNetwork,
+      size: product.size,
       amount: orderPrice,
       packageName: packageName || product.name,
       source: 'api',
     },
   };
-  return createSingleOrder(apiRequest, res);
+  try {
+    return await createSingleOrder(apiRequest, res);
+  } catch (error) {
+    console.error(JSON.stringify({
+      tag: 'ALLENDAHUB_API_ORDER_FAILED',
+      userId: req.user?.id || null,
+      network: normalizedNetwork,
+      size: requestedSize,
+      recipient: String(recipient).replace(/\d(?=\d{4})/g, '*'),
+      error: error instanceof Error ? error.stack || error.message : String(error),
+    }));
+    if (res.headersSent) return;
+    return res.status(500).json({ ok: false, error: 'AllenDataHub could not process this order. Please retry with the same Idempotency-Key.' });
+  }
 });
 
 app.get('/api/v1/orders/:id', requireApiKey, async (req, res) => {
