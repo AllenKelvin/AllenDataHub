@@ -1346,16 +1346,24 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
   try {
     return await createSingleOrder(apiRequest, res);
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(JSON.stringify({
       tag: 'ALLENDAHUB_API_ORDER_FAILED',
       userId: req.user?.id || null,
       network: normalizedNetwork,
       size: requestedSize,
       recipient: String(recipient).replace(/\d(?=\d{4})/g, '*'),
-      error: error instanceof Error ? error.stack || error.message : String(error),
+      error: error instanceof Error ? error.stack || error.message : errorMessage,
     }));
     if (res.headersSent) return;
-    return res.status(500).json({ ok: false, error: 'AllenDataHub could not process this order. Please retry with the same Idempotency-Key.' });
+    return res.status(500).json({
+      ok: false,
+      error: 'AllenDataHub could not process this order.',
+      code: 'ORDER_PROCESSING_FAILED',
+      reason: errorMessage,
+      retryable: true,
+      retryWithSameIdempotencyKey: true,
+    });
   }
 });
 
