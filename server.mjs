@@ -19,6 +19,7 @@ const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
 const HUBNET_API_KEY = process.env.HUBNET_API_KEY || '';
 const HUBNET_BASE_URL = process.env.HUBNET_BASE_URL || 'https://console.hubnet.app/live/api/context/business';
 const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
+const HUBNET_REQUEST_TIMEOUT_MS = 30_000;
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
@@ -162,9 +163,10 @@ async function purchaseWithHubnet({ phone, size, network, reference, webhookUrl 
       method: 'POST',
       headers: { token: `Bearer ${HUBNET_API_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.status !== true || data.message !== '0000') {
+    if (!response.ok || data.status !== true || (data.message !== '0000' && data.code !== '0000')) {
       return {
         success: false,
         error: data.reason || data.error || data.message || `Hubnet request failed with status ${response.status}`,
@@ -180,12 +182,50 @@ async function purchaseWithHubnet({ phone, size, network, reference, webhookUrl 
       raw: data,
     };
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Hubnet network error.', details: null };
+    const statusResult = await checkHubnetTransactionStatus(payload.reference);
+    if (statusResult === 'delivered' || statusResult === 'success' || statusResult === 'completed') {
+      return { success: true, transactionId: payload.reference, reference: payload.reference, status: 'completed', raw: { reconciled: true, status: statusResult } };
+    }
+    if (statusResult === 'pending' || statusResult === 'processing') {
+      return { success: true, transactionId: payload.reference, reference: payload.reference, status: statusResult, raw: { reconciled: true, status: statusResult } };
+    }
+    return { success: false, error: error instanceof Error ? error.message : 'Hubnet network error.', details: { statusResult } };
+  }
+}
+
+async function checkHubnetTransactionStatus(reference) {
+  if (!HUBNET_API_KEY || !reference) return null;
+  try {
+    const response = await fetch(`${String(HUBNET_BASE_URL).replace(/\/$/, '')}/transaction/check-transaction-status`, {
+      method: 'POST',
+      headers: { token: `Bearer ${HUBNET_API_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ reference }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const data = await response.json().catch(() => ({}));
+    return String(data?.data?.status || data?.status || '').toLowerCase() || null;
+  } catch {
+    return null;
   }
 }
 
 function cancelHubnetOrder() {
   return { success: false, error: 'Hubnet does not provide an order cancellation endpoint.' };
+}
+
+function mapHubnetStatus(event, status) {
+  const normalizedEvent = String(event || '').toLowerCase();
+  if (normalizedEvent.includes('delivered') || normalizedEvent.includes('completed')) return 'Completed';
+  if (normalizedEvent.includes('accepted') || normalizedEvent.includes('initiated') || normalizedEvent.includes('success')) return 'Pending';
+  if (normalizedEvent.includes('failed') || normalizedEvent.includes('rejected')) return 'Failed';
+  if (normalizedEvent.includes('cancel')) return 'Cancelled';
+
+  const normalizedStatus = String(status || '').toLowerCase();
+  if (['delivered', 'success', 'completed', 'resolved'].includes(normalizedStatus)) return 'Completed';
+  if (['failed', 'error', 'rejected'].includes(normalizedStatus)) return 'Failed';
+  if (['cancelled', 'canceled', 'refunded'].includes(normalizedStatus)) return 'Cancelled';
+  if (['processing', 'in_progress', 'in-progress', 'in progress'].includes(normalizedStatus)) return 'Processing';
+  return 'Pending';
 }
 
 function hashPassword(password) {
@@ -1272,6 +1312,12 @@ app.post('/api/v1/orders', requireApiKey, async (req, res) => {
   });
   if (!product) return res.status(404).json({ ok: false, error: 'Package not found.' });
 
+  const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+  if (idempotencyKey) {
+    const existing = await db.collection('orders').findOne({ userId: req.user.id, source: 'api', idempotencyKey });
+    if (existing) return res.status(200).json({ ok: true, duplicate: true, order: existing, walletBalance: req.user.walletBalance });
+  }
+
   const orderPrice = getApiPriceForProduct(req.user, product, req.apiConfig);
   const apiRequest = {
     ...req,
@@ -1293,6 +1339,7 @@ app.get('/api/v1/orders/:id', requireApiKey, async (req, res) => {
 
 async function createSingleOrder(req, res) {
   const { recipient, size, amount, network, packageName, source = 'web' } = req.body || {};
+  const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
   const orderAmount = Number(amount || 0);
 
   if (!recipient || !network || orderAmount <= 0) {
@@ -1344,6 +1391,7 @@ async function createSingleOrder(req, res) {
     userId: user.id,
     packageName: packageName || '',
     reference: vendorReference,
+    ...(idempotencyKey && source === 'api' ? { idempotencyKey } : {}),
     createdAt: new Date().toISOString(),
   };
 
@@ -1803,17 +1851,18 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
     const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
-    if (order.paid && (order.vendorOrderId || order.portalOrderId)) return res.json({ ok: true, alreadyProcessed: true });
+    if (order.vendorOrderId || order.portalOrderId || order.fulfillmentStatus === 'dispatching') {
+      return res.json({ ok: true, alreadyProcessed: true });
+    }
     const ownership = { userId: order.userId || store.agentId };
     if (order.username) ownership.username = order.username;
     if (order.userEmail) ownership.userEmail = order.userEmail;
     const claim = await db.collection('orders').updateOne(
-      { id: order.id, $or: [{ paid: { $ne: true } }, { vendorOrderId: { $exists: false } }, { portalOrderId: { $exists: false } }] },
-      { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
+      { id: order.id, vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $ne: 'dispatching' } },
+      { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference, fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
     );
     if (claim.modifiedCount === 0) {
-      const currentOrder = await db.collection('orders').findOne({ id: order.id });
-      if (currentOrder?.vendorOrderId || currentOrder?.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
+      return res.json({ ok: true, alreadyProcessed: true });
     }
 
     const hubnetResult = await purchaseWithHubnet({
@@ -1824,12 +1873,12 @@ app.post('/api/webhooks/paystack', async (req, res) => {
       webhookUrl: `${HUBNET_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/hubnet`,
     });
     if (!hubnetResult.success) {
-      await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', vendorError: normalizeHubnetOrderErrorMessage(hubnetResult.error), updatedAt: new Date().toISOString() } });
+      await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', fulfillmentStatus: 'failed', vendorError: normalizeHubnetOrderErrorMessage(hubnetResult.error), updatedAt: new Date().toISOString() } });
       return res.status(502).json({ ok: false, error: 'Payment received, but bundle dispatch failed.', details: hubnetResult.error });
     }
 
     const commission = Number(order.agentCommission ?? metadata.commission ?? 0);
-    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Processing', vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } });
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Pending', fulfillmentStatus: 'submitted', vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } });
     if (commission > 0) {
       const ledgerClaim = await db.collection('store_ledger').updateOne(
         { reference },
@@ -2254,33 +2303,37 @@ app.post('/api/webhooks/hubnet', async (req, res) => {
   const reference = root?.reference || payload?.reference || null;
   const status = String(root?.status || payload?.status || 'pending');
 
-  const statusMap = {
-    pending: 'Pending',
-    processing: 'Processing',
-    delivered: 'Completed',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
-    canceled: 'Cancelled',
-    refunded: 'Refunded',
-    resolved: 'Completed',
-  };
-
-  const nextStatus = statusMap[String(status).toLowerCase()] || 'Pending';
+  const nextStatus = mapHubnetStatus(event, status);
 
   if (db) {
-    await db.collection('orders').updateOne(
-      { $or: [{ id: orderId }, { reference }, { vendorOrderId: orderId }, { vendorReference: reference }, { portalOrderId: orderId }, { portalReference: reference }] },
-      {
-        $set: {
-          status: nextStatus,
-          vendorStatus: status,
-          event,
-          vendorUpdatedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+    const identifiers = [
+      orderId && { id: orderId },
+      reference && { reference },
+      orderId && { vendorOrderId: orderId },
+      reference && { vendorReference: reference },
+      orderId && { portalOrderId: orderId },
+      reference && { portalReference: reference },
+    ].filter(Boolean);
+    if (identifiers.length > 0) {
+      const existing = await db.collection('orders').findOne({ $or: identifiers });
+      const terminalStatuses = ['Completed', 'Failed', 'Cancelled', 'Refunded'];
+      if (existing && terminalStatuses.includes(existing.status) && nextStatus !== 'Completed') {
+        return res.json({ ok: true, ignored: true, reason: 'Order already has a terminal status.', received: { event, orderId, reference, status: nextStatus }, platform: 'Hubnet' });
+      }
+      await db.collection('orders').updateOne(
+        { $or: identifiers },
+        {
+          $set: {
+            status: nextStatus,
+            vendorStatus: status,
+            event,
+            vendorUpdatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
         },
-      },
-      { upsert: false }
-    );
+        { upsert: false }
+      );
+    }
   }
 
   res.json({ ok: true, received: { event, orderId, reference, status: nextStatus }, platform: 'Hubnet' });

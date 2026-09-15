@@ -87,6 +87,12 @@ curl -X POST "https://allendatahub.onrender.com/api/v1/orders" \
 
 The request validates the network and package, checks the wallet balance, debits the account, creates an API-sourced order, and sends it through the configured Hubnet vendor flow.
 
+For safe retries, send a unique `Idempotency-Key` header with the request. Repeating a request with the same key for the same account returns the original order instead of creating another vendor transaction.
+
+```http
+Idempotency-Key: checkout-2026-09-15-0001
+```
+
 ## 6. Get order status
 
 ```bash
@@ -127,4 +133,4 @@ Always treat a non-2xx response as a failed request and log the returned `error`
 4. Submit the order from your server, never directly from a browser.
 5. Save the returned order ID.
 6. Poll `/orders/{id}` or use your own scheduled reconciliation process.
-7. Retry only safe GET requests unless you have an idempotency strategy for order creation.
+7. Retry order creation only when you reuse the same `Idempotency-Key`.
