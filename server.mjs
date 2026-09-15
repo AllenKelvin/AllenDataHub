@@ -16,10 +16,9 @@ const PAYSTACK_CALLBACK_URL = process.env.PAYSTACK_CALLBACK_URL || `${ALLENDAHUB
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
-const PORTAL02_API_KEY = process.env.PORTAL02_API_KEY || process.env.VITE_PORTAL02_API_KEY || '';
-const PORTAL02_BASE_URL = process.env.PORTAL02_BASE_URL || process.env.VITE_PORTAL02_BASE_URL || 'https://www.portal-02.com/api/v1';
-const PORTAL02_CANCEL_URL = process.env.PORTAL02_CANCEL_URL || '';
-const PORTAL02_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
+const HUBNET_API_KEY = process.env.HUBNET_API_KEY || '';
+const HUBNET_BASE_URL = process.env.HUBNET_BASE_URL || 'https://console.hubnet.app/live/api/context/business';
+const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
 const REFERRAL_COMMISSION_RATE = 0.01;
 
 app.use(cors());
@@ -92,31 +91,19 @@ const DEFAULT_API_CONFIG = { enabled: true, note: 'API access active' };
 let client;
 let db;
 
-const PORTAL02_OFFER_SLUGS = {
-  MTN: 'master_beneficiary_data_bundle',
-  Telecel: 'telecel_expiry_bundle',
-  AirtelTigo: 'ishare_data_bundle',
-};
-
-const PORTAL02_NETWORK_ENDPOINTS = {
+const HUBNET_NETWORK_ENDPOINTS = {
   MTN: 'mtn',
   Telecel: 'telecel',
   AirtelTigo: 'at',
 };
 
-function normalizePortalNetwork(network) {
+function normalizeHubnetNetwork(network) {
   const value = String(network || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
   if (value === 'mtn') return 'MTN';
   if (value === 'telecel' || value === 'vodafone') return 'Telecel';
   if (value === 'airteltigo' || value === 'airtel' || value === 'tigo' || value === 'at') return 'AirtelTigo';
   return String(network || '').trim();
 }
-
-const PORTAL02_AVAILABLE_VOLUMES = {
-  MTN: [1, 2, 3, 4, 5, 6, 7, 8, 10, 15, 20, 25, 30, 40, 50, 100],
-  Telecel: [5, 10, 15, 20, 25, 30, 40, 50, 100],
-  AirtelTigo: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20],
-};
 
 function makeId(prefix) {
   const randomPart = crypto.randomBytes(10).toString('hex');
@@ -126,21 +113,24 @@ function makeId(prefix) {
   return `${prefix}_${Date.now()}_${randomPart}`;
 }
 
-function normalizePortalPhone(value) {
+function makeHubnetReference() {
+  return `HUB-${crypto.randomBytes(9).toString('hex').toUpperCase()}`;
+}
+
+function normalizeHubnetPhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('0') && digits.length === 10) return `233${digits.slice(1)}`;
-  if (digits.startsWith('+233')) return digits.replace(/^\+/, '');
-  if (digits.length === 9) return `233${digits}`;
-  return digits;
+  if (digits.startsWith('233') && digits.length === 12) return `0${digits.slice(3)}`;
+  if (digits.length === 9) return `0${digits}`;
+  return digits.startsWith('0') ? digits : '';
 }
 
-function extractPortalVolume(size) {
+function extractHubnetVolume(size) {
   const numeric = Number(String(size || '').match(/(\d+(?:\.\d+)?)/)?.[1] || 0);
-  return Number.isFinite(numeric) ? numeric : 0;
+  return Number.isFinite(numeric) ? Math.round(numeric * 1000) : 0;
 }
 
-function normalizePortalOrderErrorMessage(message) {
+function normalizeHubnetOrderErrorMessage(message) {
   const raw = String(message || '').trim();
   if (!raw) return raw;
 
@@ -150,162 +140,52 @@ function normalizePortalOrderErrorMessage(message) {
     .replace(/\s+$/g, '');
 }
 
-async function purchaseWithPortal02({ phone, size, network, reference, webhookUrl }) {
-  if (!PORTAL02_API_KEY) {
-    return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
-  }
+async function purchaseWithHubnet({ phone, size, network, reference, webhookUrl }) {
+  if (!HUBNET_API_KEY) return { success: false, error: 'HUBNET_API_KEY is not configured.' };
 
-  const normalizedNetwork = normalizePortalNetwork(network);
-  const offerSlug = PORTAL02_OFFER_SLUGS[normalizedNetwork];
-  const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork];
-  const volume = extractPortalVolume(size);
-  const phoneNumber = normalizePortalPhone(phone);
-
-  if (!offerSlug || !endpoint) {
-    return { success: false, error: `Unsupported Portal-02 network: ${network}` };
-  }
-
-  if (!phoneNumber || phoneNumber.length < 10) {
-    return { success: false, error: 'Phone number is invalid for Portal-02 purchase.' };
-  }
-
-  if (!PORTAL02_AVAILABLE_VOLUMES[normalizedNetwork]?.includes(volume)) {
-    return { success: false, error: `${volume}GB is not available for ${network}.` };
-  }
-
-  const url = `${String(PORTAL02_BASE_URL).replace(/\/$/, '')}/order/${endpoint}`;
+  const normalizedNetwork = normalizeHubnetNetwork(network);
+  const endpoint = HUBNET_NETWORK_ENDPOINTS[normalizedNetwork];
+  const phoneNumber = normalizeHubnetPhone(phone);
   const payload = {
-    type: 'single',
-    volume,
     phone: phoneNumber,
-    offerSlug,
-    webhookUrl: webhookUrl || `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
-    reference: reference || makeId('ord'),
+    volume: String(extractHubnetVolume(size)),
+    reference: reference || makeHubnetReference(),
+    webhook: webhookUrl || `${HUBNET_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/hubnet`,
   };
 
+  if (!endpoint) return { success: false, error: `Unsupported Hubnet network: ${network}` };
+  if (!/^0\d{9}$/.test(phoneNumber)) return { success: false, error: 'Phone number is invalid for Hubnet purchase.' };
+  if (payload.volume === '0') return { success: false, error: 'Bundle size is invalid for Hubnet purchase.' };
+
   try {
-    const response = await fetch(url, {
+    const response = await fetch(`${String(HUBNET_BASE_URL).replace(/\/$/, '')}/transaction/${endpoint}-new-transaction`, {
       method: 'POST',
-      headers: {
-        'x-api-key': PORTAL02_API_KEY,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: { token: `Bearer ${HUBNET_API_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload),
     });
-
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    if (!response.ok || data.status !== true || data.message !== '0000') {
       return {
         success: false,
-        error: data.message || data.error || `Portal-02 request failed with status ${response.status}`,
+        error: data.reason || data.error || data.message || `Hubnet request failed with status ${response.status}`,
         statusCode: response.status,
         details: data,
       };
     }
-
     return {
       success: true,
-      transactionId: data.orderId || data.id || payload.reference,
+      transactionId: data.transaction_id || data.payment_id || data.reference || payload.reference,
       reference: data.reference || payload.reference,
-      status: data.status || 'pending',
+      status: 'pending',
       raw: data,
     };
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Portal-02 network error.',
-      details: null,
-    };
+    return { success: false, error: error instanceof Error ? error.message : 'Hubnet network error.', details: null };
   }
 }
 
-async function cancelPortal02Order({ network, orderId, reference }) {
-  if (!PORTAL02_API_KEY) {
-    return { success: false, error: 'PORTAL02_API_KEY is not configured.' };
-  }
-
-  const normalizedNetwork = normalizePortalNetwork(network);
-  const endpoint = PORTAL02_NETWORK_ENDPOINTS[normalizedNetwork] || String(normalizedNetwork || '').toLowerCase();
-  const baseUrl = String(PORTAL02_BASE_URL).replace(/\/$/, '');
-  const vendorId = String(orderId || '').trim();
-  const vendorReference = String(reference || '').trim();
-  if (!vendorId && !vendorReference) {
-    return { success: false, error: 'No Portal-02 order identifier was found for cancellation.' };
-  }
-
-  const requestBodies = [
-    { orderId: vendorId || vendorReference, reference: vendorReference || vendorId, network: normalizedNetwork },
-    { order_id: vendorId || vendorReference, clientReference: vendorReference || vendorId, network: normalizedNetwork },
-    { orderId: vendorId || vendorReference, reference: vendorReference || vendorId, network: endpoint },
-  ];
-  const candidateRequests = [
-    ...(PORTAL02_CANCEL_URL ? [{ url: PORTAL02_CANCEL_URL, method: 'POST' }] : []),
-    { url: `${baseUrl}/order/${endpoint}/cancel`, method: 'POST' },
-    { url: `${baseUrl}/order/cancel`, method: 'POST' },
-    { url: `${baseUrl}/cancel/${endpoint}`, method: 'POST' },
-    { url: `${baseUrl}/order/${endpoint}`, method: 'DELETE' },
-  ].filter(Boolean);
-
-  for (const candidate of candidateRequests) {
-    for (const requestBody of requestBodies) {
-      console.log(JSON.stringify({
-        tag: 'PORTAL02_CANCEL_ATTEMPT',
-        url: candidate.url,
-        method: candidate.method,
-        network: normalizedNetwork,
-        orderId: vendorId,
-        reference: vendorReference,
-      }));
-      try {
-        const response = await fetch(candidate.url, {
-          method: candidate.method,
-          headers: {
-            'x-api-key': PORTAL02_API_KEY,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        const data = await response.json().catch(() => ({}));
-        const status = String(data.status || data.state || '').toLowerCase();
-        const explicitlyFailed = data.success === false || ['failed', 'error', 'rejected'].includes(status);
-        const cancellationConfirmed = ['cancelled', 'canceled', 'refunded', 'success', 'completed'].includes(status)
-          || data.cancelled === true
-          || data.canceled === true
-          || data.success === true;
-
-        if (response.ok && !explicitlyFailed && cancellationConfirmed) {
-          const result = {
-            success: true,
-            status: status || 'cancelled',
-            orderId: data.orderId || data.id || vendorId,
-            reference: data.reference || vendorReference || vendorId,
-            raw: data,
-          };
-          console.log(JSON.stringify({ tag: 'PORTAL02_CANCEL_CONFIRMED', ...result, url: candidate.url }));
-          return result;
-        }
-
-        const errorText = data.message || data.error || `Cancellation request failed with status ${response.status}`;
-        console.error(JSON.stringify({
-          tag: 'PORTAL02_CANCEL_FAILED',
-          url: candidate.url,
-          statusCode: response.status,
-          vendorStatus: status,
-          error: errorText,
-          orderId: vendorId,
-          reference: vendorReference,
-        }));
-      } catch (error) {
-        const errMessage = error instanceof Error ? error.message : 'Cancellation network error.';
-        console.error(JSON.stringify({ tag: 'PORTAL02_CANCEL_NETWORK_ERROR', url: candidate.url, error: errMessage }));
-      }
-    }
-  }
-
-  return { success: false, error: 'Portal-02 cancellation endpoint was not available for this order.' };
+function cancelHubnetOrder() {
+  return { success: false, error: 'Hubnet does not provide an order cancellation endpoint.' };
 }
 
 function hashPassword(password) {
@@ -1447,7 +1327,7 @@ async function createSingleOrder(req, res) {
 
   const balAfter = Number((balBefore - chargedAmount).toFixed(2));
   const orderId = makeId('ord');
-  const vendorReference = `${network}-${orderId}`;
+  const vendorReference = makeHubnetReference();
 
   const order = {
     id: orderId,
@@ -1489,28 +1369,28 @@ async function createSingleOrder(req, res) {
     { $set: { paid: true, balBefore, balAfter: actualBalAfter, updatedAt: new Date().toISOString() } },
   );
 
-  const portalResult = await purchaseWithPortal02({
+  const hubnetResult = await purchaseWithHubnet({
     phone: recipient,
     size,
     network,
     reference: vendorReference,
-    webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+    webhookUrl: `${HUBNET_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/hubnet`,
   });
 
-  if (!portalResult.success) {
-    const portalErrorMessage = normalizePortalOrderErrorMessage(portalResult.error);
-    await db.collection('orders').updateOne({ id: orderId }, { $set: { status: 'Failed', portalError: portalErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } });
-    return res.status(Number(portalResult.statusCode || 502)).json({ ok: false, error: portalErrorMessage });
+  if (!hubnetResult.success) {
+    const hubnetErrorMessage = normalizeHubnetOrderErrorMessage(hubnetResult.error);
+    await db.collection('orders').updateOne({ id: orderId }, { $set: { status: 'Failed', vendorError: hubnetErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } });
+    return res.status(Number(hubnetResult.statusCode || 502)).json({ ok: false, error: hubnetErrorMessage });
   }
 
   await db.collection('orders').updateOne(
     { id: orderId },
     {
       $set: {
-        portalOrderId: portalResult.transactionId,
-        portalReference: portalResult.reference,
-        portalStatus: portalResult.status,
-        portalResponse: portalResult.raw,
+        vendorOrderId: hubnetResult.transactionId,
+        vendorReference: hubnetResult.reference,
+        vendorStatus: hubnetResult.status,
+        vendorResponse: hubnetResult.raw,
         status: 'Pending',
         updatedAt: new Date().toISOString(),
       },
@@ -1523,7 +1403,7 @@ async function createSingleOrder(req, res) {
     await applyReferralCommission(user.referredBy, chargedAmount);
   }
 
-  return res.status(201).json({ ok: true, order: { ...order, balAfter: actualBalAfter, paid: true, portalOrderId: portalResult.transactionId, portalStatus: portalResult.status }, walletBalance: actualBalAfter, portalResult });
+  return res.status(201).json({ ok: true, order: { ...order, balAfter: actualBalAfter, paid: true, vendorOrderId: hubnetResult.transactionId, vendorStatus: hubnetResult.status }, walletBalance: actualBalAfter, vendorResult: hubnetResult });
 }
 
 app.post('/api/orders', requireUser, async (req, res) => {
@@ -1574,7 +1454,7 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
       date: new Date().toISOString(),
       userId: user.id,
       packageName: item.packageName || '',
-      reference: `${item.network || 'network'}-${makeId('cart')}`,
+      reference: makeHubnetReference(),
       createdAt: new Date().toISOString(),
     };
     orders.push(order);
@@ -1605,34 +1485,34 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
   orders.forEach((order) => { order.paid = true; });
 
   for (const order of orders) {
-    const portalResult = await purchaseWithPortal02({
+    const hubnetResult = await purchaseWithHubnet({
       phone: order.recipient,
       size: order.size,
       network: order.network,
       reference: order.reference,
-      webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+      webhookUrl: `${HUBNET_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/hubnet`,
     });
 
-    if (!portalResult.success) {
+    if (!hubnetResult.success) {
       order.status = 'Failed';
-      const portalErrorMessage = normalizePortalOrderErrorMessage(portalResult.error);
+      const hubnetErrorMessage = normalizeHubnetOrderErrorMessage(hubnetResult.error);
       await db.collection('orders').updateOne(
         { id: order.id },
-        { $set: { status: 'Failed', portalError: portalErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } },
+        { $set: { status: 'Failed', vendorError: hubnetErrorMessage, vendorStatus: 'failed', updatedAt: new Date().toISOString() } },
       );
-      if (portalResult.statusCode === 409) {
-        return res.status(409).json({ ok: false, error: portalErrorMessage });
+      if (hubnetResult.statusCode === 409) {
+        return res.status(409).json({ ok: false, error: hubnetErrorMessage });
       }
       continue;
     }
 
-    order.portalOrderId = portalResult.transactionId;
-    order.portalReference = portalResult.reference;
-    order.portalStatus = portalResult.status;
-    order.portalResponse = portalResult.raw;
+    order.vendorOrderId = hubnetResult.transactionId;
+    order.vendorReference = hubnetResult.reference;
+    order.vendorStatus = hubnetResult.status;
+    order.vendorResponse = hubnetResult.raw;
     await db.collection('orders').updateOne(
       { id: order.id },
-      { $set: { portalOrderId: portalResult.transactionId, portalReference: portalResult.reference, portalStatus: portalResult.status, portalResponse: portalResult.raw, updatedAt: new Date().toISOString() } },
+      { $set: { vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } },
     );
   }
 
@@ -1663,24 +1543,20 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
   const balBefore = Number(user?.walletBalance || 0);
   const balAfter = Number((balBefore + refundAmount).toFixed(2));
 
-  const portalCancelResult = await cancelPortal02Order({
-    network: order.network,
-    orderId: order.portalOrderId || order.reference || order.id,
-    reference: order.portalReference || order.reference || order.id,
-  });
+  const hubnetCancelResult = cancelHubnetOrder();
 
-  if (!portalCancelResult.success) {
+  if (!hubnetCancelResult.success) {
     console.error(JSON.stringify({
       tag: 'ALLENDAHUB_CANCEL_BLOCKED',
       orderId: id,
-      portalOrderId: order.portalOrderId || null,
-      portalReference: order.portalReference || order.reference || null,
-      reason: portalCancelResult.error,
+      vendorOrderId: order.vendorOrderId || order.portalOrderId || null,
+      vendorReference: order.vendorReference || order.portalReference || order.reference || null,
+      reason: hubnetCancelResult.error,
     }));
     return res.status(502).json({
       ok: false,
       error: 'Unable to cancel this order right now. Please try again.',
-      portalCancelResult,
+      hubnetCancelResult,
     });
   }
 
@@ -1689,9 +1565,9 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
     $set: {
       status: 'Cancelled',
       balAfter,
-      portalCancelStatus: 'cancelled',
-      portalCancelResponse: portalCancelResult,
-      portalCancelError: null,
+      vendorCancelStatus: 'cancelled',
+      vendorCancelResponse: hubnetCancelResult,
+      vendorCancelError: null,
       updatedAt: new Date().toISOString(),
     },
   });
@@ -1720,7 +1596,7 @@ app.post('/api/orders/:id/cancel', requireUser, async (req, res) => {
     refund,
     walletBalance: balAfter,
     orderStatus: 'Cancelled',
-    portalCancelResult,
+    hubnetCancelResult,
   });
 });
 
@@ -1927,33 +1803,33 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
     const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
-    if (order.paid && order.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
+    if (order.paid && (order.vendorOrderId || order.portalOrderId)) return res.json({ ok: true, alreadyProcessed: true });
     const ownership = { userId: order.userId || store.agentId };
     if (order.username) ownership.username = order.username;
     if (order.userEmail) ownership.userEmail = order.userEmail;
     const claim = await db.collection('orders').updateOne(
-      { id: order.id, $or: [{ paid: { $ne: true } }, { portalOrderId: { $exists: false } }] },
+      { id: order.id, $or: [{ paid: { $ne: true } }, { vendorOrderId: { $exists: false } }, { portalOrderId: { $exists: false } }] },
       { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
     );
     if (claim.modifiedCount === 0) {
       const currentOrder = await db.collection('orders').findOne({ id: order.id });
-      if (currentOrder?.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
+      if (currentOrder?.vendorOrderId || currentOrder?.portalOrderId) return res.json({ ok: true, alreadyProcessed: true });
     }
 
-    const portalResult = await purchaseWithPortal02({
+    const hubnetResult = await purchaseWithHubnet({
       phone: order.recipient,
       size: order.size,
       network: order.network,
       reference: order.reference,
-      webhookUrl: `${PORTAL02_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/portal02`,
+      webhookUrl: `${HUBNET_BACKEND_URL.replace(/\/$/, '')}/api/webhooks/hubnet`,
     });
-    if (!portalResult.success) {
-      await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', portalError: normalizePortalOrderErrorMessage(portalResult.error), updatedAt: new Date().toISOString() } });
-      return res.status(502).json({ ok: false, error: 'Payment received, but bundle dispatch failed.', details: portalResult.error });
+    if (!hubnetResult.success) {
+      await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Failed', vendorError: normalizeHubnetOrderErrorMessage(hubnetResult.error), updatedAt: new Date().toISOString() } });
+      return res.status(502).json({ ok: false, error: 'Payment received, but bundle dispatch failed.', details: hubnetResult.error });
     }
 
     const commission = Number(order.agentCommission ?? metadata.commission ?? 0);
-    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Processing', portalOrderId: portalResult.transactionId, portalReference: portalResult.reference, portalStatus: portalResult.status, portalResponse: portalResult.raw, updatedAt: new Date().toISOString() } });
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Processing', vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } });
     if (commission > 0) {
       const ledgerClaim = await db.collection('store_ledger').updateOne(
         { reference },
@@ -2370,12 +2246,12 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
   });
 });
 
-app.post('/api/webhooks/portal02', async (req, res) => {
+app.post('/api/webhooks/hubnet', async (req, res) => {
   const payload = req.body || {};
   const root = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
-  const event = root?.event || root?.event_type || payload?.event || payload?.event_type || payload?.type || 'status.updated';
-  const orderId = root?.orderId || root?.order_id || root?.id || payload?.orderId || payload?.order_id || payload?.id || null;
-  const reference = root?.reference || root?.clientReference || payload?.reference || payload?.clientReference || null;
+  const event = payload?.event || root?.event || 'transfer.status.updated';
+  const orderId = root?.transaction_id || payload?.transaction_id || null;
+  const reference = root?.reference || payload?.reference || null;
   const status = String(root?.status || payload?.status || 'pending');
 
   const statusMap = {
@@ -2393,11 +2269,11 @@ app.post('/api/webhooks/portal02', async (req, res) => {
 
   if (db) {
     await db.collection('orders').updateOne(
-      { $or: [{ id: orderId }, { reference }, { portalOrderId: orderId }, { portalReference: reference }] },
+      { $or: [{ id: orderId }, { reference }, { vendorOrderId: orderId }, { vendorReference: reference }, { portalOrderId: orderId }, { portalReference: reference }] },
       {
         $set: {
           status: nextStatus,
-          portalStatus: status,
+          vendorStatus: status,
           event,
           vendorUpdatedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -2407,7 +2283,7 @@ app.post('/api/webhooks/portal02', async (req, res) => {
     );
   }
 
-  res.json({ ok: true, received: { event, orderId, reference, status: nextStatus }, platform: 'Portal-02.com' });
+  res.json({ ok: true, received: { event, orderId, reference, status: nextStatus }, platform: 'Hubnet' });
 });
 
 await startMongo();

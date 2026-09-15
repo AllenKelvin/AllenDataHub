@@ -1,6 +1,6 @@
 # User Panel
 
-Full-stack style dealer portal for a telecom data & utility reseller service (Portal 02 / User Panel).
+Full-stack style dealer portal for a telecom data & utility reseller service (Hubnet / User Panel).
 
 ## Stack
 
@@ -40,3 +40,9 @@ Open [http://localhost:5173](http://localhost:5173).
 | `/user/settings` | Preferences |
 
 Data is mocked client-side for a complete walkthrough UI.
+
+## Vendor configuration
+
+The server sends data orders through Hubnet. Configure `HUBNET_API_KEY` as a server-side secret before enabling live purchases. The optional `HUBNET_BASE_URL` override defaults to `https://console.hubnet.app/live/api/context/business`.
+
+Hubnet does not expose an order cancellation endpoint, so cancellation/refund requests are blocked until a supported vendor cancellation flow is available.

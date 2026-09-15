@@ -85,7 +85,7 @@ curl -X POST "https://allendatahub.onrender.com/api/v1/orders" \
   }'
 ```
 
-The request validates the network and package, checks the wallet balance, debits the account, creates an API-sourced order, and sends it through the configured Portal-02 vendor flow.
+The request validates the network and package, checks the wallet balance, debits the account, creates an API-sourced order, and sends it through the configured Hubnet vendor flow.
 
 ## 6. Get order status
 
@@ -115,7 +115,7 @@ The account-specific product price takes precedence over the global fallback fee
 - `404`: package or order not found.
 - `422`: missing or invalid order fields.
 - `400`: insufficient wallet balance or another business validation failure.
-- `502`: Portal-02 could not accept the order.
+- `502`: Hubnet could not accept the order.
 
 Always treat a non-2xx response as a failed request and log the returned `error` without logging the API key.
 
