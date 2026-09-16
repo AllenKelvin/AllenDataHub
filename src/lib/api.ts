@@ -1,5 +1,5 @@
 export function getApiBase(): string {
-  return (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "https://allendatahub.onrender.com";
+  return (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "https://allen-data-hub-backend.onrender.com";
 }
 
 export function authHeaders(userId?: string | null, extra: Record<string, string> = {}): HeadersInit {

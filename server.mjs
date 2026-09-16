@@ -18,7 +18,7 @@ const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
 const HUBNET_API_KEY = process.env.HUBNET_API_KEY || '';
 const HUBNET_BASE_URL = process.env.HUBNET_BASE_URL || 'https://console.hubnet.app/live/api/context/business';
-const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
+const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allen-data-hub-backend.onrender.com';
 const HUBNET_REQUEST_TIMEOUT_MS = 30_000;
 const REFERRAL_COMMISSION_RATE = 0.01;
 
