@@ -981,7 +981,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
     { returnDocument: 'after' }
   );
 
-  const updatedUser = result && result.value ? result.value : null;
+  const updatedUser = result?.value ?? result ?? null;
   if (!updatedUser) return res.status(404).json({ ok: false, error: 'Unable to verify this email link.' });
   return res.json({ ok: true, user: sanitizeUser(updatedUser) });
 });
@@ -1048,7 +1048,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     { returnDocument: 'after' }
   );
 
-  if (!result?.value) return res.status(400).json({ ok: false, error: 'This password reset link is invalid or expired.' });
+  if (!result) return res.status(400).json({ ok: false, error: 'This password reset link is invalid or expired.' });
   return res.json({ ok: true, message: 'Your password has been reset successfully.' });
 });
 
