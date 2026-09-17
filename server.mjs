@@ -986,6 +986,72 @@ app.post('/api/auth/verify-email', async (req, res) => {
   return res.json({ ok: true, user: sanitizeUser(updatedUser) });
 });
 
+app.post('/api/auth/request-password-reset', async (req, res) => {
+  if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
+
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const genericResponse = {
+    ok: true,
+    message: 'If an account exists for that email, a password reset link has been sent.',
+  };
+  if (!email) return res.status(400).json({ ok: false, error: 'Email is required.' });
+
+  const user = await db.collection('users').findOne({
+    email: { $regex: `^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+  });
+  if (!user) return res.json(genericResponse);
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  await db.collection('users').updateOne(
+    { id: user.id },
+    { $set: { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt } }
+  );
+
+  const resetUrl = `${ALLENDAHUB_FRONTEND_URL.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  const firstName = String(user.fullName || 'there').split(/\s+/)[0];
+  const emailResult = await sendBrevoEmail({
+    toEmail: user.email,
+    toName: user.fullName || user.email,
+    subject: 'Reset your AllenDataHub password',
+    htmlContent: `<p>Hello ${firstName},</p><p>We received a request to reset your AllenDataHub password.</p><p><a href="${resetUrl}">Reset your password</a></p><p>This link expires in 1 hour and can only be used once. If you did not request this, you can ignore this email.</p>`,
+    textContent: `Hello ${firstName},\n\nReset your AllenDataHub password: ${resetUrl}\n\nThis link expires in 1 hour and can only be used once. If you did not request this, you can ignore this email.`,
+  });
+
+  if (!emailResult.ok) {
+    await db.collection('users').updateOne(
+      { id: user.id, passwordResetTokenHash: tokenHash },
+      { $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' } }
+    );
+    console.error('Password reset email failed:', emailResult.error);
+  }
+
+  return res.json(genericResponse);
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
+
+  const token = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+  if (!token || !password) return res.status(400).json({ ok: false, error: 'Reset token and new password are required.' });
+  if (password.length < 8) return res.status(400).json({ ok: false, error: 'Password must be at least 8 characters.' });
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const result = await db.collection('users').findOneAndUpdate(
+    { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: { $gt: new Date() } },
+    {
+      $set: { password: hashPassword(password), passwordUpdatedAt: new Date().toISOString() },
+      $unset: { passwordResetTokenHash: '', passwordResetExpiresAt: '' },
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!result?.value) return res.status(400).json({ ok: false, error: 'This password reset link is invalid or expired.' });
+  return res.json({ ok: true, message: 'Your password has been reset successfully.' });
+});
+
 // ─── Users ──────────────────────────────────────────────────────────────────
 
 app.get('/api/users/me', requireUser, async (req, res) => {

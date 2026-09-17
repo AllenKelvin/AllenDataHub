@@ -17,6 +17,8 @@ interface AuthContextType {
     referredBy?: string;
   }) => Promise<{ ok: boolean; error?: string }>;
   verifyEmail: (token: string) => Promise<{ ok: boolean; error?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ ok: boolean; message?: string; error?: string }>;
+  resetPassword: (token: string, password: string) => Promise<{ ok: boolean; message?: string; error?: string }>;
   logout: () => void;
   updateUser: (patch: Partial<User>) => Promise<void>;
   updateUserById: (id: string, patch: Partial<User>) => Promise<void>;
@@ -201,6 +203,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { ok: true };
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : "Verification failed." };
+        }
+      },
+      requestPasswordReset: async (email) => {
+        try {
+          const data = await apiFetch<{ message?: string }>('/api/auth/request-password-reset', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+          });
+          return { ok: true, message: data.message };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : 'Unable to request a password reset.' };
+        }
+      },
+      resetPassword: async (token, password) => {
+        try {
+          const data = await apiFetch<{ message?: string }>('/api/auth/reset-password', {
+            method: 'POST',
+            body: JSON.stringify({ token, password }),
+          });
+          return { ok: true, message: data.message };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : 'Unable to reset your password.' };
         }
       },
       logout: () => {

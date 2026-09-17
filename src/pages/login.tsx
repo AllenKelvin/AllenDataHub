@@ -93,7 +93,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="text-xs font-medium text-blue-600 hover:underline"
-                    onClick={() => window.alert("Password reset link is coming soon.")}
+                    onClick={() => setLocation("/forgot-password")}
                   >
                     Forgot password?
                   </button>

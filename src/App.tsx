@@ -37,6 +37,7 @@ import { EmailVerificationPage } from "@/pages/register";
 import NotFound from "@/pages/not-found";
 import PaymentReturn from "@/pages/payment-return";
 import MiniStoreDashboard, { PublicMiniStore } from "@/pages/mini-store";
+import ForgotPassword, { ResetPassword } from "@/pages/password-reset";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -126,6 +127,8 @@ function Router() {
       <Route path="/login">{() => <Guest component={Login} />}</Route>
       <Route path="/register">{() => <Guest component={Register} />}</Route>
       <Route path="/verify-email">{() => <Guest component={EmailVerificationPage} />}</Route>
+      <Route path="/forgot-password">{() => <Guest component={ForgotPassword} />}</Route>
+      <Route path="/reset-password">{() => <Guest component={ResetPassword} />}</Route>
       <Route path="/payment-return">{() => <PaymentReturn />}</Route>
       <Route path="/s/:slug">{(params) => <PublicMiniStore slug={params.slug} />}</Route>
 
