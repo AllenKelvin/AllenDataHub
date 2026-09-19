@@ -139,9 +139,21 @@ export function PublicMiniStore({ slug }: { slug: string }) {
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [processing, setProcessing] = useState("");
-  const [guestOrder, setGuestOrder] = useState<{ paid: boolean; status: string; reference: string } | null>(null);
+    const [guestOrder, setGuestOrder] = useState<{ paid: boolean; status: string; reference: string } | null>(null);
   const paymentReference = new URLSearchParams(window.location.search).get("reference") || new URLSearchParams(window.location.search).get("trxref");
   useEffect(() => { fetch(`${getApiBase()}/api/public/store/${encodeURIComponent(slug)}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error); setStore(data.store); setPackages(data.packages || []); }).catch((reason) => setError(reason.message || "Store not found.")); }, [slug]);
+  useEffect(() => {
+    const storeName = store?.storeName || "Mini Store";
+    document.title = storeName;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", storeName);
+  }, [store?.storeName]);
+  useEffect(() => {
+    document.querySelectorAll("p").forEach((paragraph) => {
+      if (paragraph.textContent?.includes("AllenDataHub mini-store") || paragraph.textContent?.includes("Powered by AllenDataHub")) {
+        paragraph.remove();
+      }
+    });
+  }, [store]);
   useEffect(() => { if (!paymentReference) return; fetch(`${getApiBase()}/api/public/order-status?slug=${encodeURIComponent(slug)}&reference=${encodeURIComponent(paymentReference)}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error); setGuestOrder(data); }).catch(() => setGuestOrder({ paid: true, status: "Payment received", reference: paymentReference })); }, [paymentReference, slug]);
   const selectedPackage = packages.find((item) => item.id === selected); const visiblePackages = packages.filter((item) => item.network === selectedNetwork);
   const checkout = async () => { if (processing) return; setProcessing("pay"); setError(""); try { if (!selectedPackage || !/^\d{10}$/.test(phone)) throw new Error("Choose a package and enter a valid 10-digit recipient number."); const response = await fetch(`${getApiBase()}/api/public/checkout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store?.id, packageId: selectedPackage.id, recipientPhone: phone }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to start payment."); window.location.href = data.authorizationUrl; } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to start payment."); setProcessing(""); } };
