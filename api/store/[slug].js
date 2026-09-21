@@ -39,19 +39,22 @@ export default async function handler(request, response) {
     }
   }
 
+  const storeDescription = `${storeName} offers a simple shopping experience with fast delivery and reliable service.`;
   const safeStoreName = escapeHtml(storeName);
+  const safeStoreDescription = escapeHtml(storeDescription);
+
   let html = getTemplate()
     .replace(/<title>[^<]*<\/title>/i, `<title>${safeStoreName}</title>`)
-    .replace(/<meta name="description" content="[^"]*"\s*\/>/i, `<meta name="description" content="${safeStoreName}" />`)
+    .replace(/<meta name="description" content="[^"]*"\s*\/>/i, `<meta name="description" content="${safeStoreDescription}" />`)
     .replace(/<meta name="apple-mobile-web-app-title" content="[^"]*"\s*\/>/i, `<meta name="apple-mobile-web-app-title" content="${safeStoreName}" />`);
 
   const socialMetadata = `
       <meta property="og:title" content="${safeStoreName}" />
-      <meta property="og:description" content="${safeStoreName}" />
+      <meta property="og:description" content="${safeStoreDescription}" />
       <meta property="og:type" content="website" />
       <meta name="twitter:card" content="summary" />
       <meta name="twitter:title" content="${safeStoreName}" />
-      <meta name="twitter:description" content="${safeStoreName}" />`;
+      <meta name="twitter:description" content="${safeStoreDescription}" />`;
   html = html.replace("</head>", `${socialMetadata}\n  </head>`);
 
   response.setHeader("Content-Type", "text/html; charset=utf-8");

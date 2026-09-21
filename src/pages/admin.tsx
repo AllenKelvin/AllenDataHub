@@ -38,6 +38,8 @@ export default function AdminPage() {
   const [selectedApiAccountId, setSelectedApiAccountId] = useState("");
   const [editingApiProducts, setEditingApiProducts] = useState<Set<string>>(new Set());
   const [allOrders, setAllOrders] = useState<Array<{ id: string; userId?: string; username?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; createdAt?: string; source?: string; balBefore?: number; balAfter?: number }>>([]);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
   const [disabledNetworks, setDisabledNetworks] = useState<string[]>([]);
   const [priceForm, setPriceForm] = useState({ userPrice: "4", agentPrice: "3.5", network: "MTN", label: "1GB" });
   const [apiSettings, setApiSettings] = useState({ enabled: true, note: "API access active" });
@@ -236,6 +238,30 @@ export default function AdminPage() {
 
   // Filter non-admin users for display
   const nonAdminUsers = users.filter((u) => u.role !== "admin");
+  const filteredWalletUsers = useMemo(() => {
+    const query = walletSearch.trim().toLowerCase();
+    if (!query) return nonAdminUsers;
+    return nonAdminUsers.filter((entry) => {
+      const searchable = [entry.fullName, entry.email, entry.phone, entry.whatsapp, entry.momo, entry.role]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [nonAdminUsers, walletSearch]);
+
+  const filteredOrders = useMemo(() => {
+    const query = orderSearch.trim().toLowerCase();
+    if (!query) return allOrders;
+    return allOrders.filter((order) => {
+      const searchable = [order.id, order.username, order.recipient, order.network, order.size, String(order.amount), String(order.status), String(order.userId)]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(query);
+    });
+  }, [allOrders, orderSearch]);
+
   const selectedApiAccount = apiAccounts.find((account) => account.id === selectedApiAccountId);
 
   const getDisplayedApiPrice = (product: typeof apiProducts[number]) => {
@@ -377,15 +403,29 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
+                  <Label>Search user</Label>
+                  <Input
+                    value={walletSearch}
+                    onChange={(event) => setWalletSearch(event.target.value)}
+                    placeholder="Search by name or email"
+                    className="h-11"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label>User</Label>
                   <select
                     value={walletAction.userId}
                     onChange={(e) => setWalletAction((current) => ({ ...current, userId: e.target.value }))}
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
                   >
-                    {nonAdminUsers.map((entry) => (
-                      <option key={entry.id} value={entry.id}>{entry.fullName}</option>
-                    ))}
+                    {filteredWalletUsers.length === 0 ? (
+                      <option value="">No matching user</option>
+                    ) : (
+                      filteredWalletUsers.map((entry) => (
+                        <option key={entry.id} value={entry.id}>{entry.fullName}</option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -412,8 +452,18 @@ export default function AdminPage() {
               <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> Platform orders</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {allOrders.length === 0 ? (
-                <p className="text-sm text-slate-500">No orders have been created yet.</p>
+              <div className="space-y-2">
+                <Label>Search orders</Label>
+                <Input
+                  value={orderSearch}
+                  onChange={(event) => setOrderSearch(event.target.value)}
+                  placeholder="Search by order number, recipient, or user name"
+                  className="h-11"
+                />
+              </div>
+
+              {filteredOrders.length === 0 ? (
+                <p className="text-sm text-slate-500">No matching orders found.</p>
               ) : (
                 <div className="max-h-[560px] overflow-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-left text-sm">
@@ -432,7 +482,7 @@ export default function AdminPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {allOrders.map((order) => (
+                      {filteredOrders.map((order) => (
                         <tr key={order.id} className="border-t border-slate-200">
                           <td className="px-3 py-2 font-medium text-violet-600" title={order.id}>{shortenId(order.id)}</td>
                           <td className="px-3 py-2">{order.username || "—"}</td>

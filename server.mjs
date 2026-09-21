@@ -1813,7 +1813,7 @@ async function initializePaystackPayment(req, res) {
     return res.status(404).json({ ok: false, error: 'User not found.' });
   }
 
-  const fee = Number((amount * 0.04).toFixed(2));
+  const fee = Number((amount * 0.03).toFixed(2));
   const totalPay = Number((amount + fee).toFixed(2));
   const reference = getPaystackReferenceForUser(user.id);
   const balBefore = Number(user.walletBalance || 0);

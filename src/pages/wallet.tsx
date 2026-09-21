@@ -28,7 +28,7 @@ import { useAuth } from "@/lib/auth";
 import { formatGHS, shortenId } from "@/lib/formatters";
 import { useToast } from "@/hooks/use-toast";
 
-const ADMIN_FEE = 0.04;
+const ADMIN_FEE = 0.03;
 const MIN_TOPUP = 5;
 
 const SEND_CLAIM_ADVANTAGES = [
@@ -314,7 +314,7 @@ export default function WalletPage() {
 
                 <div className="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-sm">
                   <span className="font-medium text-slate-600">Admin Fee</span>
-                  <span className="font-bold text-orange-600">4%</span>
+                  <span className="font-bold text-orange-600">3%</span>
                 </div>
 
                 {parsedAmount >= MIN_TOPUP && (
@@ -324,7 +324,7 @@ export default function WalletPage() {
                       <span className="font-semibold text-slate-800">{formatGHS(parsedAmount)}</span>
                     </div>
                     <div className="flex justify-between text-slate-600">
-                      <span>Admin fee (4%)</span>
+                      <span>Admin fee (3%)</span>
                       <span className="font-semibold text-orange-600">{formatGHS(fee)}</span>
                     </div>
                     <div className="flex justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
