@@ -143,7 +143,10 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
   const [excelPackageId, setExcelPackageId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const packagesForNetwork = (packageCatalog[network] ?? []).filter((p) => !disabledNetworks.includes(network));
+  const packagesForNetwork = useMemo(
+    () => (packageCatalog[network] ?? []).filter((p) => !disabledNetworks.includes(network)),
+    [packageCatalog, network, disabledNetworks]
+  );
 
   useEffect(() => {
     const firstPackage = packagesForNetwork[0];
@@ -153,8 +156,10 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     setBulkPackageId((current) => (current && packagesForNetwork.some((item) => item.id === current) ? current : firstPackage.id));
     setExcelPackageId((current) => (current && packagesForNetwork.some((item) => item.id === current) ? current : firstPackage.id));
     setBulkRecipientPackages((current) => {
-      if (current.length === 0) return [firstPackage.id];
-      return current.map((item) => (packagesForNetwork.some((pkg) => pkg.id === item) ? item : firstPackage.id));
+      const next = current.length === 0
+        ? [firstPackage.id]
+        : current.map((item) => (packagesForNetwork.some((pkg) => pkg.id === item) ? item : firstPackage.id));
+      return next.every((item, index) => item === current[index]) && next.length === current.length ? current : next;
     });
   }, [packagesForNetwork]);
 
