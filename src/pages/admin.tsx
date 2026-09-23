@@ -237,7 +237,7 @@ export default function AdminPage() {
   };
 
   // Filter non-admin users for display
-  const nonAdminUsers = users.filter((u) => u.role !== "admin");
+  const nonAdminUsers = useMemo(() => users.filter((u) => u.role !== "admin"), [users]);
   const filteredWalletUsers = useMemo(() => {
     const query = walletSearch.trim().toLowerCase();
     if (!query) return nonAdminUsers;
@@ -249,6 +249,14 @@ export default function AdminPage() {
       return searchable.includes(query);
     });
   }, [nonAdminUsers, walletSearch]);
+
+  useEffect(() => {
+    setWalletAction((current) => {
+      const nextUserId = filteredWalletUsers[0]?.id ?? "";
+      if (filteredWalletUsers.some((entry) => entry.id === current.userId) || current.userId === nextUserId) return current;
+      return { ...current, userId: nextUserId };
+    });
+  }, [filteredWalletUsers]);
 
   const filteredOrders = useMemo(() => {
     const query = orderSearch.trim().toLowerCase();
