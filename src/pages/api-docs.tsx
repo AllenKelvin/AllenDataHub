@@ -49,7 +49,7 @@ const DOC_SECTIONS = [
   -d '{
     "network": "MTN",
     "size": "3 GB",
-    "recipient": "0249116309",
+    "recipient": "0592786175",
     "packageName": "MTN 3GB"
   }'`,
   },
@@ -90,7 +90,7 @@ const ENDPOINTS = [
   -d '{
     "network": "MTN",
     "size": "3 GB",
-    "recipient": "0249116309",
+    "recipient": "0592786175",
     "packageName": "MTN 3GB"
   }'`,
   },
