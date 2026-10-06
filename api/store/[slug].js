@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const apiBase = process.env.VITE_API_URL || "https://allen-data-hub-backend.onrender.com";
+const apiBase = process.env.VITE_API_URL || "https://allendatahub.onrender.com";
 
 function escapeHtml(value) {
   return String(value)
