@@ -68,6 +68,7 @@ const PHONE_VERIFICATION_MAX_ATTEMPTS = 5;
 const ARKESEL_SMS_MAX_LENGTH_CHARS = 306;
 const ARKESEL_SMS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const ARKESEL_SMS_RATE_LIMIT_MAX = 3;
+const ALLOW_SMS_FALLBACK = String(process.env.ALLOW_SMS_FALLBACK ?? 'true').toLowerCase() !== 'false';
 let arkeselSmsRateLimitIndexPromise;
 
 app.use(cors());
@@ -234,6 +235,16 @@ async function dispatchPhoneVerificationCode({ phone, verificationCode, verifica
         error: smsResult.error,
         detail: smsResult.detail || null,
       }));
+
+      if (ALLOW_SMS_FALLBACK) {
+        return {
+          ok: true,
+          isDemo: true,
+          demoCode: verificationCode,
+          message: `SMS delivery failed, so this environment is using demo verification mode. Use code ${verificationCode} to continue.`,
+        };
+      }
+
       return {
         ok: false,
         status: 502,
@@ -245,11 +256,11 @@ async function dispatchPhoneVerificationCode({ phone, verificationCode, verifica
     return { ok: true, isDemo: false };
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
+  if (ALLOW_SMS_FALLBACK) {
+    return { ok: true, isDemo: true, demoCode: verificationCode, message: `Demo verification mode: use ${verificationCode} to complete phone verification.` };
   }
 
-  return { ok: true, isDemo: true, demoCode: verificationCode, message: `Demo verification mode: use ${verificationCode} to complete phone verification.` };
+  return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
 }
 
 async function claimArkeselSmsQuota(phone) {
