@@ -15,7 +15,9 @@ interface AuthContextType {
     password: string;
     role: "user" | "agent";
     referredBy?: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<{ ok: boolean; error?: string; verificationToken?: string }>;
+  verifyPhone: (verificationToken: string, code: string) => Promise<{ ok: boolean; error?: string }>;
+  resendPhoneVerification: (verificationToken: string) => Promise<{ ok: boolean; message?: string; error?: string }>;
   verifyEmail: (token: string) => Promise<{ ok: boolean; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ ok: boolean; message?: string; error?: string }>;
   resetPassword: (token: string, password: string) => Promise<{ ok: boolean; message?: string; error?: string }>;
@@ -169,11 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (response.ok) {
             const data = await response.json();
-            if (data.user) {
-              commitUser(data.user);
-              setUsers([data.user]);
-            }
-            return { ok: true };
+            return { ok: true, verificationToken: data.verificationToken };
           }
 
           try {
@@ -190,6 +188,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 ? `Server unavailable: ${error.message}`
                 : "Server unavailable. Please check the MongoDB connection and try again.",
           };
+        }
+      },
+      verifyPhone: async (verificationToken, code) => {
+        try {
+          const data = await apiFetch<{ user: User }>("/api/auth/verify-phone", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ verificationToken, code }),
+          });
+          if (!data.user) return { ok: false, error: "Unable to verify this phone number." };
+          commitUser(data.user);
+          setUsers([data.user]);
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : "Phone verification failed." };
+        }
+      },
+      resendPhoneVerification: async (verificationToken) => {
+        try {
+          const data = await apiFetch<{ message?: string }>("/api/auth/resend-phone-verification", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ verificationToken }),
+          });
+          return { ok: true, message: data.message };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : "Unable to resend the verification code." };
         }
       },
       verifyEmail: async (token) => {

@@ -78,7 +78,7 @@ export function EmailVerificationPage() {
 }
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { register, verifyPhone, resendPhoneVerification } = useAuth();
   const [, setLocation] = useLocation();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -88,6 +88,11 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationToken, setVerificationToken] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("allendatahub-phone-verification") || ""
+  );
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -110,71 +115,149 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!result.verificationToken) {
+      setError("Registration succeeded, but the verification session could not be started. Please contact support.");
+      return;
+    }
+    localStorage.setItem("allendatahub-phone-verification", result.verificationToken);
+    setVerificationToken(result.verificationToken);
+    setNotice("A 6-digit verification code has been sent to your phone.");
+  };
+
+  const onVerifyPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!verificationToken) return;
+    setError("");
+    setLoading(true);
+    const result = await verifyPhone(verificationToken, verificationCode);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error || "Phone verification failed.");
+      return;
+    }
+    localStorage.removeItem("allendatahub-phone-verification");
     setLocation("/dashboard");
+  };
+
+  const onResendCode = async () => {
+    if (!verificationToken) return;
+    setError("");
+    setNotice("");
+    setLoading(true);
+    const result = await resendPhoneVerification(verificationToken);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error || "Unable to resend the verification code.");
+      return;
+    }
+    setNotice(result.message || "A new verification code has been sent.");
   };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
       <Card className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
         <CardContent className="p-8">
-          <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Create Account</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Join AllenDataHub as a dealer</p>
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Full Name</Label>
-              <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Email</Label>
-              <Input type="email" className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Username</Label>
-              <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Allen Kelvin" />
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Phone Number</Label>
-              <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={phone} onChange={(e) => setPhone(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Account Type</Label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as "user" | "agent")}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
-              >
-                <option value="user">User</option>
-                <option value="agent">Agent</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-200">Password</Label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  className="rounded-xl pr-10 dark:border-slate-700 dark:bg-slate-950"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
-                  onClick={() => setShowPassword((v) => !v)}
+          {verificationToken ? (
+            <>
+              <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Verify Your Phone</h1>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Enter the 6-digit code sent to your phone to finish creating your account.
+              </p>
+              <form onSubmit={onVerifyPhone} className="mt-6 space-y-4">
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Verification Code</Label>
+                  <Input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    pattern="[0-9]{6}"
+                    className="rounded-xl tracking-[0.3em] dark:border-slate-700 dark:bg-slate-950"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                  />
+                </div>
+                {notice && <p className="text-sm text-emerald-600">{notice}</p>}
+                {error && <p className="text-sm text-rose-600">{error}</p>}
+                <Button
+                  type="submit"
+                  disabled={loading || verificationCode.length !== 6}
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-            {error && <p className="text-sm text-rose-600">{error}</p>}
-            <Button
-              type="submit"
-              disabled={loading}
-              className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white"
-            >
-              {loading ? "Creating..." : "Sign Up"}
-            </Button>
-          </form>
+                  {loading ? "Verifying..." : "Verify Phone"}
+                </Button>
+              </form>
+              <button
+                type="button"
+                onClick={() => void onResendCode()}
+                disabled={loading}
+                className="mt-4 w-full text-sm font-semibold text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
+              >
+                Resend verification code
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Create Account</h1>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Join AllenDataHub as a dealer</p>
+              <form onSubmit={onSubmit} className="mt-6 space-y-4">
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Full Name</Label>
+                  <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Email</Label>
+                  <Input type="email" className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Username</Label>
+                  <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Allen Kelvin" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Phone Number</Label>
+                  <Input className="rounded-xl dark:border-slate-700 dark:bg-slate-950" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Account Type</Label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as "user" | "agent")}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <option value="user">User</option>
+                    <option value="agent">Agent</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="dark:text-slate-200">Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      className="rounded-xl pr-10 dark:border-slate-700 dark:bg-slate-950"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      onClick={() => setShowPassword((v) => !v)}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                {error && <p className="text-sm text-rose-600">{error}</p>}
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="h-11 w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white"
+                >
+                  {loading ? "Creating..." : "Sign Up"}
+                </Button>
+              </form>
+            </>
+          )}
           <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             Already have an account?{" "}
             <Link href="/login" className="font-semibold text-blue-600 hover:underline dark:text-blue-400">

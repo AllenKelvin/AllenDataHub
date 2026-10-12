@@ -16,11 +16,23 @@ const PAYSTACK_CALLBACK_URL = process.env.PAYSTACK_CALLBACK_URL || `${ALLENDAHUB
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
+const ARKESEL_API_KEY = process.env.ARKESEL_API_KEY || '';
+const ARKESEL_SENDER_ID = process.env.ARKESEL_SENDER_ID || '';
+const ARKESEL_WEBHOOK_SECRET = process.env.ARKESEL_WEBHOOK_SECRET || '';
+const ARKESEL_COUNTRY_CODE = String(process.env.ARKESEL_COUNTRY_CODE || '233').replace(/\D/g, '') || '233';
+const ARKESEL_WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 const HUBNET_API_KEY = process.env.HUBNET_API_KEY || '';
 const HUBNET_BASE_URL = process.env.HUBNET_BASE_URL || 'https://console.hubnet.app/live/api/context/business';
 const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND_URL || process.env.VITE_API_URL || 'https://allendatahub.onrender.com';
 const HUBNET_REQUEST_TIMEOUT_MS = 30_000;
 const REFERRAL_COMMISSION_RATE = 0.01;
+const PHONE_VERIFICATION_TTL_MS = 15 * 60 * 1000;
+const PHONE_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+const PHONE_VERIFICATION_MAX_ATTEMPTS = 5;
+const ARKESEL_SMS_MAX_LENGTH_CHARS = 306;
+const ARKESEL_SMS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const ARKESEL_SMS_RATE_LIMIT_MAX = 3;
+let arkeselSmsRateLimitIndexPromise;
 
 app.use(cors());
 app.use(express.json({
@@ -79,6 +91,108 @@ async function sendBrevoEmail({ toEmail, toName = '', subject, htmlContent, text
       error: error instanceof Error ? error.message : 'Unable to send email.',
     };
   }
+}
+
+function normalizeArkeselPhone(value) {
+  const input = String(value || '').trim();
+  const digits = input.replace(/\D/g, '');
+  if (!digits) return '';
+  if (input.startsWith('+')) return digits.length >= 10 && digits.length <= 15 ? digits : '';
+  if (digits.startsWith(ARKESEL_COUNTRY_CODE) && digits.length === ARKESEL_COUNTRY_CODE.length + 9) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `${ARKESEL_COUNTRY_CODE}${digits.slice(1)}`;
+  if (digits.length === 9) return `${ARKESEL_COUNTRY_CODE}${digits}`;
+  return '';
+}
+
+async function sendArkeselSms({ to, message }) {
+  if (!ARKESEL_API_KEY) return { ok: false, error: 'ARKESEL_API_KEY is not configured.' };
+  if (!ARKESEL_SENDER_ID) return { ok: false, error: 'ARKESEL_SENDER_ID is not configured.' };
+  const phoneNumber = normalizeArkeselPhone(to);
+  if (!phoneNumber) return { ok: false, error: 'Phone number is invalid.' };
+  if (!message || String(message).length > ARKESEL_SMS_MAX_LENGTH_CHARS) return { ok: false, error: `SMS message must be between 1 and ${ARKESEL_SMS_MAX_LENGTH_CHARS} characters.` };
+
+  const params = new URLSearchParams({
+    action: 'send-sms',
+    api_key: ARKESEL_API_KEY,
+    to: phoneNumber,
+    from: ARKESEL_SENDER_ID,
+    sms: String(message),
+    response: 'json',
+  });
+
+  try {
+    const response = await fetch(`https://sms.arkesel.com/sms/api?${params}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = null;
+    }
+
+    const resultCode = String(data?.code || data?.status || '').trim().toLowerCase();
+    const acceptedCode = ['ok', 'success', 'successful', '200', '0000'].includes(resultCode)
+      || data?.status === true
+      || data?.success === true;
+    const rejectedCode = ['error', 'failed', 'failure', 'false'].includes(resultCode);
+    const responseSummary = String(data?.message || data?.response || responseText || '');
+    const positiveMessage = /\b(success|successful|successfully sent|sent successfully)\b/i.test(responseSummary);
+    const rejectedMessage = /\b(error|failed|failure|invalid|insufficient)\b/i.test(responseSummary);
+    if (!response.ok || rejectedCode || rejectedMessage || (!acceptedCode && !positiveMessage)) {
+      return {
+        ok: false,
+        status: response.status,
+        error: response.ok
+          ? 'Arkesel rejected the SMS request.'
+          : `Arkesel SMS request failed with status ${response.status}.`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Unable to send SMS.' };
+  }
+}
+
+function hashPhoneVerificationValue(token, code) {
+  return crypto.createHash('sha256').update(`${token}:${code}`).digest('hex');
+}
+
+function generatePhoneVerificationCode() {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+async function claimArkeselSmsQuota(phone) {
+  const collection = db.collection('arkesel_sms_rate_limits');
+  if (!arkeselSmsRateLimitIndexPromise) {
+    arkeselSmsRateLimitIndexPromise = collection
+      .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+      .catch((error) => {
+        arkeselSmsRateLimitIndexPromise = undefined;
+        throw error;
+      });
+  }
+  await arkeselSmsRateLimitIndexPromise;
+
+  const normalizedPhone = normalizeArkeselPhone(phone);
+  const window = Math.floor(Date.now() / ARKESEL_SMS_RATE_LIMIT_WINDOW_MS);
+  const id = crypto.createHash('sha256').update(`${normalizedPhone}:${window}`).digest('hex');
+  try {
+    await collection.updateOne(
+      { _id: id },
+      {
+        $inc: { count: 1 },
+        $setOnInsert: { expiresAt: new Date((window + 2) * ARKESEL_SMS_RATE_LIMIT_WINDOW_MS) },
+      },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    await collection.updateOne({ _id: id }, { $inc: { count: 1 } });
+  }
+  const rateLimit = await collection.findOne({ _id: id });
+  return Number(rateLimit?.count || 0) <= ARKESEL_SMS_RATE_LIMIT_MAX;
 }
 
 const DEFAULT_NETWORK_SETTINGS = [
@@ -807,6 +921,47 @@ async function createNotification(userId, title, message, type = 'info') {
     time: new Date().toISOString(),
     createdAt: new Date().toISOString(),
   });
+
+  const smsNotificationTypes = new Set(['deposit', 'refund', 'referral']);
+  if (!ARKESEL_API_KEY || !smsNotificationTypes.has(type)) return;
+
+  const user = await getUserById(userId);
+  if (!user?.phoneVerified || !user.phone) return;
+
+  const smsResult = await sendArkeselSms({
+    to: user.phone,
+    message: `${title}: ${message}`.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
+  });
+  if (!smsResult.ok) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_NOTIFICATION_SMS_FAILED',
+      userId,
+      type,
+      error: smsResult.error,
+    }));
+  }
+}
+
+async function sendOrderCompletedSms(order) {
+  if (!order?.id || !order?.userId) return;
+
+  const user = await getUserById(order.userId);
+  if (!user?.phoneVerified || !user.phone) return;
+
+  const message = `Order ${order.id} completed. Thanks For Purchacing with AllenDataHub.`;
+  const smsResult = await sendArkeselSms({
+    to: user.phone,
+    message: message.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
+  });
+
+  if (!smsResult.ok) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_ORDER_COMPLETED_SMS_FAILED',
+      orderId: order.id,
+      userId: order.userId,
+      error: smsResult.error,
+    }));
+  }
 }
 
 async function applyReferralCommission(referredByCode, orderAmount) {
@@ -837,7 +992,16 @@ async function isNetworkEnabled(network) {
 
 function sanitizeUser(user) {
   if (!user) return null;
-  const { password: _password, ...safe } = user;
+  const {
+    password: _password,
+    phoneVerificationPending: _phoneVerificationPending,
+    phoneVerificationTokenHash: _phoneVerificationTokenHash,
+    phoneVerificationCodeHash: _phoneVerificationCodeHash,
+    phoneVerificationExpiresAt: _phoneVerificationExpiresAt,
+    phoneVerificationAttempts: _phoneVerificationAttempts,
+    phoneVerificationLastSentAt: _phoneVerificationLastSentAt,
+    ...safe
+  } = user;
   return safe;
 }
 
@@ -849,6 +1013,42 @@ app.get('/api/health', async (_req, res) => {
   } catch (error) {
     res.status(500).json({ ok: false, message: error.message });
   }
+});
+
+app.post('/api/webhooks/arkesel', async (req, res) => {
+  if (!ARKESEL_WEBHOOK_SECRET) {
+    return res.status(503).json({ ok: false, error: 'ARKESEL_WEBHOOK_SECRET is not configured.' });
+  }
+
+  const timestamp = String(req.headers['x-webhook-timestamp'] || '');
+  const signature = String(req.headers['x-webhook-signature'] || '');
+  const timestampSeconds = Number(timestamp);
+  const timestampMs = timestampSeconds * 1000;
+  if (!/^\d+$/.test(timestamp) || !Number.isSafeInteger(timestampSeconds)
+    || Math.abs(Date.now() - timestampMs) > ARKESEL_WEBHOOK_MAX_AGE_MS) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired webhook timestamp.' });
+  }
+
+  if (!/^[a-f\d]{64}$/i.test(signature) || !Buffer.isBuffer(req.rawBody)) {
+    return res.status(401).json({ ok: false, error: 'Invalid webhook signature.' });
+  }
+
+  const expectedSignature = crypto
+    .createHmac('sha256', ARKESEL_WEBHOOK_SECRET)
+    .update(Buffer.concat([Buffer.from(`${timestamp}.`), req.rawBody]))
+    .digest();
+  const receivedSignature = Buffer.from(signature, 'hex');
+  if (!crypto.timingSafeEqual(expectedSignature, receivedSignature)) {
+    return res.status(401).json({ ok: false, error: 'Invalid webhook signature.' });
+  }
+
+  const event = String(req.body?.event || 'unknown').slice(0, 100);
+  console.info(JSON.stringify({
+    tag: 'ARKESEL_WEBHOOK_RECEIVED',
+    event,
+    receivedAt: new Date().toISOString(),
+  }));
+  return res.json({ ok: true });
 });
 
 app.get('/api/diagnostic', async (_req, res) => {
@@ -887,6 +1087,9 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid credentials.' });
   const validPassword = comparePassword(password, user.password);
   if (!validPassword) return res.status(401).json({ ok: false, error: 'Invalid credentials.' });
+  if (user.phoneVerificationPending && !user.phoneVerified) {
+    return res.status(403).json({ ok: false, error: 'Please verify your phone number before logging in.' });
+  }
   if (!user.emailVerified) {
     return res.status(403).json({ ok: false, error: 'Please verify your email before logging in.' });
   }
@@ -912,6 +1115,12 @@ app.post('/api/auth/register', async (req, res) => {
   if (!fullName || !email || !phone || !password) {
     return res.status(400).json({ ok: false, error: 'Please complete all required fields.' });
   }
+  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
+    return res.status(503).json({ ok: false, error: 'Phone verification is not configured. Please try again later.' });
+  }
+  if (!normalizeArkeselPhone(phone)) {
+    return res.status(400).json({ ok: false, error: 'Enter a valid Ghanaian phone number.' });
+  }
 
   const existing = await db.collection('users').findOne({
     $or: [
@@ -924,19 +1133,32 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   const nextReferral = `${fullName.split(' ').map((p) => p[0]).join('').slice(0, 4).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`;
-
   let referredBy = payload.referredBy?.trim() || undefined;
+  let referrer;
   if (referredBy) {
-    const referrer = await db.collection('users').findOne({
+    referrer = await db.collection('users').findOne({
       referralCode: { $regex: `^${String(referredBy).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
     });
     if (referrer) {
       referredBy = referrer.referralCode;
-      await db.collection('users').updateOne({ id: referrer.id }, { $inc: { totalReferrals: 1 } });
-      await createNotification(referrer.id, 'New referral', `${fullName} signed up using your referral code.`, 'referral');
     } else {
       referredBy = undefined;
     }
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const verificationCode = generatePhoneVerificationCode();
+  const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+  if (!(await claimArkeselSmsQuota(phone))) {
+    return res.status(429).json({ ok: false, error: 'Too many verification messages were sent to this number. Try again later.' });
+  }
+  const smsResult = await sendArkeselSms({
+    to: phone,
+    message: `Your AllenDataHub verification code is ${verificationCode}. It expires in 15 minutes.`,
+  });
+  if (!smsResult.ok) {
+    console.error(JSON.stringify({ tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED', error: smsResult.error }));
+    return res.status(502).json({ ok: false, error: 'Unable to send a verification code. Please check your number and try again.' });
   }
 
   const newUser = {
@@ -953,6 +1175,12 @@ app.post('/api/auth/register', async (req, res) => {
     status: 'approved',
     emailVerified: true,
     phoneVerified: false,
+    phoneVerificationPending: true,
+    phoneVerificationTokenHash: verificationTokenHash,
+    phoneVerificationCodeHash: hashPhoneVerificationValue(verificationToken, verificationCode),
+    phoneVerificationExpiresAt: new Date(Date.now() + PHONE_VERIFICATION_TTL_MS),
+    phoneVerificationAttempts: 0,
+    phoneVerificationLastSentAt: new Date(),
     walletBalance: 0,
     commissionEarned: 0,
     referralCode: nextReferral,
@@ -964,10 +1192,136 @@ app.post('/api/auth/register', async (req, res) => {
 
   await db.collection('users').insertOne(newUser);
 
+  if (referrer) {
+    await db.collection('users').updateOne({ id: referrer.id }, { $inc: { totalReferrals: 1 } });
+    await createNotification(referrer.id, 'New referral', `${fullName} signed up using your referral code.`, 'referral');
+  }
+
   return res.status(201).json({
     ok: true,
-    user: sanitizeUser(newUser),
+    verificationToken,
+    message: 'A verification code has been sent to your phone.',
   });
+});
+
+app.post('/api/auth/verify-phone', async (req, res) => {
+  if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
+  const token = String(req.body?.verificationToken || '').trim();
+  const code = String(req.body?.code || '').trim();
+  if (!token || !/^\d{6}$/.test(code)) {
+    return res.status(400).json({ ok: false, error: 'A valid verification token and 6-digit code are required.' });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const pendingUser = await db.collection('users').findOne({
+    phoneVerificationTokenHash: tokenHash,
+    phoneVerificationPending: true,
+    phoneVerificationExpiresAt: { $gt: new Date() },
+    phoneVerificationAttempts: { $lt: PHONE_VERIFICATION_MAX_ATTEMPTS },
+  });
+  if (!pendingUser) {
+    return res.status(400).json({ ok: false, error: 'This verification code has expired or can no longer be used. Request a new code.' });
+  }
+
+  const submittedHash = hashPhoneVerificationValue(token, code);
+  const codeMatches = submittedHash.length === pendingUser.phoneVerificationCodeHash.length
+    && crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(pendingUser.phoneVerificationCodeHash));
+  if (!codeMatches) {
+    await db.collection('users').updateOne(
+      { id: pendingUser.id, phoneVerificationAttempts: { $lt: PHONE_VERIFICATION_MAX_ATTEMPTS } },
+      { $inc: { phoneVerificationAttempts: 1 } },
+    );
+    return res.status(400).json({ ok: false, error: 'The verification code is incorrect.' });
+  }
+
+  const result = await db.collection('users').findOneAndUpdate(
+    {
+      id: pendingUser.id,
+      phoneVerificationTokenHash: tokenHash,
+      phoneVerificationCodeHash: submittedHash,
+      phoneVerificationExpiresAt: { $gt: new Date() },
+      phoneVerificationAttempts: { $lt: PHONE_VERIFICATION_MAX_ATTEMPTS },
+    },
+    {
+      $set: { phoneVerified: true },
+      $unset: {
+        phoneVerificationPending: '',
+        phoneVerificationTokenHash: '',
+        phoneVerificationCodeHash: '',
+        phoneVerificationExpiresAt: '',
+        phoneVerificationAttempts: '',
+        phoneVerificationLastSentAt: '',
+      },
+    },
+    { returnDocument: 'after' },
+  );
+  const verifiedUser = result?.value ?? result ?? null;
+  if (!verifiedUser) {
+    return res.status(400).json({ ok: false, error: 'This verification code has expired or can no longer be used. Request a new code.' });
+  }
+  return res.json({ ok: true, user: sanitizeUser(verifiedUser) });
+});
+
+app.post('/api/auth/resend-phone-verification', async (req, res) => {
+  if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
+  const token = String(req.body?.verificationToken || '').trim();
+  if (!token) return res.status(400).json({ ok: false, error: 'Verification token is required.' });
+  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
+    return res.status(503).json({ ok: false, error: 'Phone verification is not configured. Please try again later.' });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const user = await db.collection('users').findOne({
+    phoneVerificationTokenHash: tokenHash,
+    phoneVerificationPending: true,
+  });
+  if (!user) return res.status(404).json({ ok: false, error: 'Phone verification session was not found. Please register again.' });
+
+  const lastSentAt = new Date(user.phoneVerificationLastSentAt || 0).getTime();
+  const waitMs = lastSentAt + PHONE_VERIFICATION_RESEND_COOLDOWN_MS - Date.now();
+  if (waitMs > 0) {
+    return res.status(429).json({ ok: false, error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another code.` });
+  }
+
+  if (!(await claimArkeselSmsQuota(user.phone))) {
+    return res.status(429).json({ ok: false, error: 'Too many verification messages were sent to this number. Try again later.' });
+  }
+
+  const sentAt = new Date();
+  const cooldownClaim = await db.collection('users').updateOne(
+    {
+      id: user.id,
+      phoneVerificationTokenHash: tokenHash,
+      phoneVerificationPending: true,
+      phoneVerificationLastSentAt: { $lte: new Date(Date.now() - PHONE_VERIFICATION_RESEND_COOLDOWN_MS) },
+    },
+    { $set: { phoneVerificationLastSentAt: sentAt } },
+  );
+  if (cooldownClaim.modifiedCount !== 1) {
+    return res.status(429).json({ ok: false, error: 'A verification code was just requested. Please wait before trying again.' });
+  }
+
+  const verificationCode = generatePhoneVerificationCode();
+  const smsResult = await sendArkeselSms({
+    to: user.phone,
+    message: `Your AllenDataHub verification code is ${verificationCode}. It expires in 15 minutes.`,
+  });
+  if (!smsResult.ok) {
+    console.error(JSON.stringify({ tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED', userId: user.id, error: smsResult.error }));
+    return res.status(502).json({ ok: false, error: 'Unable to send a verification code. Please try again later.' });
+  }
+
+  await db.collection('users').updateOne(
+    { id: user.id, phoneVerificationTokenHash: tokenHash, phoneVerificationPending: true },
+    {
+      $set: {
+        phoneVerificationCodeHash: hashPhoneVerificationValue(token, verificationCode),
+        phoneVerificationExpiresAt: new Date(Date.now() + PHONE_VERIFICATION_TTL_MS),
+        phoneVerificationAttempts: 0,
+      },
+    },
+  );
+  return res.json({ ok: true, message: 'A new verification code has been sent.' });
 });
 
 app.post('/api/auth/verify-email', async (req, res) => {
@@ -1070,6 +1424,11 @@ app.put('/api/users/:id', requireUser, async (req, res) => {
   for (const key of allowed) {
     if (req.body?.[key] !== undefined) patch[key] = req.body[key];
   }
+
+  const targetUser = req.user.id === id ? req.user : await getUserById(id);
+  const phoneChanged = patch.phone !== undefined
+    && String(patch.phone).trim() !== String(targetUser?.phone || '').trim();
+  if (phoneChanged) patch.phoneVerified = false;
 
   const result = await db.collection('users').findOneAndUpdate(
     { id },
@@ -2425,19 +2784,23 @@ app.post('/api/webhooks/hubnet', async (req, res) => {
       if (existing && terminalStatuses.includes(existing.status) && nextStatus !== 'Completed') {
         return res.json({ ok: true, ignored: true, reason: 'Order already has a terminal status.', received: { event, orderId, reference, status: nextStatus }, platform: 'Hubnet' });
       }
-      await db.collection('orders').updateOne(
-        { $or: identifiers },
-        {
-          $set: {
-            status: nextStatus,
-            vendorStatus: status,
-            event,
-            vendorUpdatedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
+      const update = {
+        $set: {
+          status: nextStatus,
+          vendorStatus: status,
+          event,
+          vendorUpdatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         },
-        { upsert: false }
-      );
+      };
+      await db.collection('orders').updateOne({ $or: identifiers }, update, { upsert: false });
+
+      if (nextStatus === 'Completed') {
+        const updatedOrder = await db.collection('orders').findOne({ $or: identifiers });
+        if (updatedOrder) {
+          await sendOrderCompletedSms(updatedOrder);
+        }
+      }
     }
   }
 
