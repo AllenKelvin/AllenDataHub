@@ -89,12 +89,20 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [verificationCodeHint, setVerificationCodeHint] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationToken, setVerificationToken] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("allendatahub-phone-verification") || ""
   );
   const [loading, setLoading] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = window.setInterval(() => {
+      setResendCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCountdown]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,11 +130,7 @@ export default function RegisterPage() {
     }
     localStorage.setItem("allendatahub-phone-verification", result.verificationToken);
     setVerificationToken(result.verificationToken);
-    if (result.verificationCode) {
-      setVerificationCodeHint(result.verificationCode);
-      setNotice(`Demo verification mode: use code ${result.verificationCode} to continue.`);
-      return;
-    }
+    setResendCountdown(90);
     setNotice("A 6-digit verification code has been sent to your phone.");
   };
 
@@ -156,11 +160,7 @@ export default function RegisterPage() {
       setError(result.error || "Unable to resend the verification code.");
       return;
     }
-    if (result.verificationCode) {
-      setVerificationCodeHint(result.verificationCode);
-      setNotice(`Demo verification mode: use code ${result.verificationCode} to continue.`);
-      return;
-    }
+    setResendCountdown(90);
     setNotice(result.message || "A new verification code has been sent.");
   };
 
@@ -189,11 +189,6 @@ export default function RegisterPage() {
                   />
                 </div>
                 {notice && <p className="text-sm text-emerald-600">{notice}</p>}
-                {verificationCodeHint && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Demo code: <span className="font-semibold tracking-[0.3em] text-slate-900 dark:text-slate-200">{verificationCodeHint}</span>
-                  </p>
-                )}
                 {error && <p className="text-sm text-rose-600">{error}</p>}
                 <Button
                   type="submit"
@@ -206,10 +201,10 @@ export default function RegisterPage() {
               <button
                 type="button"
                 onClick={() => void onResendCode()}
-                disabled={loading}
+                disabled={loading || resendCountdown > 0}
                 className="mt-4 w-full text-sm font-semibold text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"
               >
-                Resend verification code
+                {resendCountdown > 0 ? `Resend verification code in ${Math.ceil(resendCountdown / 60)}:${String(resendCountdown % 60).padStart(2, "0")}` : "Resend verification code"}
               </button>
             </>
           ) : (

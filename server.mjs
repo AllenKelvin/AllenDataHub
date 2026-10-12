@@ -63,12 +63,11 @@ const HUBNET_BACKEND_URL = process.env.BACKEND_URL || process.env.PUBLIC_BACKEND
 const HUBNET_REQUEST_TIMEOUT_MS = 30_000;
 const REFERRAL_COMMISSION_RATE = 0.01;
 const PHONE_VERIFICATION_TTL_MS = 15 * 60 * 1000;
-const PHONE_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+const PHONE_VERIFICATION_RESEND_COOLDOWN_MS = 90 * 1000;
 const PHONE_VERIFICATION_MAX_ATTEMPTS = 5;
 const ARKESEL_SMS_MAX_LENGTH_CHARS = 306;
 const ARKESEL_SMS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const ARKESEL_SMS_RATE_LIMIT_MAX = 3;
-const ALLOW_SMS_FALLBACK = String(process.env.ALLOW_SMS_FALLBACK ?? 'true').toLowerCase() !== 'false';
 let arkeselSmsRateLimitIndexPromise;
 
 app.use(cors());
@@ -218,49 +217,35 @@ function generatePhoneVerificationCode() {
 
 async function dispatchPhoneVerificationCode({ phone, verificationCode, verificationToken, userId, mode = 'signup' }) {
   const hasSmsConfig = Boolean(ARKESEL_API_KEY && ARKESEL_SENDER_ID);
-  if (hasSmsConfig) {
-    if (!(await claimArkeselSmsQuota(phone))) {
-      return { ok: false, status: 429, error: 'Too many verification messages were sent to this number. Try again later.' };
-    }
-
-    const smsResult = await sendArkeselSms({
-      to: phone,
-      message: buildPhoneVerificationMessage(verificationCode),
-    });
-    if (!smsResult.ok) {
-      console.error(JSON.stringify({
-        tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED',
-        userId,
-        mode,
-        error: smsResult.error,
-        detail: smsResult.detail || null,
-      }));
-
-      if (ALLOW_SMS_FALLBACK) {
-        return {
-          ok: true,
-          isDemo: true,
-          demoCode: verificationCode,
-          message: `SMS delivery failed, so this environment is using demo verification mode. Use code ${verificationCode} to continue.`,
-        };
-      }
-
-      return {
-        ok: false,
-        status: 502,
-        error: 'Unable to send a verification code. Please check your number and try again.',
-        detail: smsResult.detail || undefined,
-      };
-    }
-
-    return { ok: true, isDemo: false };
+  if (!hasSmsConfig) {
+    return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
   }
 
-  if (ALLOW_SMS_FALLBACK) {
-    return { ok: true, isDemo: true, demoCode: verificationCode, message: `Demo verification mode: use ${verificationCode} to complete phone verification.` };
+  if (!(await claimArkeselSmsQuota(phone))) {
+    return { ok: false, status: 429, error: 'Too many verification messages were sent to this number. Try again later.' };
   }
 
-  return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
+  const smsResult = await sendArkeselSms({
+    to: phone,
+    message: buildPhoneVerificationMessage(verificationCode),
+  });
+  if (!smsResult.ok) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED',
+      userId,
+      mode,
+      error: smsResult.error,
+      detail: smsResult.detail || null,
+    }));
+    return {
+      ok: false,
+      status: 502,
+      error: 'Unable to send a verification code. Please check your number and try again.',
+      detail: smsResult.detail || undefined,
+    };
+  }
+
+  return { ok: true, isDemo: false };
 }
 
 async function claimArkeselSmsQuota(phone) {
