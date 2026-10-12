@@ -2,9 +2,45 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MongoClient, ObjectId } from 'mongodb';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function loadRuntimeEnv() {
+  const candidateDirs = new Set([
+    process.cwd(),
+    __dirname,
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname, '..', '..'),
+  ]);
+
+  const envFiles = Array.from(candidateDirs)
+    .map((dir) => path.join(dir, '.env'))
+    .filter((filePath, index, list) => filePath && list.indexOf(filePath) === index)
+    .filter((filePath) => fs.existsSync(filePath));
+
+  for (const envFile of envFiles) {
+    dotenv.config({ path: envFile, override: false });
+  }
+
+  if (!process.env.ARKESEL_API_KEY && process.env.VITE_ARKESEL_API_KEY) {
+    process.env.ARKESEL_API_KEY = process.env.VITE_ARKESEL_API_KEY;
+  }
+  if (!process.env.ARKESEL_SENDER_ID && process.env.VITE_ARKESEL_SENDER_ID) {
+    process.env.ARKESEL_SENDER_ID = process.env.VITE_ARKESEL_SENDER_ID;
+  }
+  if (!process.env.ARKESEL_WEBHOOK_SECRET && process.env.VITE_ARKESEL_WEBHOOK_SECRET) {
+    process.env.ARKESEL_WEBHOOK_SECRET = process.env.VITE_ARKESEL_WEBHOOK_SECRET;
+  }
+}
+
+loadRuntimeEnv();
+
+dotenv.config({ override: false });
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -2845,6 +2881,14 @@ app.post('/api/webhooks/hubnet', async (req, res) => {
 await startMongo();
 
 console.log(`\n🚀 AllenDataHub API Server`);
+console.log(JSON.stringify({
+  tag: 'ARKESEL_ENV_STATUS',
+  hasApiKey: Boolean(ARKESEL_API_KEY),
+  hasSenderId: Boolean(ARKESEL_SENDER_ID),
+  hasWebhookSecret: Boolean(ARKESEL_WEBHOOK_SECRET),
+  senderId: ARKESEL_SENDER_ID || null,
+  countryCode: ARKESEL_COUNTRY_CODE,
+}));
 app.listen(port, '0.0.0.0', () => {
   console.log(`📡 Server listening on 0.0.0.0:${port}`);
   console.log(`🏠 Database name: ${mongoDbName}\n`);
