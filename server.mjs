@@ -949,7 +949,11 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
 
   const notificationMessage = `GHS ${amountValue.toFixed(2)} added to your wallet.`;
   await createNotification(user.id, 'Wallet credited', notificationMessage, 'deposit', { sendSms: false });
-  await sendNotificationSms(user.id, 'Wallet credited', notificationMessage, { source, reference });
+  await sendNotificationSms(
+    user.id,
+    `You have successfully deposited GHS ${amountValue.toFixed(2)} to AllenDataHub. Your wallet balance is GHS ${balAfter.toFixed(2)}.`,
+    { source, reference },
+  );
 
   return {
     ok: true,
@@ -1034,11 +1038,11 @@ async function createNotification(userId, title, message, type = 'info', { sendS
 
   const smsNotificationTypes = new Set(['deposit', 'refund', 'referral']);
   if (sendSms && smsNotificationTypes.has(type)) {
-    await sendNotificationSms(userId, title, message, { type });
+    await sendNotificationSms(userId, `${title}: ${message}`, { type });
   }
 }
 
-async function sendNotificationSms(userId, title, message, context = {}) {
+async function sendNotificationSms(userId, message, context = {}) {
   if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
     console.error(JSON.stringify({
       tag: 'ARKESEL_NOTIFICATION_SMS_SKIPPED',
@@ -1063,7 +1067,7 @@ async function sendNotificationSms(userId, title, message, context = {}) {
 
   const smsResult = await sendArkeselSms({
     to: user.phone,
-    message: `${title}: ${message}`.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
+    message: message.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
   });
   if (!smsResult.ok) {
     console.error(JSON.stringify({
@@ -1085,23 +1089,66 @@ async function sendNotificationSms(userId, title, message, context = {}) {
 async function sendOrderCompletedSms(order) {
   if (!order?.id || !order?.userId) return;
 
-  const user = await getUserById(order.userId);
-  if (!user?.phoneVerified || !user.phone) return;
+  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_ORDER_COMPLETED_SMS_SKIPPED',
+      orderId: order.id,
+      userId: order.userId,
+      reason: 'sms_configuration_missing',
+      hasApiKey: Boolean(ARKESEL_API_KEY),
+      hasSenderId: Boolean(ARKESEL_SENDER_ID),
+    }));
+    return;
+  }
 
-  const message = `Order ${order.id} completed. Thanks For Purchacing with AllenDataHub.`;
+  const user = await getUserById(order.userId);
+  if (!user?.phoneVerified || !user.phone) {
+    console.warn(JSON.stringify({
+      tag: 'ARKESEL_ORDER_COMPLETED_SMS_SKIPPED',
+      orderId: order.id,
+      userId: order.userId,
+      reason: !user ? 'user_not_found' : !user.phoneVerified ? 'phone_not_verified' : 'phone_missing',
+    }));
+    return;
+  }
+
+  const claim = await db.collection('orders').updateOne(
+    { id: order.id, completionSmsSentAt: { $exists: false }, completionSmsSending: { $ne: true } },
+    { $set: { completionSmsSending: true } },
+  );
+  if (claim.modifiedCount === 0) return;
+
+  const orderDescription = [order.size, order.network, order.recipient].filter(Boolean).join(' ');
+  const message = `Your order${orderDescription ? ` (${orderDescription})` : ''} has been completed. Thank you for choosing AllenDataHub.`;
   const smsResult = await sendArkeselSms({
     to: user.phone,
     message: message.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
   });
 
   if (!smsResult.ok) {
+    await db.collection('orders').updateOne(
+      { id: order.id, completionSmsSending: true },
+      { $unset: { completionSmsSending: '' } },
+    );
     console.error(JSON.stringify({
       tag: 'ARKESEL_ORDER_COMPLETED_SMS_FAILED',
       orderId: order.id,
       userId: order.userId,
       error: smsResult.error,
+      detail: smsResult.detail || null,
     }));
+    return;
   }
+
+  await db.collection('orders').updateOne(
+    { id: order.id, completionSmsSending: true },
+    { $set: { completionSmsSentAt: new Date().toISOString() }, $unset: { completionSmsSending: '' } },
+  );
+  console.log(JSON.stringify({
+    tag: 'ARKESEL_ORDER_COMPLETED_SMS_SENT',
+    orderId: order.id,
+    userId: order.userId,
+  }));
 }
 
 async function applyReferralCommission(referredByCode, orderAmount) {
@@ -2584,6 +2631,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     return res.json({ ok: true, alreadyCredited: true, balBefore: deposit.balBefore, balAfter: user.walletBalance, deposit });
   }
 
+  let verifiedPayment;
   let verified = false;
   if (PAYSTACK_SECRET) {
     try {
@@ -2592,6 +2640,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
       });
       const data = await verifyRes.json();
       verified = data.status && data.data?.status === 'success';
+      verifiedPayment = data.data;
     } catch {
       verified = false;
     }
@@ -2601,7 +2650,46 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  res.json({ ok: true, verified: true, pending: false, reference, deposit, message: 'Payment verified. Wallet credit is handled by the Paystack webhook.' });
+  const expectedTotalPay = Number(deposit.totalPay ?? deposit.amount);
+  const expectedAmountPesewas = Math.round(expectedTotalPay * 100);
+  if (
+    verifiedPayment?.reference !== reference
+    || verifiedPayment?.currency !== 'GHS'
+    || !Number.isFinite(expectedAmountPesewas)
+    || Number(verifiedPayment?.amount) !== expectedAmountPesewas
+  ) {
+    return res.status(400).json({ ok: false, error: 'Verified payment does not match this wallet deposit.' });
+  }
+
+  const creditResult = await creditWalletForPaystackSuccess({
+    userId: req.user.id,
+    amount: Number(deposit.amount),
+    reference,
+    source: 'paystack_verification',
+    metadata: {
+      project: 'ALLENDATAHUB',
+      event: 'charge.success',
+      amountPesewas: Number(verifiedPayment.amount),
+      verifiedByApi: true,
+    },
+  });
+  if (!creditResult.ok) {
+    if (creditResult.pending) {
+      return res.status(202).json({ ok: true, pending: true, reference, deposit });
+    }
+    return res.status(400).json({ ok: false, error: creditResult.error || 'Unable to credit wallet.' });
+  }
+
+  return res.json({
+    ok: true,
+    verified: true,
+    pending: false,
+    alreadyProcessed: Boolean(creditResult.alreadyProcessed),
+    reference,
+    deposit: creditResult.deposit || deposit,
+    walletBalance: creditResult.balAfter,
+    message: 'Payment verified and wallet credited.',
+  });
 });
 
 app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
@@ -2615,6 +2703,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
     return res.json({ ok: true, alreadyProcessed: true, reference, deposit, message: 'Wallet credit was processed by the Paystack webhook.' });
   }
 
+  let verifiedPayment;
   let verified = false;
   if (PAYSTACK_SECRET) {
     try {
@@ -2623,6 +2712,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
       });
       const data = await verifyRes.json();
       verified = data.status && data.data?.status === 'success';
+      verifiedPayment = data.data;
     } catch {
       verified = false;
     }
@@ -2632,7 +2722,46 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
     return res.status(202).json({ ok: true, pending: true, reference, deposit });
   }
 
-  res.json({ ok: true, verified: true, pending: false, reference, deposit, message: 'Payment verified. Wallet credit is handled by the Paystack webhook.' });
+  const expectedTotalPay = Number(deposit.totalPay ?? deposit.amount);
+  const expectedAmountPesewas = Math.round(expectedTotalPay * 100);
+  if (
+    verifiedPayment?.reference !== reference
+    || verifiedPayment?.currency !== 'GHS'
+    || !Number.isFinite(expectedAmountPesewas)
+    || Number(verifiedPayment?.amount) !== expectedAmountPesewas
+  ) {
+    return res.status(400).json({ ok: false, error: 'Verified payment does not match this wallet deposit.' });
+  }
+
+  const creditResult = await creditWalletForPaystackSuccess({
+    userId: req.user.id,
+    amount: Number(deposit.amount),
+    reference,
+    source: 'paystack_verification',
+    metadata: {
+      project: 'ALLENDATAHUB',
+      event: 'charge.success',
+      amountPesewas: Number(verifiedPayment.amount),
+      verifiedByApi: true,
+    },
+  });
+  if (!creditResult.ok) {
+    if (creditResult.pending) {
+      return res.status(202).json({ ok: true, pending: true, reference, deposit });
+    }
+    return res.status(400).json({ ok: false, error: creditResult.error || 'Unable to credit wallet.' });
+  }
+
+  return res.json({
+    ok: true,
+    verified: true,
+    pending: false,
+    alreadyProcessed: Boolean(creditResult.alreadyProcessed),
+    reference,
+    deposit: creditResult.deposit || deposit,
+    walletBalance: creditResult.balAfter,
+    message: 'Payment verified and wallet credited.',
+  });
 });
 
 // ─── Refunds & Notifications ────────────────────────────────────────────────
