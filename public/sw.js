@@ -1,4 +1,4 @@
-const CACHE_NAME = "allendatahub-shell-v2";
+const CACHE_NAME = `allendatahub-shell-${Date.now()}`;
 const APP_SHELL = ["/", "/index.html", "/favicon.jpg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

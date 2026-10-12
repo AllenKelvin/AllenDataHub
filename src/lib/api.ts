@@ -1,5 +1,10 @@
 export function getApiBase(): string {
-  return (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL) || "https://allendatahub.onrender.com";
+  const envBase =
+    (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_BACKEND_URL)) ||
+    (typeof window !== "undefined" && (window as typeof window & { __APP_API_BASE__?: string }).__APP_API_BASE__) ||
+    "https://allendatahub.onrender.com";
+
+  return String(envBase).replace(/\/$/, "");
 }
 
 export function authHeaders(userId?: string | null, extra: Record<string, string> = {}): HeadersInit {

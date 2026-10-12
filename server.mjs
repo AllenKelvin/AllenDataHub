@@ -947,7 +947,9 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
     await db.collection('deposits').insertOne(depositRecord);
   }
 
-  await createNotification(user.id, 'Wallet credited', `GHS ${amountValue.toFixed(2)} added to your wallet.`, 'deposit');
+  const notificationMessage = `GHS ${amountValue.toFixed(2)} added to your wallet.`;
+  await createNotification(user.id, 'Wallet credited', notificationMessage, 'deposit', { sendSms: false });
+  await sendNotificationSms(user.id, 'Wallet credited', notificationMessage, { source, reference });
 
   return {
     ok: true,
@@ -1017,7 +1019,7 @@ async function requireAgent(req, res, next) {
   });
 }
 
-async function createNotification(userId, title, message, type = 'info') {
+async function createNotification(userId, title, message, type = 'info', { sendSms = true } = {}) {
   if (!db) return;
   await db.collection('notifications').insertOne({
     id: makeId('ntf'),
@@ -1031,10 +1033,33 @@ async function createNotification(userId, title, message, type = 'info') {
   });
 
   const smsNotificationTypes = new Set(['deposit', 'refund', 'referral']);
-  if (!ARKESEL_API_KEY || !smsNotificationTypes.has(type)) return;
+  if (sendSms && smsNotificationTypes.has(type)) {
+    await sendNotificationSms(userId, title, message, { type });
+  }
+}
 
+async function sendNotificationSms(userId, title, message, context = {}) {
+  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_NOTIFICATION_SMS_SKIPPED',
+      userId,
+      ...context,
+      reason: 'sms_configuration_missing',
+      hasApiKey: Boolean(ARKESEL_API_KEY),
+      hasSenderId: Boolean(ARKESEL_SENDER_ID),
+    }));
+    return;
+  }
   const user = await getUserById(userId);
-  if (!user?.phoneVerified || !user.phone) return;
+  if (!user?.phoneVerified || !user.phone) {
+    console.warn(JSON.stringify({
+      tag: 'ARKESEL_NOTIFICATION_SMS_SKIPPED',
+      userId,
+      ...context,
+      reason: !user ? 'user_not_found' : !user.phoneVerified ? 'phone_not_verified' : 'phone_missing',
+    }));
+    return;
+  }
 
   const smsResult = await sendArkeselSms({
     to: user.phone,
@@ -1044,10 +1069,17 @@ async function createNotification(userId, title, message, type = 'info') {
     console.error(JSON.stringify({
       tag: 'ARKESEL_NOTIFICATION_SMS_FAILED',
       userId,
-      type,
+      ...context,
       error: smsResult.error,
+      detail: smsResult.detail || null,
     }));
+    return;
   }
+  console.log(JSON.stringify({
+    tag: 'ARKESEL_NOTIFICATION_SMS_SENT',
+    userId,
+    ...context,
+  }));
 }
 
 async function sendOrderCompletedSms(order) {
