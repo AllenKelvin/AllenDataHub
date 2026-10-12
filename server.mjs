@@ -159,8 +159,43 @@ function hashPhoneVerificationValue(token, code) {
   return crypto.createHash('sha256').update(`${token}:${code}`).digest('hex');
 }
 
+function buildPhoneVerificationMessage(code) {
+  return `Your AllenDataHub verification code is ${code}. It expires in 15 minutes.`;
+}
+
 function generatePhoneVerificationCode() {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+async function dispatchPhoneVerificationCode({ phone, verificationCode, verificationToken, userId, mode = 'signup' }) {
+  const hasSmsConfig = Boolean(ARKESEL_API_KEY && ARKESEL_SENDER_ID);
+  if (hasSmsConfig) {
+    if (!(await claimArkeselSmsQuota(phone))) {
+      return { ok: false, status: 429, error: 'Too many verification messages were sent to this number. Try again later.' };
+    }
+
+    const smsResult = await sendArkeselSms({
+      to: phone,
+      message: buildPhoneVerificationMessage(verificationCode),
+    });
+    if (!smsResult.ok) {
+      console.error(JSON.stringify({
+        tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED',
+        userId,
+        mode,
+        error: smsResult.error,
+      }));
+      return { ok: false, status: 502, error: 'Unable to send a verification code. Please check your number and try again.' };
+    }
+
+    return { ok: true, isDemo: false };
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
+  }
+
+  return { ok: true, isDemo: true, demoCode: verificationCode, message: `Demo verification mode: use ${verificationCode} to complete phone verification.` };
 }
 
 async function claimArkeselSmsQuota(phone) {
@@ -1115,9 +1150,6 @@ app.post('/api/auth/register', async (req, res) => {
   if (!fullName || !email || !phone || !password) {
     return res.status(400).json({ ok: false, error: 'Please complete all required fields.' });
   }
-  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
-    return res.status(503).json({ ok: false, error: 'Phone verification is not configured. Please try again later.' });
-  }
   if (!normalizeArkeselPhone(phone)) {
     return res.status(400).json({ ok: false, error: 'Enter a valid Ghanaian phone number.' });
   }
@@ -1149,16 +1181,15 @@ app.post('/api/auth/register', async (req, res) => {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   const verificationCode = generatePhoneVerificationCode();
   const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
-  if (!(await claimArkeselSmsQuota(phone))) {
-    return res.status(429).json({ ok: false, error: 'Too many verification messages were sent to this number. Try again later.' });
-  }
-  const smsResult = await sendArkeselSms({
-    to: phone,
-    message: `Your AllenDataHub verification code is ${verificationCode}. It expires in 15 minutes.`,
+  const dispatchResult = await dispatchPhoneVerificationCode({
+    phone,
+    verificationCode,
+    verificationToken,
+    userId: null,
+    mode: 'signup',
   });
-  if (!smsResult.ok) {
-    console.error(JSON.stringify({ tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED', error: smsResult.error }));
-    return res.status(502).json({ ok: false, error: 'Unable to send a verification code. Please check your number and try again.' });
+  if (!dispatchResult.ok) {
+    return res.status(dispatchResult.status || 503).json({ ok: false, error: dispatchResult.error });
   }
 
   const newUser = {
@@ -1200,7 +1231,10 @@ app.post('/api/auth/register', async (req, res) => {
   return res.status(201).json({
     ok: true,
     verificationToken,
-    message: 'A verification code has been sent to your phone.',
+    verificationCode: dispatchResult.isDemo ? verificationCode : undefined,
+    message: dispatchResult.isDemo
+      ? `Demo verification mode: use ${verificationCode} to verify your phone.`
+      : 'A verification code has been sent to your phone.',
   });
 });
 
@@ -1266,9 +1300,6 @@ app.post('/api/auth/resend-phone-verification', async (req, res) => {
   if (!db) return res.status(503).json({ ok: false, error: 'MongoDB not connected' });
   const token = String(req.body?.verificationToken || '').trim();
   if (!token) return res.status(400).json({ ok: false, error: 'Verification token is required.' });
-  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
-    return res.status(503).json({ ok: false, error: 'Phone verification is not configured. Please try again later.' });
-  }
 
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const user = await db.collection('users').findOne({
@@ -1281,10 +1312,6 @@ app.post('/api/auth/resend-phone-verification', async (req, res) => {
   const waitMs = lastSentAt + PHONE_VERIFICATION_RESEND_COOLDOWN_MS - Date.now();
   if (waitMs > 0) {
     return res.status(429).json({ ok: false, error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another code.` });
-  }
-
-  if (!(await claimArkeselSmsQuota(user.phone))) {
-    return res.status(429).json({ ok: false, error: 'Too many verification messages were sent to this number. Try again later.' });
   }
 
   const sentAt = new Date();
@@ -1302,13 +1329,15 @@ app.post('/api/auth/resend-phone-verification', async (req, res) => {
   }
 
   const verificationCode = generatePhoneVerificationCode();
-  const smsResult = await sendArkeselSms({
-    to: user.phone,
-    message: `Your AllenDataHub verification code is ${verificationCode}. It expires in 15 minutes.`,
+  const dispatchResult = await dispatchPhoneVerificationCode({
+    phone: user.phone,
+    verificationCode,
+    verificationToken: token,
+    userId: user.id,
+    mode: 'resend',
   });
-  if (!smsResult.ok) {
-    console.error(JSON.stringify({ tag: 'ARKESEL_PHONE_VERIFICATION_SMS_FAILED', userId: user.id, error: smsResult.error }));
-    return res.status(502).json({ ok: false, error: 'Unable to send a verification code. Please try again later.' });
+  if (!dispatchResult.ok) {
+    return res.status(dispatchResult.status || 503).json({ ok: false, error: dispatchResult.error });
   }
 
   await db.collection('users').updateOne(
@@ -1321,7 +1350,13 @@ app.post('/api/auth/resend-phone-verification', async (req, res) => {
       },
     },
   );
-  return res.json({ ok: true, message: 'A new verification code has been sent.' });
+  return res.json({
+    ok: true,
+    message: dispatchResult.isDemo
+      ? `Demo verification mode: use ${verificationCode} to verify your phone.`
+      : 'A new verification code has been sent.',
+    verificationCode: dispatchResult.isDemo ? verificationCode : undefined,
+  });
 });
 
 app.post('/api/auth/verify-email', async (req, res) => {

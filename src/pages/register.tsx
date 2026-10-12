@@ -89,6 +89,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [verificationCodeHint, setVerificationCodeHint] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationToken, setVerificationToken] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("allendatahub-phone-verification") || ""
@@ -121,6 +122,11 @@ export default function RegisterPage() {
     }
     localStorage.setItem("allendatahub-phone-verification", result.verificationToken);
     setVerificationToken(result.verificationToken);
+    if (result.verificationCode) {
+      setVerificationCodeHint(result.verificationCode);
+      setNotice(`Demo verification mode: use code ${result.verificationCode} to continue.`);
+      return;
+    }
     setNotice("A 6-digit verification code has been sent to your phone.");
   };
 
@@ -148,6 +154,11 @@ export default function RegisterPage() {
     setLoading(false);
     if (!result.ok) {
       setError(result.error || "Unable to resend the verification code.");
+      return;
+    }
+    if (result.verificationCode) {
+      setVerificationCodeHint(result.verificationCode);
+      setNotice(`Demo verification mode: use code ${result.verificationCode} to continue.`);
       return;
     }
     setNotice(result.message || "A new verification code has been sent.");
@@ -178,6 +189,11 @@ export default function RegisterPage() {
                   />
                 </div>
                 {notice && <p className="text-sm text-emerald-600">{notice}</p>}
+                {verificationCodeHint && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Demo code: <span className="font-semibold tracking-[0.3em] text-slate-900 dark:text-slate-200">{verificationCodeHint}</span>
+                  </p>
+                )}
                 {error && <p className="text-sm text-rose-600">{error}</p>}
                 <Button
                   type="submit"
