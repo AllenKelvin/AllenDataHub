@@ -880,6 +880,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
 
   const existing = await db.collection('deposits').findOne({ reference });
   if (existing?.status === 'Credited' || existing?.status === 'Completed') {
+    await sendPaystackDepositSms(existing);
     return {
       ok: true,
       alreadyProcessed: true,
@@ -949,11 +950,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
 
   const notificationMessage = `GHS ${amountValue.toFixed(2)} added to your wallet.`;
   await createNotification(user.id, 'Wallet credited', notificationMessage, 'deposit', { sendSms: false });
-  await sendNotificationSms(
-    user.id,
-    `You have successfully deposited GHS ${amountValue.toFixed(2)} to AllenDataHub. Your wallet balance is GHS ${balAfter.toFixed(2)}.`,
-    { source, reference },
-  );
+  await sendPaystackDepositSms(depositRecord);
 
   return {
     ok: true,
@@ -965,6 +962,80 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
     creditAmount: amountValue,
     deposit: depositRecord,
   };
+}
+
+async function sendPaystackDepositSms(deposit) {
+  if (!deposit?.reference || !deposit?.userId) return;
+
+  if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
+    console.error(JSON.stringify({
+      tag: 'PAYSTACK_DEPOSIT_SMS_SKIPPED',
+      reference: deposit.reference,
+      userId: deposit.userId,
+      reason: 'sms_configuration_missing',
+      hasApiKey: Boolean(ARKESEL_API_KEY),
+      hasSenderId: Boolean(ARKESEL_SENDER_ID),
+    }));
+    return;
+  }
+
+  const user = await getUserById(deposit.userId);
+  if (!user?.phoneVerified || !user.phone) {
+    console.warn(JSON.stringify({
+      tag: 'PAYSTACK_DEPOSIT_SMS_SKIPPED',
+      reference: deposit.reference,
+      userId: deposit.userId,
+      reason: !user ? 'user_not_found' : !user.phoneVerified ? 'phone_not_verified' : 'phone_missing',
+    }));
+    return;
+  }
+
+  const now = new Date();
+  const claim = await db.collection('deposits').updateOne(
+    {
+      reference: deposit.reference,
+      status: { $in: ['Credited', 'Completed'] },
+      depositSmsSentAt: { $exists: false },
+      $or: [
+        { depositSmsSendingAt: { $exists: false } },
+        { depositSmsSendingAt: { $lt: new Date(now.getTime() - 2 * 60 * 1000) } },
+      ],
+    },
+    { $set: { depositSmsSendingAt: now.toISOString() } },
+  );
+  if (claim.modifiedCount === 0) return;
+
+  const amount = Number(deposit.amount || 0);
+  const balance = Number(deposit.balAfter ?? user.walletBalance ?? 0);
+  const message = `You have successfully deposited GHS ${amount.toFixed(2)} to AllenDataHub. Your wallet balance is GHS ${balance.toFixed(2)}.`;
+  const smsResult = await sendArkeselSms({ to: user.phone, message });
+  if (!smsResult.ok) {
+    await db.collection('deposits').updateOne(
+      { reference: deposit.reference, depositSmsSendingAt: now.toISOString() },
+      { $unset: { depositSmsSendingAt: '' } },
+    );
+    console.error(JSON.stringify({
+      tag: 'PAYSTACK_DEPOSIT_SMS_FAILED',
+      reference: deposit.reference,
+      userId: deposit.userId,
+      error: smsResult.error,
+      detail: smsResult.detail || null,
+    }));
+    return;
+  }
+
+  await db.collection('deposits').updateOne(
+    { reference: deposit.reference, depositSmsSendingAt: now.toISOString() },
+    {
+      $set: { depositSmsSentAt: new Date().toISOString() },
+      $unset: { depositSmsSendingAt: '' },
+    },
+  );
+  console.log(JSON.stringify({
+    tag: 'PAYSTACK_DEPOSIT_SMS_SENT',
+    reference: deposit.reference,
+    userId: deposit.userId,
+  }));
 }
 
 async function requireUser(req, res, next) {
@@ -2627,6 +2698,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
   const deposit = await db.collection('deposits').findOne({ reference, userId: req.user.id });
   if (!deposit) return res.status(404).json({ ok: false, error: 'Deposit not found.' });
   if (deposit.status === 'Credited' || deposit.status === 'Completed') {
+    await sendPaystackDepositSms(deposit);
     const user = await getUserById(req.user.id);
     return res.json({ ok: true, alreadyCredited: true, balBefore: deposit.balBefore, balAfter: user.walletBalance, deposit });
   }
@@ -2700,6 +2772,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
   if (!deposit) return res.status(404).json({ ok: false, error: 'Deposit not found.' });
 
   if (deposit.status === 'Credited' || deposit.status === 'Completed') {
+    await sendPaystackDepositSms(deposit);
     return res.json({ ok: true, alreadyProcessed: true, reference, deposit, message: 'Wallet credit was processed by the Paystack webhook.' });
   }
 
