@@ -133,11 +133,12 @@ function normalizeArkeselPhone(value) {
   const input = String(value || '').trim();
   const digits = input.replace(/\D/g, '');
   if (!digits) return '';
-  if (input.startsWith('+')) return digits.length >= 10 && digits.length <= 15 ? digits : '';
+
+  if (digits.startsWith('0') && digits.length === 10) return digits;
   if (digits.startsWith(ARKESEL_COUNTRY_CODE) && digits.length === ARKESEL_COUNTRY_CODE.length + 9) return digits;
-  if (digits.startsWith('0') && digits.length === 10) return `${ARKESEL_COUNTRY_CODE}${digits.slice(1)}`;
-  if (digits.length === 9) return `${ARKESEL_COUNTRY_CODE}${digits}`;
-  return '';
+  if (digits.length === 9) return `0${digits}`;
+  if (input.startsWith('+')) return digits.length >= 10 && digits.length <= 15 ? digits : '';
+  return digits;
 }
 
 async function sendArkeselSms({ to, message }) {
@@ -177,12 +178,23 @@ async function sendArkeselSms({ to, message }) {
     const positiveMessage = /\b(success|successful|successfully sent|sent successfully)\b/i.test(responseSummary);
     const rejectedMessage = /\b(error|failed|failure|invalid|insufficient)\b/i.test(responseSummary);
     if (!response.ok || rejectedCode || rejectedMessage || (!acceptedCode && !positiveMessage)) {
+      const debugError = responseSummary || responseText || 'Arkesel rejected the SMS request.';
+      console.error(JSON.stringify({
+        tag: 'ARKESEL_SMS_REJECTED',
+        status: response.status,
+        responseSummary: responseSummary || null,
+        rawResponse: responseText || null,
+        to: phoneNumber,
+        from: ARKESEL_SENDER_ID,
+        apiKeyPresent: Boolean(ARKESEL_API_KEY),
+      }));
       return {
         ok: false,
         status: response.status,
         error: response.ok
           ? 'Arkesel rejected the SMS request.'
           : `Arkesel SMS request failed with status ${response.status}.`,
+        detail: debugError,
       };
     }
     return { ok: true };
@@ -220,8 +232,14 @@ async function dispatchPhoneVerificationCode({ phone, verificationCode, verifica
         userId,
         mode,
         error: smsResult.error,
+        detail: smsResult.detail || null,
       }));
-      return { ok: false, status: 502, error: 'Unable to send a verification code. Please check your number and try again.' };
+      return {
+        ok: false,
+        status: 502,
+        error: 'Unable to send a verification code. Please check your number and try again.',
+        detail: smsResult.detail || undefined,
+      };
     }
 
     return { ok: true, isDemo: false };
