@@ -217,11 +217,34 @@ function generatePhoneVerificationCode() {
 
 async function dispatchPhoneVerificationCode({ phone, verificationCode, verificationToken, userId, mode = 'signup' }) {
   const hasSmsConfig = Boolean(ARKESEL_API_KEY && ARKESEL_SENDER_ID);
+  console.log(JSON.stringify({
+    tag: 'ARKESEL_VERIFICATION_DISPATCH_ATTEMPT',
+    mode,
+    userId: userId || null,
+    hasApiKey: Boolean(ARKESEL_API_KEY),
+    hasSenderId: Boolean(ARKESEL_SENDER_ID),
+    normalizedPhone: normalizeArkeselPhone(phone),
+    countryCode: ARKESEL_COUNTRY_CODE,
+  }));
+
   if (!hasSmsConfig) {
+    console.error(JSON.stringify({
+      tag: 'ARKESEL_VERIFICATION_CONFIG_MISSING',
+      mode,
+      userId: userId || null,
+      hasApiKey: Boolean(ARKESEL_API_KEY),
+      hasSenderId: Boolean(ARKESEL_SENDER_ID),
+    }));
     return { ok: false, status: 503, error: 'Phone verification is not configured. Please try again later.' };
   }
 
   if (!(await claimArkeselSmsQuota(phone))) {
+    console.warn(JSON.stringify({
+      tag: 'ARKESEL_VERIFICATION_RATE_LIMITED',
+      mode,
+      userId: userId || null,
+      normalizedPhone: normalizeArkeselPhone(phone),
+    }));
     return { ok: false, status: 429, error: 'Too many verification messages were sent to this number. Try again later.' };
   }
 
@@ -1231,6 +1254,13 @@ app.post('/api/auth/register', async (req, res) => {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   const verificationCode = generatePhoneVerificationCode();
   const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
+  console.log(JSON.stringify({
+    tag: 'REGISTRATION_PHONE_VERIFICATION_START',
+    email: email.toLowerCase(),
+    phone: normalizeArkeselPhone(phone) || null,
+    hasApiKey: Boolean(ARKESEL_API_KEY),
+    hasSenderId: Boolean(ARKESEL_SENDER_ID),
+  }));
   const dispatchResult = await dispatchPhoneVerificationCode({
     phone,
     verificationCode,
@@ -1239,6 +1269,14 @@ app.post('/api/auth/register', async (req, res) => {
     mode: 'signup',
   });
   if (!dispatchResult.ok) {
+    console.error(JSON.stringify({
+      tag: 'REGISTRATION_PHONE_VERIFICATION_FAILED',
+      email: email.toLowerCase(),
+      phone: normalizeArkeselPhone(phone) || null,
+      status: dispatchResult.status || 503,
+      error: dispatchResult.error,
+      detail: dispatchResult.detail || null,
+    }));
     return res.status(dispatchResult.status || 503).json({ ok: false, error: dispatchResult.error });
   }
 
@@ -1281,10 +1319,7 @@ app.post('/api/auth/register', async (req, res) => {
   return res.status(201).json({
     ok: true,
     verificationToken,
-    verificationCode: dispatchResult.isDemo ? verificationCode : undefined,
-    message: dispatchResult.isDemo
-      ? `Demo verification mode: use ${verificationCode} to verify your phone.`
-      : 'A verification code has been sent to your phone.',
+    message: 'A verification code has been sent to your phone.',
   });
 });
 
