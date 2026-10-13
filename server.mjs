@@ -1159,6 +1159,7 @@ async function sendNotificationSms(userId, message, context = {}) {
 
 async function sendOrderCompletedSms(order) {
   if (!order?.id || !order?.userId) return;
+  const isMiniStoreOrder = order.source === 'mini-store';
 
   if (!ARKESEL_API_KEY || !ARKESEL_SENDER_ID) {
     console.error(JSON.stringify({
@@ -1183,6 +1184,16 @@ async function sendOrderCompletedSms(order) {
     return;
   }
 
+  if (isMiniStoreOrder && !order.recipient) {
+    console.warn(JSON.stringify({
+      tag: 'ARKESEL_ORDER_COMPLETED_SMS_SKIPPED',
+      orderId: order.id,
+      userId: order.userId,
+      reason: 'recipient_phone_missing',
+    }));
+    return;
+  }
+
   const claim = await db.collection('orders').updateOne(
     { id: order.id, completionSmsSentAt: { $exists: false }, completionSmsSending: { $ne: true } },
     { $set: { completionSmsSending: true } },
@@ -1190,7 +1201,9 @@ async function sendOrderCompletedSms(order) {
   if (claim.modifiedCount === 0) return;
 
   const orderDescription = [order.size, order.network, order.recipient].filter(Boolean).join(' ');
-  const message = `Your order${orderDescription ? ` (${orderDescription})` : ''} has been completed. Thank you for choosing AllenDataHub.`;
+  const message = isMiniStoreOrder
+    ? `Order ${order.recipient} completed. Thanks for purchasing with AllenDataHub.`
+    : `Your order${orderDescription ? ` (${orderDescription})` : ''} has been completed. Thank you for choosing AllenDataHub.`;
   const smsResult = await sendArkeselSms({
     to: user.phone,
     message: message.slice(0, ARKESEL_SMS_MAX_LENGTH_CHARS),
