@@ -2141,12 +2141,24 @@ app.get('/api/agent/store/analytics', requireAgent, async (req, res) => {
   if (!store) return res.json({ ok: true, analytics: { totalOrders: 0, totalCommissions: 0, walletBalance: Number(req.user.walletBalance || 0), withdrawableBalance: 0 } });
   const storeId = String(store._id || store.agentId);
   const agent = await getUserById(req.user.id);
+  const paidStoreOrders = await db.collection('orders')
+    .find({ storeId, userId: req.user.id, source: 'mini-store', paid: true })
+    .toArray();
+  try {
+    for (const order of paidStoreOrders) {
+      await creditStoreCommission(order);
+    }
+  } catch (error) {
+    console.error('Unable to reconcile paid mini-store commissions:', error);
+    return res.status(500).json({ ok: false, error: 'Unable to refresh mini-store commissions. Please try again.' });
+  }
+  const currentStore = await db.collection('agent_stores').findOne({ agentId: req.user.id });
   const [sales, commission] = await Promise.all([
-    db.collection('orders').countDocuments({ storeId, paid: true }),
+    db.collection('orders').countDocuments({ storeId, source: 'mini-store', paid: true }),
     db.collection('store_ledger').aggregate([{ $match: { storeId, type: 'commission' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]).toArray(),
   ]);
   const walletBalance = Number(agent?.walletBalance || 0);
-  const commissionBalance = Number(store.walletBalance || 0);
+  const commissionBalance = Number(currentStore?.walletBalance || 0);
   res.json({
     ok: true,
     analytics: {
@@ -2226,6 +2238,13 @@ app.get('/api/public/order-status', async (req, res) => {
   const store = await db?.collection('agent_stores').findOne({ slug, isActive: { $ne: false } });
   const order = await db?.collection('orders').findOne({ reference, source: 'mini-store', storeId: store ? String(store._id || store.agentId) : '' });
   if (!store || !order) return res.status(404).json({ ok: false, error: 'Order not found.' });
+  if (order.paid === true && order.status === 'Paid') {
+    order.status = 'Pending';
+    await db.collection('orders').updateOne(
+      { id: order.id, paid: true, status: 'Paid' },
+      { $set: { status: 'Pending', updatedAt: new Date().toISOString() } },
+    );
+  }
   res.json({ ok: true, paid: order.paid === true, status: order.status, reference, store: { storeName: store.storeName, whatsappNumber: store.whatsappNumber, contactPhone: store.contactPhone } });
 });
 
@@ -2340,6 +2359,14 @@ app.get('/api/orders', requireUser, async (req, res) => {
     ? visiblePaidStoreOrder
     : { userId: req.user.id, ...visiblePaidStoreOrder };
   const orders = await db.collection('orders').find(filter).sort({ date: -1, createdAt: -1 }).toArray();
+  const legacyPaidStatusOrders = orders.filter((order) => order.source === 'mini-store' && order.paid === true && order.status === 'Paid');
+  if (legacyPaidStatusOrders.length > 0) {
+    await db.collection('orders').updateMany(
+      { id: { $in: legacyPaidStatusOrders.map((order) => order.id) }, source: 'mini-store', paid: true, status: 'Paid' },
+      { $set: { status: 'Pending', updatedAt: new Date().toISOString() } },
+    );
+    for (const order of legacyPaidStatusOrders) order.status = 'Pending';
+  }
   if (req.user.role === 'admin') {
     const users = await db.collection('users').find({}, { projection: { id: 1, username: 1, fullName: 1, email: 1 } }).toArray();
     const usersById = new Map(users.map((entry) => [entry.id, entry]));
@@ -3224,6 +3251,12 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (order.paid === true && (order.status === 'Failed' || order.fulfillmentStatus === 'failed')) {
       return res.json({ ok: true, ignored: true, reason: 'This order has already failed and will not be resent.' });
     }
+    if (order.paid === true && order.status === 'Paid') {
+      await db.collection('orders').updateOne(
+        { id: order.id, paid: true, status: 'Paid' },
+        { $set: { status: 'Pending', updatedAt: new Date().toISOString() } },
+      );
+    }
     if (order.vendorOrderId || order.portalOrderId || order.fulfillmentStatus === 'dispatching') {
       return res.json({ ok: true, alreadyProcessed: true });
     }
@@ -3233,7 +3266,7 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (order.paid !== true) {
       await db.collection('orders').updateOne(
         { id: order.id, source: 'mini-store', paid: { $ne: true }, status: { $in: ['PaymentPending', 'Paid', 'Failed'] }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
-        { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
+        { $set: { ...ownership, paid: true, status: 'Pending', paidAt: new Date().toISOString(), paymentReference: reference } },
       );
     }
     const paidOrder = await db.collection('orders').findOne({ id: order.id, source: 'mini-store', paid: true });
@@ -3248,8 +3281,8 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     }
 
     const dispatchClaim = await db.collection('orders').updateOne(
-      { id: order.id, source: 'mini-store', paid: true, status: 'Paid', vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
-      { $set: { fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
+      { id: order.id, source: 'mini-store', paid: true, status: { $in: ['Pending', 'Paid'] }, vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
+      { $set: { status: 'Pending', fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
     );
     if (dispatchClaim.modifiedCount === 0) {
       return res.json({ ok: true, alreadyProcessed: true });
