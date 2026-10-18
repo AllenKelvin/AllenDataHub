@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, DollarSign, KeyRound, Shield, Users, Wallet } from "lucide-react";
+import { AlertTriangle, DollarSign, KeyRound, Loader2, Shield, Users, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatGHS, shortenId } from "@/lib/formatters";
@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export default function AdminPage() {
   const { user, users, updateUserById } = useAuth();
   const [activeTab, setActiveTab] = useState("overview");
+  const [processingStoreWithdrawal, setProcessingStoreWithdrawal] = useState<{ id: string; action: "approve" | "reject" } | null>(null);
   const [walletAction, setWalletAction] = useState<{ userId: string; type: "credit" | "debit"; amount: string }>({
     userId: users.find((entry) => entry.role !== "admin")?.id ?? "",
     type: "credit",
@@ -165,7 +166,8 @@ export default function AdminPage() {
   };
 
   const handleStoreWithdrawal = async (withdrawalId: string, action: "approve" | "reject") => {
-    if (!user?.id) return;
+    if (!user?.id || processingStoreWithdrawal) return;
+    setProcessingStoreWithdrawal({ id: withdrawalId, action });
     try {
       const result = await apiFetch<{ status?: string; error?: string }>(
         `/api/admin/store-withdrawals/${encodeURIComponent(withdrawalId)}/${action}`,
@@ -180,6 +182,8 @@ export default function AdminPage() {
       setStoreWithdrawals(Array.isArray(response.withdrawals) ? response.withdrawals : []);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Unable to update commission withdrawal.");
+    } finally {
+      setProcessingStoreWithdrawal(null);
     }
   };
 
@@ -460,8 +464,12 @@ export default function AdminPage() {
                       <td className="px-3 py-2"><Badge variant={entry.status === "Approved" ? "default" : "secondary"}>{entry.status}</Badge></td>
                       <td className="space-x-2 px-3 py-2 text-right">
                         {entry.status === "Pending" && <>
-                          <Button size="sm" onClick={() => void handleStoreWithdrawal(entry.id, "approve")}>Approve transfer</Button>
-                          <Button size="sm" variant="outline" onClick={() => void handleStoreWithdrawal(entry.id, "reject")}>Reject</Button>
+                          <Button size="sm" disabled={processingStoreWithdrawal !== null} onClick={() => void handleStoreWithdrawal(entry.id, "approve")}>
+                            {processingStoreWithdrawal?.id === entry.id && processingStoreWithdrawal.action === "approve" ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Approving...</> : "Approve transfer"}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={processingStoreWithdrawal !== null} onClick={() => void handleStoreWithdrawal(entry.id, "reject")}>
+                            {processingStoreWithdrawal?.id === entry.id && processingStoreWithdrawal.action === "reject" ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Rejecting...</> : "Reject"}
+                          </Button>
                         </>}
                       </td>
                     </tr>)}</tbody>

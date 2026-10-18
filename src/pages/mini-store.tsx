@@ -71,7 +71,20 @@ export default function MiniStoreDashboard() {
     }
   };
 
-  useEffect(() => { void load(); }, [user?.id]);
+  useEffect(() => {
+    void load();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const refreshInterval = window.setInterval(refreshWhenVisible, 15000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(refreshInterval);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [user?.id]);
   const totalConfigured = useMemo(() => packages.filter((item) => item.customPrice >= item.basePrice).length, [packages]);
 
   const saveStore = async () => {
@@ -185,7 +198,7 @@ export default function MiniStoreDashboard() {
     </div>
     {!canManageStore && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Mini-stores are available only for Agent accounts. This account is currently signed in as <strong>{user?.role || "unknown"}</strong>.</div>}
     <div className="grid gap-4 md:grid-cols-3">
-      {[["Total earnings", formatGHS(analytics.totalCommissions)], ["Wallet balance", formatGHS(analytics.walletBalance)], ["Total orders", String(analytics.totalOrders)]].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><span className="text-sm text-slate-500">{label}</span><WalletCards className="h-5 w-5 text-emerald-500" /></div><p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">{value}</p></div>)}
+      {[["Total earnings", formatGHS(analytics.totalCommissions)], ["Available commission", formatGHS(analytics.withdrawableBalance)], ["Wallet balance", formatGHS(analytics.walletBalance)], ["Total orders", String(analytics.totalOrders)]].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><span className="text-sm text-slate-500">{label}</span><WalletCards className="h-5 w-5 text-emerald-500" /></div><p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">{value}</p></div>)}
     </div>
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-4"><h2 className="font-semibold text-slate-900 dark:text-white">Transfer mini-store balance to wallet</h2><p className="text-sm text-slate-500">Available to transfer: {formatGHS(analytics.withdrawableBalance)}. A request reserves the funds and requires admin approval before they are added to your wallet.</p></div>
