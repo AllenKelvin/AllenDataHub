@@ -355,14 +355,14 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-7 w-full">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="commissions">Commissions</TabsTrigger>
-          <TabsTrigger value="withdrawals">Transfers</TabsTrigger>
-          <TabsTrigger value="controls">Controls</TabsTrigger>
-          <TabsTrigger value="api">API</TabsTrigger>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl p-1 sm:grid-cols-4 lg:grid-cols-7">
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="overview">Overview</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="users">Users</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="orders">Orders</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="commissions">Commissions</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="withdrawals">Transfers</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="controls">Controls</TabsTrigger>
+          <TabsTrigger className="w-full min-w-0 px-2 py-2 text-xs sm:text-sm" value="api">API</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
