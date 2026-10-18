@@ -54,3 +54,16 @@ Configure `ARKESEL_API_KEY`, `ARKESEL_SENDER_ID=ALLEN.APP`, and `ARKESEL_WEBHOOK
 The signed callback endpoint is `POST /api/webhooks/arkesel`. It checks Arkesel's documented `X-Webhook-Timestamp` and `X-Webhook-Signature` headers using HMAC-SHA256 over `<timestamp>.<raw request body>`, rejects timestamps more than five minutes from server time, and acknowledges valid callbacks. Configure that URL in Arkesel only for a webhook integration that uses this signature format. The published SMS send API itself does not require a webhook; its send result is checked synchronously.
 
 Never put the Arkesel API key in client-side `VITE_*` variables or commit it to the repository.
+
+## MTN MoMo wallet payments and mini-store commission transfers
+
+Configure MTN MoMo only in the server environment (for example, the deployment's secret settings or a local `.env`):
+
+- `MTN_MOMO_BASE_URL` defaults to `https://sandbox.momodeveloper.mtn.com`; use MTN's production host only after production API products are provisioned.
+- `MTN_MOMO_TARGET_ENVIRONMENT` defaults to `sandbox` and should match the MTN account's target environment (commonly `sandbox` or `mtn_ghana`).
+- `MTN_MOMO_COLLECTION_API_USER` and `MTN_MOMO_COLLECTION_API_KEY` are the API user credentials generated for Collection.
+- `MTN_MOMO_COLLECTION_SUBSCRIPTION_KEY` is the subscription key for Collection.
+
+The portal's primary/secondary keys are subscription keys, not API user credentials. Provision the Collection product and create its API user in the MTN MoMo portal before enabling top-ups. Never put MTN credentials in client-side `VITE_*` variables or commit real credentials.
+
+Wallet top-ups are initiated from the Wallet page with MTN MoMo and credited only after the server verifies a successful Collection payment. Mini-store commissions are credited once Paystack confirms payment, regardless of Hubnet fulfillment status. Agents can request a transfer of their mini-store balance to their main wallet; the balance is reserved while pending, credited to the main wallet only after administrator approval, and returned to the mini-store balance if rejected. MongoDB transactions require a replica set, as provided by MongoDB Atlas.

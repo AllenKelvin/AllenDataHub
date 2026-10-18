@@ -49,6 +49,12 @@ const mongoDbName = process.env.MONGO_DB_NAME || 'platform';
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET || process.env.PAYSTACK_SECRET_KEY || '';
 const ALLENDAHUB_FRONTEND_URL = process.env.ALLENDAHUB_FRONTEND_URL || process.env.FRONTEND_URL || process.env.VITE_APP_URL || 'https://allendatahub.com';
 const PAYSTACK_CALLBACK_URL = process.env.PAYSTACK_CALLBACK_URL || `${ALLENDAHUB_FRONTEND_URL.replace(/\/$/, '')}/payment-return`;
+const MTN_MOMO_BASE_URL = String(process.env.MTN_MOMO_BASE_URL || 'https://sandbox.momodeveloper.mtn.com').replace(/\/+$/, '');
+const MTN_MOMO_TARGET_ENVIRONMENT = process.env.MTN_MOMO_TARGET_ENVIRONMENT || 'sandbox';
+const MTN_MOMO_COLLECTION_API_USER = process.env.MTN_MOMO_COLLECTION_API_USER || '';
+const MTN_MOMO_COLLECTION_API_KEY = process.env.MTN_MOMO_COLLECTION_API_KEY || '';
+const MTN_MOMO_COLLECTION_SUBSCRIPTION_KEY = process.env.MTN_MOMO_COLLECTION_SUBSCRIPTION_KEY || '';
+const MTN_MOMO_REQUEST_TIMEOUT_MS = 20_000;
 const BREVO_API_KEY = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY || '';
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || 'allendatahub@gmail.com';
 const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'AllenDataHub';
@@ -69,6 +75,9 @@ const ARKESEL_SMS_MAX_LENGTH_CHARS = 306;
 const ARKESEL_SMS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const ARKESEL_SMS_RATE_LIMIT_MAX = 3;
 let arkeselSmsRateLimitIndexPromise;
+const mtnMomoTokenCache = {
+  collection: { token: '', expiresAt: 0 },
+};
 
 app.use(cors());
 app.use(express.json({
@@ -750,6 +759,7 @@ async function ensureSeedData() {
     'agent_stores',
     'agent_pricing',
     'store_ledger',
+    'store_withdrawals',
   ];
 
   for (const collectionName of requiredCollections) {
@@ -764,6 +774,8 @@ async function ensureSeedData() {
   await db.collection('agent_stores').createIndex({ slug: 1 }, { unique: true });
   await db.collection('agent_pricing').createIndex({ storeId: 1, packageId: 1 }, { unique: true });
   await db.collection('store_ledger').createIndex({ reference: 1 }, { unique: true });
+  await db.collection('store_withdrawals').createIndex({ id: 1 }, { unique: true });
+  await db.collection('store_withdrawals').createIndex({ agentId: 1, requestId: 1 }, { unique: true });
 
   // TODO: Enable merge after network connectivity is restored
   // await mergeLegacyCollections();
@@ -840,6 +852,113 @@ async function getStorePricing(storeId, products) {
   });
 }
 
+class MtnMomoError extends Error {
+  constructor(message, status = 0) {
+    super(message);
+    this.name = 'MtnMomoError';
+    this.status = status;
+  }
+}
+
+function getMtnMomoSubscriptionKey() {
+  return MTN_MOMO_COLLECTION_SUBSCRIPTION_KEY;
+}
+
+function getMtnMomoApiCredentials() {
+  return { user: MTN_MOMO_COLLECTION_API_USER, key: MTN_MOMO_COLLECTION_API_KEY };
+}
+
+function getMtnMomoMissingConfiguration() {
+  const credentials = getMtnMomoApiCredentials();
+  const missing = [];
+  if (!credentials.user) missing.push('MTN_MOMO_COLLECTION_API_USER');
+  if (!credentials.key) missing.push('MTN_MOMO_COLLECTION_API_KEY');
+  if (!getMtnMomoSubscriptionKey()) missing.push('MTN_MOMO_COLLECTION_SUBSCRIPTION_KEY');
+  return missing;
+}
+
+function normalizeMtnMomoPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  const nationalNumber = digits.startsWith('233')
+    ? digits.slice(3)
+    : digits.startsWith('0')
+      ? digits.slice(1)
+      : digits;
+  return /^\d{9}$/.test(nationalNumber) ? `233${nationalNumber}` : '';
+}
+
+async function getMtnMomoAccessToken(product) {
+  const missing = getMtnMomoMissingConfiguration();
+  if (missing.length) {
+    throw new MtnMomoError(`MTN MoMo is not configured. Set ${missing.join(', ')} on the server.`);
+  }
+
+  const cached = mtnMomoTokenCache[product];
+  if (cached.token && cached.expiresAt > Date.now() + 60_000) return cached.token;
+
+  const subscriptionKey = getMtnMomoSubscriptionKey();
+  const credentials = getMtnMomoApiCredentials();
+  const authorization = Buffer.from(`${credentials.user}:${credentials.key}`).toString('base64');
+  let response;
+  try {
+    response = await fetch(`${MTN_MOMO_BASE_URL}/${product}/token/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${authorization}`,
+        'Ocp-Apim-Subscription-Key': subscriptionKey,
+        'X-Target-Environment': MTN_MOMO_TARGET_ENVIRONMENT,
+      },
+      signal: AbortSignal.timeout(MTN_MOMO_REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new MtnMomoError(error instanceof Error ? error.message : 'Unable to connect to MTN MoMo.');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new MtnMomoError(
+      data.error_description || data.message || `MTN MoMo token request failed (${response.status}).`,
+      response.status,
+    );
+  }
+
+  cached.token = data.access_token;
+  cached.expiresAt = Date.now() + Math.max(60, Number(data.expires_in || 3600)) * 1000;
+  return cached.token;
+}
+
+async function requestMtnMomo(product, endpoint, options = {}) {
+  const accessToken = await getMtnMomoAccessToken(product);
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Ocp-Apim-Subscription-Key': getMtnMomoSubscriptionKey(),
+    'X-Target-Environment': MTN_MOMO_TARGET_ENVIRONMENT,
+    Accept: 'application/json',
+    ...options.headers,
+  };
+  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  let response;
+  try {
+    response = await fetch(`${MTN_MOMO_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      signal: AbortSignal.timeout(MTN_MOMO_REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new MtnMomoError(error instanceof Error ? error.message : 'Unable to connect to MTN MoMo.');
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new MtnMomoError(
+      data.message || data.error_description || data.error || `MTN MoMo request failed (${response.status}).`,
+      response.status,
+    );
+  }
+  return { response, data };
+}
+
 function getPaystackReferenceForUser(userId) {
   return `ALLEN_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 }
@@ -868,7 +987,16 @@ function getApiPriceForProduct(user, product, config = DEFAULT_API_CONFIG) {
   return Number(product?.price ?? 0);
 }
 
-async function creditWalletForPaystackSuccess({ userId, amount, reference, source = 'paystack', metadata = {} }) {
+async function creditWalletForSuccessfulDeposit({
+  userId,
+  amount,
+  reference,
+  source = 'paystack',
+  metadata = {},
+  platform = 'paystack',
+  method = 'card',
+  sendSms = true,
+}) {
   if (!db || !userId) {
     return { ok: false, error: 'Missing userId for wallet credit.' };
   }
@@ -880,7 +1008,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
 
   const existing = await db.collection('deposits').findOne({ reference });
   if (existing?.status === 'Credited' || existing?.status === 'Completed') {
-    await sendPaystackDepositSms(existing);
+    if (sendSms) await sendPaystackDepositSms(existing);
     return {
       ok: true,
       alreadyProcessed: true,
@@ -915,17 +1043,18 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
   const amountValue = Number(amount || 0);
   const balBefore = Number(user.walletBalance || 0);
   const balAfter = Number((balBefore + amountValue).toFixed(2));
+  const creditedAt = new Date().toISOString();
 
   await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
 
   const depositRecord = {
-    id: makeId('dep'),
+    id: existing?.id || makeId('dep'),
     userId: user.id,
     amount: amountValue,
-    fee: 0,
-    totalPay: amountValue,
-    method: 'card',
-    platform: 'paystack',
+    fee: Number(existing?.fee || 0),
+    totalPay: Number(existing?.totalPay ?? amountValue),
+    method,
+    platform,
     reference,
     status: 'Completed',
     balBefore,
@@ -937,9 +1066,9 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
       ...metadata,
     },
     source,
-    date: new Date().toISOString(),
-    creditedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
+    date: existing?.date || creditedAt,
+    creditedAt,
+    createdAt: existing?.createdAt || creditedAt,
   };
 
   if (existing) {
@@ -950,7 +1079,7 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
 
   const notificationMessage = `GHS ${amountValue.toFixed(2)} added to your wallet.`;
   await createNotification(user.id, 'Wallet credited', notificationMessage, 'deposit', { sendSms: false });
-  await sendPaystackDepositSms(depositRecord);
+  if (sendSms) await sendPaystackDepositSms(depositRecord);
 
   return {
     ok: true,
@@ -962,6 +1091,175 @@ async function creditWalletForPaystackSuccess({ userId, amount, reference, sourc
     creditAmount: amountValue,
     deposit: depositRecord,
   };
+}
+
+async function reserveStoreWithdrawal(withdrawal) {
+  const session = client.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const storeDebit = await db.collection('agent_stores').updateOne(
+        { agentId: withdrawal.agentId, walletBalance: { $gte: withdrawal.amount } },
+        { $inc: { walletBalance: -withdrawal.amount } },
+        { session },
+      );
+      if (storeDebit.modifiedCount !== 1) {
+        throw new Error('Mini-store commission balance is insufficient.');
+      }
+
+      await db.collection('store_withdrawals').insertOne(withdrawal, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function releaseStoreWithdrawal(withdrawal, fromStatus, nextStatus, extraFields = {}) {
+  const session = client.startSession();
+  let released = false;
+  try {
+    await session.withTransaction(async () => {
+      const transition = await db.collection('store_withdrawals').updateOne(
+        { id: withdrawal.id, status: fromStatus },
+        { $set: { status: nextStatus, ...extraFields, updatedAt: new Date().toISOString() } },
+        { session },
+      );
+      if (transition.modifiedCount !== 1) return;
+
+      const storeCredit = await db.collection('agent_stores').updateOne(
+        { agentId: withdrawal.agentId },
+        { $inc: { walletBalance: withdrawal.amount } },
+        { session },
+      );
+      if (storeCredit.matchedCount !== 1) {
+        throw new Error(`Unable to release reserved mini-store funds for request ${withdrawal.id}.`);
+      }
+      if (withdrawal.transferType !== 'wallet') {
+        const legacyWalletCredit = await db.collection('users').updateOne(
+          { id: withdrawal.agentId },
+          { $inc: { walletBalance: withdrawal.amount } },
+          { session },
+        );
+        if (legacyWalletCredit.matchedCount !== 1) {
+          throw new Error(`Unable to release legacy reserved wallet funds for request ${withdrawal.id}.`);
+        }
+      }
+      released = true;
+    });
+    return released;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function approveStoreWalletTransfer(transfer, adminId) {
+  const session = client.startSession();
+  let approved = false;
+  try {
+    await session.withTransaction(async () => {
+      const transition = await db.collection('store_withdrawals').updateOne(
+        { id: transfer.id, status: 'Pending', transferType: 'wallet' },
+        { $set: { status: 'Approved', approvedBy: adminId, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+        { session },
+      );
+      if (transition.modifiedCount !== 1) return;
+
+      const walletCredit = await db.collection('users').updateOne(
+        { id: transfer.agentId },
+        { $inc: { walletBalance: transfer.amount } },
+        { session },
+      );
+      if (walletCredit.matchedCount !== 1) {
+        throw new Error(`Unable to credit the agent wallet for mini-store transfer ${transfer.id}.`);
+      }
+      approved = true;
+    });
+    return approved;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function creditStoreCommission(order) {
+  if (order.paid !== true) {
+    throw new Error(`Cannot credit mini-store commission before payment for order ${order.id}.`);
+  }
+  const commission = Number(order.agentCommission || 0);
+  if (!Number.isFinite(commission) || commission <= 0) return false;
+
+  const session = client.startSession();
+  let credited = false;
+  try {
+    await session.withTransaction(async () => {
+      const ledgerClaim = await db.collection('store_ledger').updateOne(
+        { reference: order.reference },
+        {
+          $setOnInsert: {
+            id: makeId('ledger'),
+            storeId: order.storeId,
+            agentId: order.userId,
+            orderId: order.id,
+            reference: order.reference,
+            type: 'commission',
+            amount: commission,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        { upsert: true, session },
+      );
+      if (ledgerClaim.upsertedCount !== 1) return;
+
+      const userCredit = await db.collection('users').updateOne(
+        { id: order.userId },
+        { $inc: { commissionEarned: commission } },
+        { session },
+      );
+      const storeCredit = await db.collection('agent_stores').updateOne(
+        { agentId: order.userId },
+        { $inc: { walletBalance: commission } },
+        { session },
+      );
+      if (userCredit.matchedCount !== 1 || storeCredit.matchedCount !== 1) {
+        throw new Error(`Unable to credit the agent commission for mini-store order ${order.id}.`);
+      }
+      credited = true;
+    });
+    return credited;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function debitWalletBalance(userId, amount) {
+  const value = Number(Number(amount).toFixed(2));
+  if (!Number.isFinite(value) || value <= 0) {
+    return { ok: false, error: 'Wallet debit amount must be greater than zero.' };
+  }
+
+  const session = client.startSession();
+  let result = { ok: false, error: 'Insufficient wallet balance.' };
+  try {
+    await session.withTransaction(async () => {
+      const debit = await db.collection('users').updateOne(
+        { id: userId, walletBalance: { $gte: value } },
+        { $inc: { walletBalance: -value } },
+        { session },
+      );
+      if (debit.modifiedCount !== 1) {
+        result = { ok: false, error: 'Insufficient wallet balance.' };
+        return;
+      }
+
+      const user = await db.collection('users').findOne({ id: userId }, { session, projection: { walletBalance: 1 } });
+      result = {
+        ok: true,
+        walletBalance: Number(user?.walletBalance || 0),
+        commissionDebited: 0,
+      };
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }
 
 async function sendPaystackDepositSms(deposit) {
@@ -1817,14 +2115,77 @@ app.post('/api/agent/store/pricing', requireAgent, async (req, res) => {
 
 app.get('/api/agent/store/analytics', requireAgent, async (req, res) => {
   const store = await db.collection('agent_stores').findOne({ agentId: req.user.id });
-  if (!store) return res.json({ ok: true, analytics: { totalOrders: 0, totalCommissions: 0, walletBalance: 0 } });
+  if (!store) return res.json({ ok: true, analytics: { totalOrders: 0, totalCommissions: 0, walletBalance: Number(req.user.walletBalance || 0), withdrawableBalance: 0 } });
   const storeId = String(store._id || store.agentId);
   const agent = await getUserById(req.user.id);
   const [sales, commission] = await Promise.all([
     db.collection('orders').countDocuments({ storeId, paid: true }),
     db.collection('store_ledger').aggregate([{ $match: { storeId, type: 'commission' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]).toArray(),
   ]);
-  res.json({ ok: true, analytics: { totalOrders: sales, totalCommissions: Number(commission[0]?.total || 0), walletBalance: Number(agent?.walletBalance || 0) } });
+  const walletBalance = Number(agent?.walletBalance || 0);
+  const commissionBalance = Number(store.walletBalance || 0);
+  res.json({
+    ok: true,
+    analytics: {
+      totalOrders: sales,
+      totalCommissions: Number(commission[0]?.total || 0),
+      walletBalance,
+      withdrawableBalance: commissionBalance,
+    },
+  });
+});
+
+app.get('/api/agent/store/withdrawals', requireAgent, async (req, res) => {
+  const withdrawals = await db.collection('store_withdrawals')
+    .find({ agentId: req.user.id })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .project({ _id: 0, mtnReferenceId: 0 })
+    .toArray();
+  res.json({ ok: true, withdrawals });
+});
+
+app.post('/api/agent/store/withdrawals', requireAgent, async (req, res) => {
+  const amount = Number(Number(req.body?.amount).toFixed(2));
+  const requestId = String(req.body?.requestId || '').trim();
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ ok: false, error: 'Enter a transfer amount greater than zero.' });
+  }
+  if (!/^[A-Za-z0-9_-]{12,100}$/.test(requestId)) {
+    return res.status(400).json({ ok: false, error: 'A valid transfer request ID is required.' });
+  }
+
+  const existingRequest = await db.collection('store_withdrawals').findOne({
+    agentId: req.user.id,
+    requestId,
+  });
+  if (existingRequest) return res.status(200).json({ ok: true, withdrawal: existingRequest });
+
+  const now = new Date().toISOString();
+  const withdrawal = {
+    id: makeId('wdr'),
+    requestId,
+    agentId: req.user.id,
+    transferType: 'wallet',
+    amount,
+    status: 'Pending',
+    createdAt: now,
+    updatedAt: now,
+  };
+  try {
+    await reserveStoreWithdrawal(withdrawal);
+  } catch (error) {
+    if (error?.code === 11000) {
+      const duplicate = await db.collection('store_withdrawals').findOne({ agentId: req.user.id, requestId });
+      if (duplicate) return res.status(200).json({ ok: true, withdrawal: duplicate });
+    }
+    if (error instanceof Error && /balance is insufficient/i.test(error.message)) {
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+    console.error('Mini-store wallet transfer reservation failed:', error);
+    return res.status(500).json({ ok: false, error: 'Unable to reserve funds for this transfer.' });
+  }
+  return res.status(201).json({ ok: true, withdrawal });
 });
 
 app.get('/api/public/store/:slug', async (req, res) => {
@@ -2139,12 +2500,18 @@ async function createSingleOrder(req, res) {
 
   await db.collection('orders').insertOne(order);
 
-  const debitResult = await db.collection('users').updateOne(
-    { id: user.id, walletBalance: { $gte: chargedAmount } },
-    { $inc: { walletBalance: -chargedAmount } },
-  );
-
-  if (debitResult.modifiedCount !== 1) {
+  let debitResult;
+  try {
+    debitResult = await debitWalletBalance(user.id, chargedAmount);
+  } catch (error) {
+    await db.collection('orders').updateOne(
+      { id: orderId },
+      { $set: { status: 'Failed', paymentError: 'Wallet debit could not be completed.', updatedAt: new Date().toISOString() } },
+    );
+    console.error('Wallet debit transaction failed:', error);
+    return res.status(503).json({ ok: false, error: 'Wallet payment could not be completed. Please try again.' });
+  }
+  if (!debitResult.ok) {
     await db.collection('orders').updateOne(
       { id: orderId },
       { $set: { status: 'Failed', paymentError: 'Wallet balance changed before payment was completed.', updatedAt: new Date().toISOString() } },
@@ -2152,11 +2519,10 @@ async function createSingleOrder(req, res) {
     return res.status(409).json({ ok: false, error: 'Wallet balance changed. Please try again.' });
   }
 
-  const chargedUser = await getUserById(user.id);
-  const actualBalAfter = Number(chargedUser?.walletBalance ?? balAfter);
+  const actualBalAfter = debitResult.walletBalance;
   await db.collection('orders').updateOne(
     { id: orderId },
-    { $set: { paid: true, balBefore, balAfter: actualBalAfter, updatedAt: new Date().toISOString() } },
+    { $set: { paid: true, balBefore, balAfter: actualBalAfter, commissionWalletDebit: debitResult.commissionDebited, updatedAt: new Date().toISOString() } },
   );
 
   const hubnetResult = await purchaseWithHubnet({
@@ -2253,12 +2619,18 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
 
   await db.collection('orders').insertMany(orders);
 
-  const debitResult = await db.collection('users').updateOne(
-    { id: user.id, walletBalance: { $gte: total } },
-    { $inc: { walletBalance: -total } },
-  );
-
-  if (debitResult.modifiedCount !== 1) {
+  let debitResult;
+  try {
+    debitResult = await debitWalletBalance(user.id, total);
+  } catch (error) {
+    await db.collection('orders').updateMany(
+      { id: { $in: orders.map((order) => order.id) } },
+      { $set: { status: 'Failed', paymentError: 'Wallet debit could not be completed.', updatedAt: new Date().toISOString() } },
+    );
+    console.error('Cart wallet debit transaction failed:', error);
+    return res.status(503).json({ ok: false, error: 'Wallet payment could not be completed. Please try again.' });
+  }
+  if (!debitResult.ok) {
     await db.collection('orders').updateMany(
       { id: { $in: orders.map((order) => order.id) } },
       { $set: { status: 'Failed', paymentError: 'Wallet balance changed before payment was completed.', updatedAt: new Date().toISOString() } },
@@ -2266,13 +2638,17 @@ app.post('/api/cart/checkout', requireUser, async (req, res) => {
     return res.status(409).json({ ok: false, error: 'Wallet balance changed. Please try again.' });
   }
 
-  const chargedUser = await getUserById(user.id);
-  const actualRunningBalance = Number(chargedUser?.walletBalance ?? runningBalance);
-  await db.collection('orders').updateMany(
-    { id: { $in: orders.map((order) => order.id) } },
-    { $set: { paid: true, updatedAt: new Date().toISOString() } },
-  );
-  orders.forEach((order) => { order.paid = true; });
+  const actualRunningBalance = debitResult.walletBalance;
+  let remainingCommissionDebit = debitResult.commissionDebited;
+  for (const order of orders) {
+    order.paid = true;
+    order.commissionWalletDebit = Number(Math.min(Number(order.amount || 0), remainingCommissionDebit).toFixed(2));
+    remainingCommissionDebit = Number((remainingCommissionDebit - order.commissionWalletDebit).toFixed(2));
+    await db.collection('orders').updateOne(
+      { id: order.id },
+      { $set: { paid: true, commissionWalletDebit: order.commissionWalletDebit, updatedAt: new Date().toISOString() } },
+    );
+  }
 
   for (const order of orders) {
     const hubnetResult = await purchaseWithHubnet({
@@ -2404,30 +2780,69 @@ app.post('/api/orders/:id/refund', requireUser, async (req, res) => {
   }
 
   const user = await getUserById(order.userId);
+  if (!user) return res.status(404).json({ ok: false, error: 'Order owner not found.' });
   const refundAmount = Number(order.amount || 0);
-  const balBefore = Number(user?.walletBalance || 0);
-  const balAfter = Number((balBefore + refundAmount).toFixed(2));
+  const commissionRefund = Math.max(0, Number(order.commissionWalletDebit || 0));
+  const session = client.startSession();
+  let refund;
+  let balAfter;
+  try {
+    await session.withTransaction(async () => {
+      refund = undefined;
+      balAfter = undefined;
+      const orderClaim = await db.collection('orders').updateOne(
+        { id, status: { $nin: ['Refunded', 'Cancelled', 'Canceled'] } },
+        { $set: { status: 'Refunded', updatedAt: new Date().toISOString() } },
+        { session },
+      );
+      if (orderClaim.modifiedCount !== 1) return;
 
-  await db.collection('users').updateOne({ id: user.id }, { $set: { walletBalance: balAfter } });
-  await db.collection('orders').updateOne({ id }, { $set: { status: 'Refunded', balAfter } });
+      const currentUser = await db.collection('users').findOne({ id: user.id }, { session, projection: { walletBalance: 1 } });
+      if (!currentUser) throw new Error('Order owner not found during refund.');
+      const balBefore = Number(currentUser.walletBalance || 0);
+      const walletCredit = await db.collection('users').updateOne(
+        { id: user.id },
+        { $inc: { walletBalance: refundAmount } },
+        { session },
+      );
+      if (walletCredit.modifiedCount !== 1) throw new Error('Unable to credit the refunded wallet balance.');
 
-  const refund = {
-    id: makeId('rfnd'),
-    orderId: id,
-    userId: user.id,
-    recipient: order.recipient,
-    bundle: order.size,
-    amount: refundAmount,
-    method: 'wallet',
-    status: 'Refunded',
-    balBefore,
-    balAfter,
-    source: order.source || 'web',
-    date: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-  };
+      if (commissionRefund > 0) {
+        const commissionCredit = await db.collection('agent_stores').updateOne(
+          { agentId: user.id },
+          { $inc: { walletBalance: commissionRefund } },
+          { session },
+        );
+        if (commissionCredit.modifiedCount !== 1) throw new Error('Unable to restore mini-store commission balance for this refund.');
+      }
 
-  await db.collection('refunds').insertOne(refund);
+      const creditedUser = await db.collection('users').findOne({ id: user.id }, { session, projection: { walletBalance: 1 } });
+      balAfter = Number(creditedUser?.walletBalance || 0);
+      await db.collection('orders').updateOne({ id }, { $set: { balAfter }, $unset: { commissionWalletDebit: '' } }, { session });
+      refund = {
+        id: makeId('rfnd'),
+        orderId: id,
+        userId: user.id,
+        recipient: order.recipient,
+        bundle: order.size,
+        amount: refundAmount,
+        method: 'wallet',
+        status: 'Refunded',
+        balBefore,
+        balAfter,
+        source: order.source || 'web',
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      await db.collection('refunds').insertOne(refund, { session });
+    });
+  } catch (error) {
+    console.error(`Order refund transaction failed for ${id}:`, error);
+    return res.status(500).json({ ok: false, error: 'Unable to complete this refund. Please try again.' });
+  } finally {
+    await session.endSession();
+  }
+  if (!refund) return res.status(409).json({ ok: false, error: 'Order already refunded.' });
   await createNotification(user.id, 'Order refunded', `GHS ${refundAmount.toFixed(2)} returned to your wallet for order ${id}.`, 'refund');
 
   res.json({ ok: true, refund, walletBalance: balAfter, orderStatus: 'Refunded' });
@@ -2439,6 +2854,186 @@ app.get('/api/deposits', requireUser, async (req, res) => {
   const filter = req.user.role === 'admin' ? {} : { userId: req.user.id };
   const deposits = await db.collection('deposits').find(filter).sort({ date: -1 }).toArray();
   res.json({ ok: true, deposits });
+});
+
+app.post('/api/payments/mtn-momo/initialize', requireUser, async (req, res) => {
+  const amount = Number(req.body?.amount || 0);
+  const phone = normalizeMtnMomoPhone(req.body?.phone || req.user.momo || req.user.phone);
+  if (amount < 5 || !Number.isFinite(amount)) {
+    return res.status(400).json({ ok: false, error: 'Minimum top-up is GHS 5.' });
+  }
+  if (!phone) {
+    return res.status(400).json({ ok: false, error: 'Enter a valid Ghana mobile money number.' });
+  }
+  const missing = getMtnMomoMissingConfiguration();
+  if (missing.length) {
+    return res.status(503).json({ ok: false, error: `MTN MoMo Collections is not configured. Set ${missing.join(', ')} on the server.` });
+  }
+
+  const creditAmount = Number(amount.toFixed(2));
+  const fee = Number((creditAmount * 0.03).toFixed(2));
+  const totalPay = Number((creditAmount + fee).toFixed(2));
+  const reference = `MTN-${crypto.randomUUID()}`;
+  const mtnReferenceId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const deposit = {
+    id: makeId('dep'),
+    userId: req.user.id,
+    amount: creditAmount,
+    fee,
+    totalPay,
+    method: 'mobile_money',
+    platform: 'mtn-momo',
+    reference,
+    mtnReferenceId,
+    phone,
+    status: 'Pending',
+    balBefore: Number(req.user.walletBalance || 0),
+    balAfter: Number(req.user.walletBalance || 0),
+    handledBy: 'mtn-momo',
+    metadata: { project: 'ALLENDATAHUB', userId: req.user.id },
+    date: now,
+    createdAt: now,
+  };
+  await db.collection('deposits').insertOne(deposit);
+
+  try {
+    const { response } = await requestMtnMomo('collection', '/collection/v1_0/requesttopay', {
+      method: 'POST',
+      headers: { 'X-Reference-Id': mtnReferenceId },
+      body: JSON.stringify({
+        amount: totalPay.toFixed(2),
+        currency: 'GHS',
+        externalId: reference,
+        payer: { partyIdType: 'MSISDN', partyId: phone },
+        payerMessage: 'AllenDataHub wallet top-up',
+        payeeNote: 'Wallet funding',
+      }),
+    });
+    await db.collection('deposits').updateOne(
+      { reference, status: 'Pending' },
+      { $set: { initializedAt: new Date().toISOString() } },
+    );
+    return res.status(202).json({
+      ok: true,
+      pending: true,
+      reference,
+      amount: creditAmount,
+      totalPay,
+      message: 'Approve the MTN MoMo payment prompt on your phone.',
+      providerStatus: response.status,
+    });
+  } catch (error) {
+    if (error instanceof MtnMomoError && error.status >= 400 && error.status < 500) {
+      await db.collection('deposits').updateOne(
+        { reference, status: 'Pending' },
+        { $set: { status: 'Failed', paymentError: error.message, updatedAt: new Date().toISOString() } },
+      );
+      return res.status(502).json({ ok: false, error: error.message });
+    }
+
+    await db.collection('deposits').updateOne(
+      { reference, status: 'Pending' },
+      { $set: { initializationUnknown: true, paymentError: error instanceof Error ? error.message : 'MTN MoMo response was not received.' } },
+    );
+    return res.status(202).json({
+      ok: true,
+      pending: true,
+      reference,
+      amount: creditAmount,
+      totalPay,
+      message: 'MTN MoMo has not confirmed the request yet. Check the payment status before trying again.',
+    });
+  }
+});
+
+app.post('/api/payments/mtn-momo/verify', requireUser, async (req, res) => {
+  const reference = String(req.body?.reference || '').trim();
+  if (!reference) return res.status(400).json({ ok: false, error: 'Reference is required.' });
+  const deposit = await db.collection('deposits').findOne({
+    reference,
+    userId: req.user.id,
+    platform: 'mtn-momo',
+  });
+  if (!deposit) return res.status(404).json({ ok: false, error: 'MTN MoMo deposit not found.' });
+  if (deposit.status === 'Completed' || deposit.status === 'Credited') {
+    const user = await getUserById(req.user.id);
+    return res.json({ ok: true, verified: true, reference, walletBalance: user?.walletBalance });
+  }
+  if (deposit.status === 'Failed') {
+    return res.json({ ok: true, failed: true, reference, error: deposit.paymentError || 'MTN MoMo payment failed.' });
+  }
+  if (!deposit.mtnReferenceId) {
+    return res.status(409).json({ ok: false, error: 'MTN MoMo request reference is missing.' });
+  }
+
+  let providerPayment;
+  try {
+    const result = await requestMtnMomo(
+      'collection',
+      `/collection/v1_0/requesttopay/${encodeURIComponent(deposit.mtnReferenceId)}`,
+      { method: 'GET' },
+    );
+    providerPayment = result.data;
+  } catch (error) {
+    if (error instanceof MtnMomoError && error.status === 404 && deposit.initializationUnknown) {
+      return res.status(202).json({ ok: true, pending: true, reference, message: 'MTN MoMo has not confirmed the payment request yet.' });
+    }
+    return res.status(error instanceof MtnMomoError && error.status >= 400 && error.status < 500 ? 502 : 503).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Unable to check MTN MoMo payment status.',
+    });
+  }
+
+  const status = String(providerPayment.status || '').toUpperCase();
+  if (status === 'FAILED') {
+    await db.collection('deposits').updateOne(
+      { reference, status: 'Pending' },
+      { $set: { status: 'Failed', paymentError: providerPayment.reason || 'MTN MoMo payment failed.', updatedAt: new Date().toISOString() } },
+    );
+    return res.json({ ok: true, failed: true, reference, error: providerPayment.reason || 'MTN MoMo payment failed.' });
+  }
+  if (status !== 'SUCCESSFUL') {
+    if (!['PENDING', 'ACCEPTED', 'IN_PROGRESS'].includes(status)) {
+      return res.status(502).json({ ok: false, error: `MTN MoMo returned an unrecognized payment status: ${status || 'empty'}.` });
+    }
+    return res.status(202).json({ ok: true, pending: true, reference, status });
+  }
+
+  if (
+    Number(providerPayment.amount) !== Number(deposit.totalPay ?? deposit.amount)
+    || providerPayment.currency !== 'GHS'
+    || String(providerPayment.externalId || '') !== reference
+  ) {
+    return res.status(400).json({ ok: false, error: 'Verified MTN MoMo payment does not match this wallet deposit.' });
+  }
+
+  const creditResult = await creditWalletForSuccessfulDeposit({
+    userId: req.user.id,
+    amount: Number(deposit.amount),
+    reference,
+    source: 'mtn_momo_verification',
+    metadata: { providerStatus: status, mtnReferenceId: deposit.mtnReferenceId },
+    platform: 'mtn-momo',
+    method: 'mobile_money',
+    sendSms: false,
+  });
+  if (!creditResult.ok) {
+    return res.status(creditResult.pending ? 202 : 400).json({
+      ok: true,
+      pending: Boolean(creditResult.pending),
+      error: creditResult.error,
+      reference,
+    });
+  }
+  return res.json({
+    ok: true,
+    verified: true,
+    alreadyProcessed: Boolean(creditResult.alreadyProcessed),
+    reference,
+    walletBalance: creditResult.balAfter,
+    message: 'MTN MoMo payment verified and wallet credited.',
+  });
 });
 
 async function initializePaystackPayment(req, res) {
@@ -2595,7 +3190,15 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     if (ObjectId.isValid(storeId)) storeIds.unshift({ _id: new ObjectId(storeId) });
     const store = await db?.collection('agent_stores').findOne({ $or: storeIds });
     if (!order || !store) return res.status(400).json({ ok: false, error: 'Mini-store order or store not found.' });
-    if (order.status === 'Failed' || order.fulfillmentStatus === 'failed') {
+    if (order.paid === true) {
+      try {
+        await creditStoreCommission(order);
+      } catch (error) {
+        console.error('Mini-store commission credit failed:', error);
+        return res.status(500).json({ ok: false, error: 'Payment was confirmed, but commission credit failed. Paystack may retry this callback.' });
+      }
+    }
+    if (order.paid === true && (order.status === 'Failed' || order.fulfillmentStatus === 'failed')) {
       return res.json({ ok: true, ignored: true, reason: 'This order has already failed and will not be resent.' });
     }
     if (order.vendorOrderId || order.portalOrderId || order.fulfillmentStatus === 'dispatching') {
@@ -2604,11 +3207,28 @@ app.post('/api/webhooks/paystack', async (req, res) => {
     const ownership = { userId: order.userId || store.agentId };
     if (order.username) ownership.username = order.username;
     if (order.userEmail) ownership.userEmail = order.userEmail;
-    const claim = await db.collection('orders').updateOne(
-      { id: order.id, source: 'mini-store', status: { $in: ['PaymentPending', 'Paid'] }, vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
-      { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference, fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
+    if (order.paid !== true) {
+      await db.collection('orders').updateOne(
+        { id: order.id, source: 'mini-store', paid: { $ne: true }, status: { $in: ['PaymentPending', 'Paid', 'Failed'] }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
+        { $set: { ...ownership, paid: true, status: 'Paid', paidAt: new Date().toISOString(), paymentReference: reference } },
+      );
+    }
+    const paidOrder = await db.collection('orders').findOne({ id: order.id, source: 'mini-store', paid: true });
+    if (!paidOrder) {
+      return res.json({ ok: true, alreadyProcessed: true });
+    }
+    try {
+      await creditStoreCommission(paidOrder);
+    } catch (error) {
+      console.error('Mini-store commission credit failed:', error);
+      return res.status(500).json({ ok: false, error: 'Payment was confirmed, but commission credit failed. Paystack may retry this callback.' });
+    }
+
+    const dispatchClaim = await db.collection('orders').updateOne(
+      { id: order.id, source: 'mini-store', paid: true, status: 'Paid', vendorOrderId: { $exists: false }, portalOrderId: { $exists: false }, fulfillmentStatus: { $nin: ['dispatching', 'failed'] } },
+      { $set: { fulfillmentStatus: 'dispatching', fulfillmentClaimedAt: new Date().toISOString() } },
     );
-    if (claim.modifiedCount === 0) {
+    if (dispatchClaim.modifiedCount === 0) {
       return res.json({ ok: true, alreadyProcessed: true });
     }
 
@@ -2624,22 +3244,13 @@ app.post('/api/webhooks/paystack', async (req, res) => {
       return res.status(502).json({ ok: false, error: 'Payment received, but bundle dispatch failed.', details: hubnetResult.error });
     }
 
-    const commission = Number(order.agentCommission ?? metadata.commission ?? 0);
-    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: 'Pending', fulfillmentStatus: 'submitted', vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } });
-    if (commission > 0) {
-      const ledgerClaim = await db.collection('store_ledger').updateOne(
-        { reference },
-        { $setOnInsert: { id: makeId('ledger'), storeId: String(store._id || store.agentId), orderId: order.id, reference, type: 'commission', amount: commission, createdAt: new Date().toISOString() } },
-        { upsert: true },
-      );
-      if (ledgerClaim.upsertedCount === 1) {
-        await Promise.all([
-          db.collection('users').updateOne({ id: store.agentId }, { $inc: { walletBalance: commission, commissionEarned: commission } }),
-          db.collection('agent_stores').updateOne({ _id: store._id }, { $inc: { walletBalance: commission } }),
-        ]);
-      }
+    const orderCompleted = ['delivered', 'success', 'successful', 'completed', 'resolved'].includes(String(hubnetResult.status || '').toLowerCase());
+    await db.collection('orders').updateOne({ id: order.id }, { $set: { status: orderCompleted ? 'Completed' : 'Pending', fulfillmentStatus: orderCompleted ? 'completed' : 'submitted', vendorOrderId: hubnetResult.transactionId, vendorReference: hubnetResult.reference, vendorStatus: hubnetResult.status, vendorResponse: hubnetResult.raw, updatedAt: new Date().toISOString() } });
+    if (orderCompleted) {
+      const completedOrder = await db.collection('orders').findOne({ id: order.id });
+      if (completedOrder) await sendOrderCompletedSms(completedOrder);
     }
-    return res.json({ ok: true, forwarded: true, storeOrder: true, commission });
+    return res.json({ ok: true, forwarded: true, storeOrder: true });
   }
 
   const userId = String(metadata.userId || deposit?.userId || '');
@@ -2658,7 +3269,7 @@ app.post('/api/webhooks/paystack', async (req, res) => {
   }
 
   try {
-    const result = await creditWalletForPaystackSuccess({
+    const result = await creditWalletForSuccessfulDeposit({
       userId,
       amount: creditAmount,
       reference,
@@ -2746,7 +3357,7 @@ app.post('/api/payments/paystack/verify', requireUser, async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Verified payment does not match this wallet deposit.' });
   }
 
-  const creditResult = await creditWalletForPaystackSuccess({
+  const creditResult = await creditWalletForSuccessfulDeposit({
     userId: req.user.id,
     amount: Number(deposit.amount),
     reference,
@@ -2819,7 +3430,7 @@ app.post('/api/payments/paystack/complete', requireUser, async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Verified payment does not match this wallet deposit.' });
   }
 
-  const creditResult = await creditWalletForPaystackSuccess({
+  const creditResult = await creditWalletForSuccessfulDeposit({
     userId: req.user.id,
     amount: Number(deposit.amount),
     reference,
@@ -3046,6 +3657,116 @@ app.get('/api/admin/requests', requireAdmin, async (_req, res) => {
   res.json({ ok: true, requests: requests.slice(0, 50) });
 });
 
+app.get('/api/admin/store-withdrawals', requireAdmin, async (_req, res) => {
+  const withdrawals = await db.collection('store_withdrawals')
+    .find({})
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .toArray();
+  const agents = await db.collection('users')
+    .find({ id: { $in: withdrawals.map((entry) => entry.agentId) } })
+    .project({ id: 1, fullName: 1, username: 1, email: 1 })
+    .toArray();
+  const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
+  res.json({
+    ok: true,
+    withdrawals: withdrawals.map(({ mtnReferenceId: _mtnReferenceId, ...withdrawal }) => ({
+      ...withdrawal,
+      agent: agentsById.get(withdrawal.agentId) || null,
+    })),
+  });
+});
+
+app.get('/api/admin/store-commissions', requireAdmin, async (_req, res) => {
+  const commissions = await db.collection('store_ledger')
+    .find({ type: 'commission' })
+    .sort({ createdAt: -1 })
+    .toArray();
+  const storeObjectIds = commissions
+    .map((entry) => String(entry.storeId || ''))
+    .filter((id) => ObjectId.isValid(id))
+    .map((id) => new ObjectId(id));
+  const stores = await db.collection('agent_stores')
+    .find({
+      $or: [
+        {
+          agentId: {
+            $in: commissions.flatMap((entry) => [
+              entry.agentId,
+              ObjectId.isValid(String(entry.storeId || '')) ? null : entry.storeId,
+            ]).filter(Boolean),
+          },
+        },
+        { _id: { $in: storeObjectIds } },
+      ],
+    })
+    .toArray();
+  const storesByKey = new Map(stores.map((store) => [String(store._id || store.agentId), store]));
+  const agentIds = [...new Set(commissions.map((entry) => entry.agentId || storesByKey.get(String(entry.storeId))?.agentId).filter(Boolean))];
+  const orderIds = [...new Set(commissions.map((entry) => entry.orderId).filter(Boolean))];
+  const [agents, orders] = await Promise.all([
+    db.collection('users').find({ id: { $in: agentIds } })
+      .project({ id: 1, fullName: 1, username: 1, email: 1 })
+      .toArray(),
+    db.collection('orders').find({ id: { $in: orderIds } })
+      .project({ id: 1, status: 1, network: 1, size: 1, recipient: 1 })
+      .toArray(),
+  ]);
+  const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
+  const ordersById = new Map(orders.map((order) => [order.id, order]));
+  res.json({
+    ok: true,
+    commissions: commissions.map((entry) => {
+      const agentId = entry.agentId || storesByKey.get(String(entry.storeId))?.agentId;
+      return {
+        id: entry.id,
+        orderId: entry.orderId,
+        reference: entry.reference,
+        amount: entry.amount,
+        createdAt: entry.createdAt,
+        agent: agentsById.get(agentId) || null,
+        order: ordersById.get(entry.orderId) || null,
+      };
+    }),
+  });
+});
+
+app.post('/api/admin/store-withdrawals/:id/approve', requireAdmin, async (req, res) => {
+  const withdrawal = await db.collection('store_withdrawals').findOne({ id: req.params.id });
+  if (!withdrawal) return res.status(404).json({ ok: false, error: 'Withdrawal request not found.' });
+  if (withdrawal.status !== 'Pending') {
+    return res.status(409).json({ ok: false, error: `Withdrawal is ${withdrawal.status.toLowerCase()}.` });
+  }
+  if (withdrawal.transferType !== 'wallet') {
+    return res.status(409).json({ ok: false, error: 'This legacy MoMo payout request cannot be approved as a wallet transfer. Reject it and ask the agent to submit a new request.' });
+  }
+  try {
+    const approved = await approveStoreWalletTransfer(withdrawal, req.user.id);
+    if (!approved) return res.status(409).json({ ok: false, error: 'This transfer request has already been handled.' });
+    return res.json({ ok: true, status: 'Approved', message: 'Mini-store balance transferred to the agent wallet.' });
+  } catch (error) {
+    console.error('Mini-store wallet transfer approval failed:', error);
+    return res.status(500).json({ ok: false, error: 'Unable to transfer the reserved mini-store balance. No transfer was completed.' });
+  }
+});
+
+app.post('/api/admin/store-withdrawals/:id/reject', requireAdmin, async (req, res) => {
+  const withdrawal = await db.collection('store_withdrawals').findOne({ id: req.params.id });
+  if (!withdrawal) return res.status(404).json({ ok: false, error: 'Withdrawal request not found.' });
+  const released = await releaseStoreWithdrawal(
+    withdrawal,
+    'Pending',
+    'Rejected',
+    {
+      rejectedBy: req.user.id,
+      rejectedAt: new Date().toISOString(),
+      rejectionReason: String(req.body?.reason || 'Rejected by administrator').slice(0, 250),
+    },
+  );
+  if (!released) return res.status(409).json({ ok: false, error: 'This withdrawal request has already been handled.' });
+  return res.json({ ok: true, message: 'Transfer rejected and reserved mini-store funds returned.' });
+});
+
 app.get('/api/admin/api-config', requireAdmin, async (_req, res) => {
   const config = await db.collection('api_config').findOne({}) || DEFAULT_API_CONFIG;
   res.json({ ok: true, config });
@@ -3064,17 +3785,23 @@ app.put('/api/admin/api-config', requireAdmin, async (req, res) => {
 app.post('/api/admin/wallet', requireAdmin, async (req, res) => {
   const { userId, type, amount } = req.body || {};
   const value = Number(amount || 0);
-  if (!userId || !value) return res.status(400).json({ ok: false, error: 'Invalid wallet action.' });
+  if (!userId || !Number.isFinite(value) || value <= 0 || !['credit', 'debit'].includes(type)) {
+    return res.status(400).json({ ok: false, error: 'Invalid wallet action.' });
+  }
 
   const user = await getUserById(userId);
   if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
 
   const balBefore = Number(user.walletBalance || 0);
-  const balAfter = type === 'debit'
-    ? Math.max(0, Number((balBefore - value).toFixed(2)))
-    : Number((balBefore + value).toFixed(2));
-
-  await db.collection('users').updateOne({ id: userId }, { $set: { walletBalance: balAfter } });
+  let balAfter;
+  if (type === 'debit') {
+    const debitResult = await debitWalletBalance(userId, value);
+    if (!debitResult.ok) return res.status(400).json({ ok: false, error: debitResult.error });
+    balAfter = debitResult.walletBalance;
+  } else {
+    balAfter = Number((balBefore + value).toFixed(2));
+    await db.collection('users').updateOne({ id: userId }, { $set: { walletBalance: balAfter } });
+  }
 
   if (type === 'credit') {
     const deposit = {

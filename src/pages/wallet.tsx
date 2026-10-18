@@ -54,10 +54,11 @@ const SPECIAL_PROGRAMS = [
 ];
 
 export default function WalletPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [visible, setVisible] = useState(true);
   const [amount, setAmount] = useState("");
+  const [mtnPhone, setMtnPhone] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [filter, setFilter] = useState("all");
   const [selectedDeposit, setSelectedDeposit] = useState<string | null>(null);
@@ -69,6 +70,14 @@ export default function WalletPage() {
   const totalPay = parsedAmount + fee;
 
   const [deposits, setDeposits] = useState<any[]>([]);
+
+  useEffect(() => {
+    setMtnPhone(user?.momo || user?.phone || "");
+  }, [user?.id, user?.momo, user?.phone]);
+
+  useEffect(() => {
+    if (user?.id) void refreshUser();
+  }, [user?.id]);
 
   const userDeposits = useMemo(
     () =>
@@ -157,6 +166,64 @@ export default function WalletPage() {
         description: error instanceof Error ? error.message : "Unable to open Paystack.",
         variant: "destructive",
       });
+      setIsPaying(false);
+    }
+  };
+
+  const handleMtnMomo = async () => {
+    if (parsedAmount < MIN_TOPUP) {
+      toast({ title: "Minimum top-up", description: `Enter at least GHS ${MIN_TOPUP}.00`, variant: "destructive" });
+      return;
+    }
+    if (!user?.id) {
+      toast({ title: "Sign in required", description: "Please sign in before funding your wallet.", variant: "destructive" });
+      return;
+    }
+    setIsPaying(true);
+    let reference = "";
+    try {
+      const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || "http://127.0.0.1:4000";
+      const response = await fetch(`${apiBase}/api/payments/mtn-momo/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": user.id },
+        body: JSON.stringify({ amount: parsedAmount, phone: mtnPhone }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "Unable to initialize MTN MoMo payment.");
+      reference = String(data.reference || "");
+      if (!reference) throw new Error("MTN MoMo did not return a payment reference.");
+      toast({
+        title: "Approve the MoMo prompt",
+        description: `Approve GHS ${Number(data.totalPay || 0).toFixed(2)} on ${mtnPhone}. Your wallet is credited after MTN confirms payment.`,
+      });
+
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 5000));
+        const verifyResponse = await fetch(`${apiBase}/api/payments/mtn-momo/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-user-id": user.id },
+          body: JSON.stringify({ reference }),
+        });
+        const verifyData = await verifyResponse.json().catch(() => ({}));
+        if (!verifyResponse.ok) throw new Error(verifyData?.error || "Unable to check MTN MoMo payment status.");
+        if (verifyData.verified) {
+          toast({ title: "Wallet funded", description: `Your wallet has been credited with ${formatGHS(parsedAmount)}.` });
+          window.location.reload();
+          return;
+        }
+        if (verifyData.failed) throw new Error(verifyData.error || "MTN MoMo payment failed.");
+      }
+      toast({
+        title: "Payment still processing",
+        description: `No final confirmation was received. Reference: ${reference}. Check your wallet shortly before trying again.`,
+      });
+    } catch (error) {
+      toast({
+        title: reference ? "Payment status unavailable" : "Payment initialization failed",
+        description: error instanceof Error ? error.message : "Unable to complete MTN MoMo payment.",
+        variant: "destructive",
+      });
+    } finally {
       setIsPaying(false);
     }
   };
@@ -259,7 +326,7 @@ export default function WalletPage() {
             <p className="mb-5 text-sm text-slate-500">Choose a payment method and enter your amount.</p>
 
             <Tabs defaultValue="paystack">
-              <TabsList className="mb-5 grid h-auto w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+              <TabsList className="mb-5 grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
                 <TabsTrigger
                   value="send-claim"
                   disabled
@@ -272,6 +339,9 @@ export default function WalletPage() {
                 </TabsTrigger>
                 <TabsTrigger value="paystack" className="rounded-lg data-[state=active]:bg-white">
                   Paystack
+                </TabsTrigger>
+                <TabsTrigger value="mtn-momo" className="rounded-lg data-[state=active]:bg-white">
+                  MTN MoMo
                 </TabsTrigger>
                 <TabsTrigger
                   value="bulkclix"
@@ -349,6 +419,55 @@ export default function WalletPage() {
                 </p>
               </TabsContent>
 
+              <TabsContent value="mtn-momo" className="mt-0 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="mtn-momo-phone">MTN MoMo number</Label>
+                  <Input
+                    id="mtn-momo-phone"
+                    type="tel"
+                    value={mtnPhone}
+                    onChange={(event) => setMtnPhone(event.target.value)}
+                    placeholder="0241234567"
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mtn-momo-amount">Amount to add (GHS)</Label>
+                  <Input
+                    id="mtn-momo-amount"
+                    type="number"
+                    min={MIN_TOPUP}
+                    step="0.01"
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    className="h-12 rounded-xl text-lg font-semibold"
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-sm">
+                  <span className="font-medium text-slate-600">Admin Fee</span>
+                  <span className="font-bold text-orange-600">3%</span>
+                </div>
+                {parsedAmount >= MIN_TOPUP && (
+                  <div className="flex justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold">
+                    <span>Total charged</span>
+                    <span>{formatGHS(totalPay)}</span>
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleMtnMomo}
+                  disabled={isPaying}
+                  className="h-12 w-full rounded-xl bg-yellow-400 text-base font-semibold text-slate-900 hover:bg-yellow-500"
+                >
+                  {isPaying ? "Waiting for MTN MoMo..." : "Pay with MTN MoMo"}
+                </Button>
+                <p className="flex items-center justify-center gap-2 text-center text-xs text-slate-500">
+                  <Lock className="h-3.5 w-3.5" />
+                  Confirm the MTN MoMo prompt. Your wallet is credited only after payment confirmation.
+                </p>
+              </TabsContent>
+
               <TabsContent value="send-claim">
                 <p className="py-8 text-center text-sm text-slate-500">Send & Claim is temporarily disabled.</p>
               </TabsContent>
@@ -373,6 +492,7 @@ export default function WalletPage() {
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="paystack">Paystack</SelectItem>
+                <SelectItem value="mtn-momo">MTN MoMo</SelectItem>
                 <SelectItem value="momo">MoMo</SelectItem>
                 <SelectItem value="bulkclix">BulkClix</SelectItem>
                 <SelectItem value="credited">Credited</SelectItem>

@@ -19,6 +19,22 @@ export default function AdminPage() {
     amount: "50",
   });
   const [apiRequests, setApiRequests] = useState<Array<{ id: string; email?: string; requestType?: string; createdAt?: string; status?: string }>>([]);
+  const [storeWithdrawals, setStoreWithdrawals] = useState<Array<{
+    id: string;
+    amount: number;
+    status: string;
+    createdAt: string;
+    agent?: { fullName?: string; username?: string; email?: string } | null;
+  }>>([]);
+  const [storeCommissions, setStoreCommissions] = useState<Array<{
+    id: string;
+    orderId?: string;
+    reference?: string;
+    amount: number;
+    createdAt?: string;
+    agent?: { fullName?: string; username?: string; email?: string } | null;
+    order?: { status?: string; network?: string; size?: string; recipient?: string } | null;
+  }>>([]);
   const [apiAccounts, setApiAccounts] = useState<Array<{
     id: string;
     fullName?: string;
@@ -49,7 +65,7 @@ export default function AdminPage() {
     const loadAdminData = async () => {
       if (!user?.id) return;
       try {
-        const [overviewData, requestsData, networkData, configData, ordersData, accountsData, productsData] = await Promise.all([
+        const [overviewData, requestsData, networkData, configData, ordersData, accountsData, productsData, withdrawalsData, commissionsData] = await Promise.all([
           apiFetch<{ summary?: typeof summary }>('/api/admin/overview', { userId: user.id }),
           apiFetch<{ requests?: Array<{ id: string; email?: string; requestType?: string; createdAt?: string; status?: string }> }>('/api/admin/requests', { userId: user.id }),
           apiFetch<{ settings?: Array<{ network: string; enabled?: boolean }> }>('/api/network-settings', { userId: user.id }),
@@ -57,6 +73,8 @@ export default function AdminPage() {
           apiFetch<{ orders?: Array<{ id: string; userId?: string; username?: string; recipient: string; network: string; size: string; amount: number; status: string; date?: string; createdAt?: string; source?: string; balBefore?: number; balAfter?: number }> }>('/api/orders', { userId: user.id }),
           apiFetch<{ accounts?: typeof apiAccounts }>('/api/admin/api-accounts', { userId: user.id }),
           apiFetch<{ products?: typeof apiProducts }>('/api/admin/api-products', { userId: user.id }),
+          apiFetch<{ withdrawals?: typeof storeWithdrawals }>('/api/admin/store-withdrawals', { userId: user.id }),
+          apiFetch<{ commissions?: typeof storeCommissions }>('/api/admin/store-commissions', { userId: user.id }),
         ]);
 
         setSummary(overviewData.summary || { users: 0, orders: 0, refunds: 0, notifications: 0, apiKeys: 0, products: 0, networkSettings: 0, disabledNetworks: [] });
@@ -72,6 +90,8 @@ export default function AdminPage() {
         });
         setApiAccounts(Array.isArray(accountsData?.accounts) ? accountsData.accounts : []);
         setApiProducts(Array.isArray(productsData?.products) ? productsData.products : []);
+        setStoreWithdrawals(Array.isArray(withdrawalsData?.withdrawals) ? withdrawalsData.withdrawals : []);
+        setStoreCommissions(Array.isArray(commissionsData?.commissions) ? commissionsData.commissions : []);
         if (!selectedApiAccountId && accountsData?.accounts?.[0]?.id) {
           setSelectedApiAccountId(accountsData.accounts[0].id);
         }
@@ -139,6 +159,25 @@ export default function AdminPage() {
     }
     setAllOrders((current) => current.map((order) => order.id === orderId ? { ...order, status: "Refunded" } : order));
     window.alert(`Refund processed for order ${orderId}.`);
+  };
+
+  const handleStoreWithdrawal = async (withdrawalId: string, action: "approve" | "reject") => {
+    if (!user?.id) return;
+    try {
+      const result = await apiFetch<{ status?: string; error?: string }>(
+        `/api/admin/store-withdrawals/${encodeURIComponent(withdrawalId)}/${action}`,
+        {
+          method: "POST",
+          userId: user.id,
+          body: JSON.stringify(action === "reject" ? { reason: "Rejected by administrator" } : {}),
+        },
+      );
+      if (result?.error) throw new Error(result.error);
+      const response = await apiFetch<{ withdrawals?: typeof storeWithdrawals }>("/api/admin/store-withdrawals", { userId: user.id });
+      setStoreWithdrawals(Array.isArray(response.withdrawals) ? response.withdrawals : []);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to update commission withdrawal.");
+    }
   };
 
   const handleWalletUpdate = async () => {
@@ -309,10 +348,12 @@ export default function AdminPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="grid grid-cols-7 w-full">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="commissions">Commissions</TabsTrigger>
+          <TabsTrigger value="withdrawals">Transfers</TabsTrigger>
           <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
         </TabsList>
@@ -369,6 +410,60 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="commissions" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" /> Mini-store commissions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {storeCommissions.length === 0 ? <p className="text-sm text-slate-500">No mini-store commissions have been earned.</p> : (
+                <div className="overflow-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-600"><tr><th className="px-3 py-2">Agent</th><th className="px-3 py-2">Order</th><th className="px-3 py-2">Package</th><th className="px-3 py-2">Recipient</th><th className="px-3 py-2">Commission</th><th className="px-3 py-2">Earned</th></tr></thead>
+                    <tbody>{storeCommissions.map((entry) => <tr key={entry.id} className="border-t border-slate-200">
+                      <td className="px-3 py-2">{entry.agent?.fullName || entry.agent?.username || entry.agent?.email || "Agent"}</td>
+                      <td className="px-3 py-2">{shortenId(entry.orderId || entry.reference || entry.id)}</td>
+                      <td className="px-3 py-2">{entry.order ? `${entry.order.network || ""} ${entry.order.size || ""}`.trim() : "Mini-store order"}</td>
+                      <td className="px-3 py-2">{entry.order?.recipient || "-"}</td>
+                      <td className="px-3 py-2 font-semibold">{formatGHS(entry.amount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "-"}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="withdrawals" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5" /> Mini-store wallet transfer requests</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {storeWithdrawals.length === 0 ? <p className="text-sm text-slate-500">No mini-store transfer requests.</p> : (
+                <div className="overflow-auto rounded-xl border border-slate-200">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-slate-600"><tr><th className="px-3 py-2">Agent</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
+                    <tbody>{storeWithdrawals.map((entry) => <tr key={entry.id} className="border-t border-slate-200">
+                      <td className="px-3 py-2">{entry.agent?.fullName || entry.agent?.username || entry.agent?.email || "Agent"}</td>
+                      <td className="px-3 py-2 font-semibold">{formatGHS(entry.amount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{new Date(entry.createdAt).toLocaleString()}</td>
+                      <td className="px-3 py-2"><Badge variant={entry.status === "Approved" ? "default" : "secondary"}>{entry.status}</Badge></td>
+                      <td className="space-x-2 px-3 py-2 text-right">
+                        {entry.status === "Pending" && <>
+                          <Button size="sm" onClick={() => void handleStoreWithdrawal(entry.id, "approve")}>Approve transfer</Button>
+                          <Button size="sm" variant="outline" onClick={() => void handleStoreWithdrawal(entry.id, "reject")}>Reject</Button>
+                        </>}
+                      </td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Users Tab */}

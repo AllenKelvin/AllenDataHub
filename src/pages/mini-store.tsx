@@ -6,7 +6,8 @@ import { formatGHS } from "@/lib/formatters";
 import type { DataPackage } from "@/lib/types";
 
 interface StoreProfile { id?: string; storeName: string; contactPhone: string; whatsappNumber: string; slug: string; link: string; pricing?: Array<DataPackage & { basePrice: number; customPrice: number }>; }
-interface Analytics { totalOrders: number; totalCommissions: number; walletBalance: number; }
+interface Analytics { totalOrders: number; totalCommissions: number; walletBalance: number; withdrawableBalance: number; }
+interface StoreWithdrawal { id: string; amount: number; status: string; createdAt: string; }
 
 const formatWhatsAppTarget = (value?: string) => {
   if (!value) return "";
@@ -25,7 +26,10 @@ export default function MiniStoreDashboard() {
   const { user } = useAuth();
   const [store, setStore] = useState<StoreProfile | null>(null);
   const [packages, setPackages] = useState<Array<DataPackage & { basePrice: number; customPrice: number }>>([]);
-  const [analytics, setAnalytics] = useState<Analytics>({ totalOrders: 0, totalCommissions: 0, walletBalance: 0 });
+  const [analytics, setAnalytics] = useState<Analytics>({ totalOrders: 0, totalCommissions: 0, walletBalance: 0, withdrawableBalance: 0 });
+  const [withdrawals, setWithdrawals] = useState<StoreWithdrawal[]>([]);
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
   const [form, setForm] = useState({ storeName: "", contactPhone: user?.phone || "", whatsappNumber: user?.whatsapp || "" });
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
@@ -37,14 +41,16 @@ export default function MiniStoreDashboard() {
     if (!user?.id) return;
     try {
       const headers = { "x-user-id": user.id };
-      const [storeResponse, productResponse, analyticsResponse] = await Promise.all([
+      const [storeResponse, productResponse, analyticsResponse, withdrawalsResponse] = await Promise.all([
         fetch(`${getApiBase()}/api/agent/store`, { headers }),
         fetch(`${getApiBase()}/api/products`, { headers }),
         fetch(`${getApiBase()}/api/agent/store/analytics`, { headers }),
+        fetch(`${getApiBase()}/api/agent/store/withdrawals`, { headers }),
       ]);
       const storeData = await storeResponse.json().catch(() => ({}));
       const productData = await productResponse.json().catch(() => ({}));
       const analyticsData = await analyticsResponse.json().catch(() => ({}));
+      const withdrawalsData = await withdrawalsResponse.json().catch(() => ({}));
       if (!storeResponse.ok) {
         setMessageIsError(true);
         setMessage(storeData.error || `Unable to load your store (${storeResponse.status}).`);
@@ -57,6 +63,8 @@ export default function MiniStoreDashboard() {
         setPackages(productData.products.map((item: DataPackage) => ({ ...item, basePrice: Number(item.agentPrice ?? item.price), customPrice: Number(savedPricing.get(item.id) ?? item.agentPrice ?? item.price) })));
       }
       if (analyticsData.analytics) setAnalytics(analyticsData.analytics);
+      if (!withdrawalsResponse.ok) throw new Error(withdrawalsData.error || "Unable to load commission withdrawals.");
+      setWithdrawals(Array.isArray(withdrawalsData.withdrawals) ? withdrawalsData.withdrawals : []);
     } catch (error) {
       setMessageIsError(true);
       setMessage(error instanceof Error ? error.message : "Unable to load your store.");
@@ -124,6 +132,39 @@ export default function MiniStoreDashboard() {
     setMessage("Store link copied.");
   });
 
+  const requestWithdrawal = async () => {
+    if (requestingWithdrawal) return;
+    const amount = Number(withdrawalAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > analytics.withdrawableBalance) {
+      setMessageIsError(true);
+      setMessage("Enter an amount within your available mini-store commission balance.");
+      return;
+    }
+    setRequestingWithdrawal(true);
+    setMessage("");
+    try {
+      const response = await fetch(`${getApiBase()}/api/agent/store/withdrawals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": user?.id || "" },
+        body: JSON.stringify({
+          amount,
+          requestId: window.crypto.randomUUID(),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to request a mini-store transfer.");
+      setMessageIsError(false);
+      setMessage("Transfer requested. Funds are reserved until an administrator approves or rejects the request.");
+      setWithdrawalAmount("");
+      await load();
+    } catch (error) {
+      setMessageIsError(true);
+      setMessage(error instanceof Error ? error.message : "Unable to request a mini-store transfer.");
+    } finally {
+      setRequestingWithdrawal(false);
+    }
+  };
+
   return <div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-600">Agent tools</p><h1 className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">Your mini-store</h1><p className="mt-1 text-slate-500">Turn your package margins into a shareable checkout.</p></div>
@@ -133,6 +174,17 @@ export default function MiniStoreDashboard() {
     <div className="grid gap-4 md:grid-cols-3">
       {[["Total earnings", formatGHS(analytics.totalCommissions)], ["Wallet balance", formatGHS(analytics.walletBalance)], ["Total orders", String(analytics.totalOrders)]].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><span className="text-sm text-slate-500">{label}</span><WalletCards className="h-5 w-5 text-emerald-500" /></div><p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">{value}</p></div>)}
     </div>
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-4"><h2 className="font-semibold text-slate-900 dark:text-white">Transfer mini-store balance to wallet</h2><p className="text-sm text-slate-500">Available to transfer: {formatGHS(analytics.withdrawableBalance)}. A request reserves the funds and requires admin approval before they are added to your wallet.</p></div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount (GHS)<input type="number" min="0.01" max={analytics.withdrawableBalance} step="0.01" value={withdrawalAmount} onChange={(event) => setWithdrawalAmount(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" /></label>
+        <button disabled={requestingWithdrawal || analytics.withdrawableBalance <= 0} onClick={() => void requestWithdrawal()} className="self-end rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{requestingWithdrawal ? "Submitting..." : "Request transfer"}</button>
+      </div>
+      <div className="mt-5 space-y-2">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Transfer requests</h3>
+        {withdrawals.length === 0 ? <p className="text-sm text-slate-500">No transfer requests yet.</p> : withdrawals.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-sm dark:border-slate-800"><span>{formatGHS(item.amount)}</span><span className="font-medium">{item.status}</span><span className="text-slate-500">{new Date(item.createdAt).toLocaleString()}</span></div>)}
+      </div>
+    </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-5 flex items-center gap-3"><Store className="h-5 w-5 text-emerald-600" /><div><h2 className="font-semibold text-slate-900 dark:text-white">Store profile</h2><p className="text-sm text-slate-500">This information appears on your public checkout.</p></div></div>
       <div className="grid gap-4 md:grid-cols-3"><label className="text-sm font-medium text-slate-700 dark:text-slate-300">Store name<input value={form.storeName} onChange={(event) => setForm({ ...form, storeName: event.target.value })} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" placeholder="Ama Data Hub" /></label><label className="text-sm font-medium text-slate-700 dark:text-slate-300">Contact phone<input value={form.contactPhone} onChange={(event) => setForm({ ...form, contactPhone: event.target.value })} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" /></label><label className="text-sm font-medium text-slate-700 dark:text-slate-300">WhatsApp number<input value={form.whatsappNumber} onChange={(event) => setForm({ ...form, whatsappNumber: event.target.value })} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" /></label></div>
