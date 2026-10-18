@@ -1153,12 +1153,14 @@ async function releaseStoreWithdrawal(withdrawal, fromStatus, nextStatus, extraF
 
 async function approveStoreWalletTransfer(transfer, adminId) {
   const session = client.startSession();
-  let approved = false;
+  let approvalRecord = null;
   try {
     await session.withTransaction(async () => {
+      approvalRecord = null;
+      const approvedAt = new Date().toISOString();
       const transition = await db.collection('store_withdrawals').updateOne(
         { id: transfer.id, status: 'Pending', transferType: 'wallet' },
-        { $set: { status: 'Approved', approvedBy: adminId, approvedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+        { $set: { status: 'Approved', approvedBy: adminId, approvedAt, updatedAt: approvedAt } },
         { session },
       );
       if (transition.modifiedCount !== 1) return;
@@ -1171,9 +1173,30 @@ async function approveStoreWalletTransfer(transfer, adminId) {
       if (walletCredit.matchedCount !== 1) {
         throw new Error(`Unable to credit the agent wallet for mini-store transfer ${transfer.id}.`);
       }
-      approved = true;
+      const creditedAgent = await db.collection('users').findOne(
+        { id: transfer.agentId },
+        { session, projection: { walletBalance: 1 } },
+      );
+      if (!creditedAgent) {
+        throw new Error(`Unable to verify the credited agent wallet for mini-store transfer ${transfer.id}.`);
+      }
+      const walletBalanceAfter = Number(creditedAgent.walletBalance || 0);
+      const recordUpdate = await db.collection('store_withdrawals').updateOne(
+        { id: transfer.id, status: 'Approved' },
+        { $set: { approvedAmount: transfer.amount, walletBalanceAfter } },
+        { session },
+      );
+      if (recordUpdate.modifiedCount !== 1) {
+        throw new Error(`Unable to save the approval record for mini-store transfer ${transfer.id}.`);
+      }
+      approvalRecord = {
+        approved: true,
+        approvedAt,
+        approvedAmount: transfer.amount,
+        walletBalanceAfter,
+      };
     });
-    return approved;
+    return approvalRecord;
   } finally {
     await session.endSession();
   }
@@ -3741,9 +3764,22 @@ app.post('/api/admin/store-withdrawals/:id/approve', requireAdmin, async (req, r
     return res.status(409).json({ ok: false, error: 'This legacy MoMo payout request cannot be approved as a wallet transfer. Reject it and ask the agent to submit a new request.' });
   }
   try {
-    const approved = await approveStoreWalletTransfer(withdrawal, req.user.id);
-    if (!approved) return res.status(409).json({ ok: false, error: 'This transfer request has already been handled.' });
-    return res.json({ ok: true, status: 'Approved', message: 'Mini-store balance transferred to the agent wallet.' });
+    const approval = await approveStoreWalletTransfer(withdrawal, req.user.id);
+    if (!approval) return res.status(409).json({ ok: false, error: 'This transfer request has already been handled.' });
+    const notificationMessage = `Your mini-store transfer of GHS ${Number(approval.approvedAmount).toFixed(2)} was approved. Your current wallet balance is GHS ${Number(approval.walletBalanceAfter).toFixed(2)}.`;
+    try {
+      await createNotification(withdrawal.agentId, 'Mini-store transfer approved', notificationMessage, 'deposit');
+    } catch (notificationError) {
+      console.error('Mini-store transfer approval notification failed:', notificationError);
+    }
+    return res.json({
+      ok: true,
+      status: 'Approved',
+      approvedAt: approval.approvedAt,
+      approvedAmount: approval.approvedAmount,
+      walletBalanceAfter: approval.walletBalanceAfter,
+      message: 'Mini-store balance transferred to the agent wallet.',
+    });
   } catch (error) {
     console.error('Mini-store wallet transfer approval failed:', error);
     return res.status(500).json({ ok: false, error: 'Unable to transfer the reserved mini-store balance. No transfer was completed.' });

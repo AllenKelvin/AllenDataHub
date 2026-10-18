@@ -165,6 +165,19 @@ export default function MiniStoreDashboard() {
     }
   };
 
+  const updateWithdrawalAmount = (value: string) => {
+    if (!value) {
+      setWithdrawalAmount("");
+      return;
+    }
+    const amount = Number(value);
+    if (Number.isFinite(amount) && amount > analytics.withdrawableBalance) {
+      setWithdrawalAmount(analytics.withdrawableBalance.toFixed(2));
+      return;
+    }
+    setWithdrawalAmount(value);
+  };
+
   return <div className="space-y-6">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-600">Agent tools</p><h1 className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">Your mini-store</h1><p className="mt-1 text-slate-500">Turn your package margins into a shareable checkout.</p></div>
@@ -177,7 +190,7 @@ export default function MiniStoreDashboard() {
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="mb-4"><h2 className="font-semibold text-slate-900 dark:text-white">Transfer mini-store balance to wallet</h2><p className="text-sm text-slate-500">Available to transfer: {formatGHS(analytics.withdrawableBalance)}. A request reserves the funds and requires admin approval before they are added to your wallet.</p></div>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount (GHS)<input type="number" min="0.01" max={analytics.withdrawableBalance} step="0.01" value={withdrawalAmount} onChange={(event) => setWithdrawalAmount(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" /></label>
+        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount (GHS)<input type="number" min="0.01" max={analytics.withdrawableBalance} step="0.01" value={withdrawalAmount} onChange={(event) => updateWithdrawalAmount(event.target.value)} className="mt-2 h-10 w-full rounded-lg border border-slate-200 px-3 dark:border-slate-700 dark:bg-slate-950" /></label>
         <button disabled={requestingWithdrawal || analytics.withdrawableBalance <= 0} onClick={() => void requestWithdrawal()} className="self-end rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{requestingWithdrawal ? "Submitting..." : "Request transfer"}</button>
       </div>
       <div className="mt-5 space-y-2">

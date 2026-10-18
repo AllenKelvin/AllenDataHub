@@ -24,6 +24,9 @@ export default function AdminPage() {
     amount: number;
     status: string;
     createdAt: string;
+    approvedAt?: string;
+    approvedAmount?: number;
+    walletBalanceAfter?: number;
     agent?: { fullName?: string; username?: string; email?: string } | null;
   }>>([]);
   const [storeCommissions, setStoreCommissions] = useState<Array<{
@@ -446,11 +449,14 @@ export default function AdminPage() {
               {storeWithdrawals.length === 0 ? <p className="text-sm text-slate-500">No mini-store transfer requests.</p> : (
                 <div className="overflow-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-slate-600"><tr><th className="px-3 py-2">Agent</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
+                    <thead className="bg-slate-50 text-slate-600"><tr><th className="px-3 py-2">Agent</th><th className="px-3 py-2">Requested amount</th><th className="px-3 py-2">Requested at</th><th className="px-3 py-2">Approved amount</th><th className="px-3 py-2">Approved at</th><th className="px-3 py-2">Wallet balance after</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
                     <tbody>{storeWithdrawals.map((entry) => <tr key={entry.id} className="border-t border-slate-200">
                       <td className="px-3 py-2">{entry.agent?.fullName || entry.agent?.username || entry.agent?.email || "Agent"}</td>
-                      <td className="px-3 py-2 font-semibold">{formatGHS(entry.amount)}</td>
+                      <td className="px-3 py-2">{formatGHS(entry.amount)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-slate-500">{new Date(entry.createdAt).toLocaleString()}</td>
+                      <td className="px-3 py-2 font-semibold">{entry.approvedAmount != null ? formatGHS(entry.approvedAmount) : "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-500">{entry.approvedAt ? new Date(entry.approvedAt).toLocaleString() : "-"}</td>
+                      <td className="px-3 py-2">{entry.walletBalanceAfter != null ? formatGHS(entry.walletBalanceAfter) : "-"}</td>
                       <td className="px-3 py-2"><Badge variant={entry.status === "Approved" ? "default" : "secondary"}>{entry.status}</Badge></td>
                       <td className="space-x-2 px-3 py-2 text-right">
                         {entry.status === "Pending" && <>

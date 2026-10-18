@@ -327,32 +327,14 @@ export default function WalletPage() {
 
             <Tabs defaultValue="paystack">
               <TabsList className="mb-5 grid h-auto w-full grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
-                <TabsTrigger
-                  value="send-claim"
-                  disabled
-                  className="gap-1.5 rounded-lg data-[state=active]:bg-white"
-                >
-                  Send & Claim
-                  <Badge variant="secondary" className="bg-slate-200 text-[10px] text-slate-600">
-                    Disabled
-                  </Badge>
-                </TabsTrigger>
+               
                 <TabsTrigger value="paystack" className="rounded-lg data-[state=active]:bg-white">
                   Paystack
                 </TabsTrigger>
                 <TabsTrigger value="mtn-momo" className="rounded-lg data-[state=active]:bg-white">
                   MTN MoMo
                 </TabsTrigger>
-                <TabsTrigger
-                  value="bulkclix"
-                  disabled
-                  className="gap-1.5 rounded-lg data-[state=active]:bg-white"
-                >
-                  BulkClix
-                  <Badge variant="secondary" className="bg-slate-200 text-[10px] text-slate-600">
-                    Disabled
-                  </Badge>
-                </TabsTrigger>
+
               </TabsList>
 
               <TabsContent value="paystack" className="mt-0 space-y-5">
