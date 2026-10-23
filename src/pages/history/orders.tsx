@@ -35,6 +35,7 @@ import {
 import {
   Pagination,
   PaginationContent,
+  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
@@ -69,7 +70,7 @@ export function OrdersHistoryPage({
   const [networkFilter, setNetworkFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-    const [page, setPage] = useState(1);
+  const [page, setPage] = useState(1);
   const [applied, setApplied] = useState({
     search: "",
     status: "all",
@@ -116,6 +117,14 @@ export function OrdersHistoryPage({
   const pageSize = 10;
   const pageCount = Math.ceil(filtered.length / pageSize);
   const visibleOrders = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const pageNumbers =
+    pageCount <= 7
+      ? Array.from({ length: pageCount }, (_, index) => index + 1)
+      : page <= 4
+        ? [...Array.from({ length: 6 }, (_, index) => index + 1), "ellipsis", pageCount]
+        : page >= pageCount - 3
+          ? [1, "ellipsis", ...Array.from({ length: 6 }, (_, index) => pageCount - 5 + index)]
+          : [1, "ellipsis", page - 1, page, page + 1, "ellipsis-end", pageCount];
 
   useEffect(() => {
     setPage(1);
@@ -381,18 +390,22 @@ export function OrdersHistoryPage({
                     }}
                   />
                 </PaginationItem>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+                {pageNumbers.map((pageNumber) => (
                   <PaginationItem key={pageNumber}>
-                    <PaginationLink
-                      href="#"
-                      isActive={pageNumber === page}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setPage(pageNumber);
-                      }}
-                    >
-                      {pageNumber}
-                    </PaginationLink>
+                    {typeof pageNumber === "string" ? (
+                      <PaginationEllipsis />
+                    ) : (
+                      <PaginationLink
+                        href="#"
+                        isActive={pageNumber === page}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setPage(pageNumber);
+                        }}
+                      >
+                        {pageNumber}
+                      </PaginationLink>
+                    )}
                   </PaginationItem>
                 ))}
                 <PaginationItem>
