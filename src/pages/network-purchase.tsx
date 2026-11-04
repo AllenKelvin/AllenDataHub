@@ -692,7 +692,7 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                           {mtnVerification.status === "checking" && "Checking MTN beneficiary verification…"}
                           {mtnVerification.status === "verified" && "This MTN number is verified."}
                           {(mtnVerification.status === "unverified" || mtnVerification.status === "queued") &&
-                            "This number is not verified yet. Hubnet may take a few days to verify it; you can place the order and check again later."}
+                            "This number is not verified yet. AllenDataHub may take a few days to verify it; you can place the order and check again later."}
                           {mtnVerification.status === "invalid" && "This number could not be verified. Please check the recipient number."}
                           {mtnVerification.status === "error" && `Could not check verification. ${mtnVerification.message}`}
                         </div>
