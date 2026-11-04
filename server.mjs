@@ -2083,6 +2083,44 @@ app.get('/api/network-settings', async (_req, res) => {
   res.json({ ok: true, settings: merged });
 });
 
+app.get('/api/mtn/verification', requireUser, async (req, res) => {
+  const phoneNumber = normalizeHubnetPhone(req.query.number);
+  if (!/^0\d{9}$/.test(phoneNumber)) {
+    return res.status(400).json({ ok: false, error: 'Enter a valid 10-digit MTN number.' });
+  }
+  if (!HUBNET_API_KEY) {
+    return res.status(503).json({ ok: false, error: 'MTN verification is temporarily unavailable.' });
+  }
+
+  const verificationUrl = `${String(HUBNET_BASE_URL).replace(/\/$/, '')}/transaction/mtn-verification?number=${encodeURIComponent(phoneNumber)}`;
+  try {
+    const response = await fetch(verificationUrl, {
+      method: 'GET',
+      headers: { token: HUBNET_API_KEY, Accept: 'application/json' },
+      signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
+    });
+    const data = await response.json().catch(() => ({}));
+    const status = String(data?.data?.status || '').toLowerCase();
+    const validStatuses = ['verified', 'unverified', 'queued', 'invalid'];
+    if (!response.ok || data?.status !== true || !validStatuses.includes(status)) {
+      return res.status(502).json({
+        ok: false,
+        error: data?.message || data?.error || `Hubnet verification failed with status ${response.status}.`,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      number: data.data.number || phoneNumber,
+      status,
+      requestId: data.request_id || null,
+    });
+  } catch (error) {
+    console.error('Hubnet MTN verification request failed:', error);
+    return res.status(502).json({ ok: false, error: 'Unable to check MTN number verification right now. Please try again.' });
+  }
+});
+
 // ─── Agent mini-store ──────────────────────────────────────────────────────
 
 app.post('/api/agent/store', requireAgent, async (req, res) => {

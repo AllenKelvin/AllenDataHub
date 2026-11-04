@@ -45,6 +45,8 @@ Data is mocked client-side for a complete walkthrough UI.
 
 The server sends data orders through Hubnet. Configure `HUBNET_API_KEY` as a server-side secret before enabling live purchases. The optional `HUBNET_BASE_URL` override defaults to `https://console.hubnet.app/live/api/context/business`.
 
+The MTN order form checks recipient beneficiary verification through Hubnet. Unverified or queued numbers are identified before ordering, and users can check again later; verification requests are proxied by the server so the Hubnet API key is never exposed to the browser.
+
 Hubnet does not expose an order cancellation endpoint, so cancellation/refund requests are blocked until a supported vendor cancellation flow is available.
 
 ## Arkesel SMS

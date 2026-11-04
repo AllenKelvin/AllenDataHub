@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DataPackage } from "@/lib/types";
 import {
+  AlertCircle,
   CheckCircle2,
   FileSpreadsheet,
   LayoutGrid,
@@ -11,6 +12,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { apiFetch } from "@/lib/api";
 import { useCart } from "@/lib/cart";
 import { formatGHS } from "@/lib/formatters";
 import { StatusBadge, WalletPill } from "@/components/ui-helpers";
@@ -114,6 +116,10 @@ function isValidPhone(phone: string) {
   return /^\d{10}$/.test(phone);
 }
 
+type MtnVerificationState =
+  | { status: "idle" | "checking" | "verified" | "unverified" | "queued" | "invalid" }
+  | { status: "error"; message: string };
+
 const VIEW_MODE_KEY = "allen-data-view-mode";
 const DISABLED_NETWORK_KEY = "portal-admin-network-disabled";
 
@@ -135,6 +141,8 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
   const [catalogError, setCatalogError] = useState("");
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [phone, setPhone] = useState("");
+  const [mtnVerification, setMtnVerification] = useState<MtnVerificationState>({ status: "idle" });
+  const [verificationAttempt, setVerificationAttempt] = useState(0);
   const [recurring, setRecurring] = useState(false);
   const [bulkRecipients, setBulkRecipients] = useState([""]);
   const [bulkRecipientPackages, setBulkRecipientPackages] = useState<string[]>([]);
@@ -235,6 +243,37 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
     () => packagesForNetwork.find((p) => p.id === selectedPackageId) ?? packagesForNetwork[0],
     [packagesForNetwork, selectedPackageId]
   );
+
+  useEffect(() => {
+    if (network !== "MTN" || !user?.id || !isValidPhone(phone)) return;
+
+    const controller = new AbortController();
+    let active = true;
+    setMtnVerification({ status: "checking" });
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const result = await apiFetch<{ status: "verified" | "unverified" | "queued" | "invalid" }>(
+          `/api/mtn/verification?number=${encodeURIComponent(phone)}`,
+          { userId: user.id, signal: controller.signal }
+        );
+        if (active) setMtnVerification({ status: result.status });
+      } catch (error) {
+        if (active && !controller.signal.aborted) {
+          setMtnVerification({
+            status: "error",
+            message: error instanceof Error ? error.message : "Please try again.",
+          });
+        }
+      }
+    }, 450);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [network, phone, user?.id, verificationAttempt]);
 
   const bulkPackage = useMemo(
     () => packagesForNetwork.find((p) => p.id === bulkPackageId) ?? packagesForNetwork[0],
@@ -625,9 +664,51 @@ export function NetworkPurchasePage({ network }: { network: NetworkKey }) {
                       placeholder="e.g. 0249116309"
                       value={phone}
                       maxLength={10}
-                      onChange={(e) => setPhone(normalizePhone(e.target.value))}
+                      onChange={(e) => {
+                        setPhone(normalizePhone(e.target.value));
+                        setMtnVerification({ status: "idle" });
+                      }}
                       className="h-11 font-mono tracking-wider"
                     />
+                    {network === "MTN" && isValidPhone(phone) && mtnVerification.status !== "idle" && (
+                      <div
+                        role={["unverified", "queued", "invalid", "error"].includes(mtnVerification.status) ? "alert" : "status"}
+                        className={cn(
+                          "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
+                          mtnVerification.status === "verified" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+                          (mtnVerification.status === "unverified" || mtnVerification.status === "queued") && "border-amber-200 bg-amber-50 text-amber-900",
+                          (mtnVerification.status === "invalid" || mtnVerification.status === "error") && "border-rose-200 bg-rose-50 text-rose-800",
+                          mtnVerification.status === "checking" && "border-slate-200 bg-slate-50 text-slate-600"
+                        )}
+                      >
+                        {mtnVerification.status === "checking" ? (
+                          <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                        ) : mtnVerification.status === "verified" ? (
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                        ) : (
+                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        )}
+                        <div className="flex-1">
+                          {mtnVerification.status === "checking" && "Checking MTN beneficiary verification…"}
+                          {mtnVerification.status === "verified" && "This MTN number is verified."}
+                          {(mtnVerification.status === "unverified" || mtnVerification.status === "queued") &&
+                            "This number is not verified yet. Hubnet may take a few days to verify it; you can place the order and check again later."}
+                          {mtnVerification.status === "invalid" && "This number could not be verified. Please check the recipient number."}
+                          {mtnVerification.status === "error" && `Could not check verification. ${mtnVerification.message}`}
+                        </div>
+                        {(mtnVerification.status === "unverified" || mtnVerification.status === "queued") && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 shrink-0 bg-white px-2 text-xs"
+                            onClick={() => setVerificationAttempt((attempt) => attempt + 1)}
+                          >
+                            Check again
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
