@@ -2097,8 +2097,7 @@ app.get('/api/mtn/verification', requireUser, async (req, res) => {
     const response = await fetch(verificationUrl, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${HUBNET_API_KEY}`,
-        token: HUBNET_API_KEY,
+        token: `Bearer ${HUBNET_API_KEY}`,
         Accept: 'application/json',
       },
       signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
