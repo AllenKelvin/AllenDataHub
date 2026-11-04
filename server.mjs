@@ -2100,13 +2100,22 @@ app.get('/api/mtn/verification', requireUser, async (req, res) => {
       signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
     });
     const data = await response.json().catch(() => ({}));
-    const status = String(data?.data?.status || '').toLowerCase();
     const validStatuses = ['verified', 'unverified', 'queued', 'invalid'];
-    if (!response.ok || data?.status !== true || !validStatuses.includes(status)) {
+    const rawStatus = data?.data?.status ?? (validStatuses.includes(String(data?.status || '').toLowerCase()) ? data.status : '');
+    const status = String(rawStatus).toLowerCase();
+    if (!response.ok) {
       return res.status(502).json({
         ok: false,
         error: data?.message || data?.error || `Hubnet verification failed with status ${response.status}.`,
       });
+    }
+    if (!validStatuses.includes(status)) {
+      console.error('Hubnet MTN verification returned an unexpected response:', {
+        httpStatus: response.status,
+        success: data?.status === true,
+        verificationStatus: rawStatus || null,
+      });
+      return res.status(502).json({ ok: false, error: 'Hubnet returned an unexpected MTN verification response. Please try again later.' });
     }
 
     return res.json({
