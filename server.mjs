@@ -2096,23 +2096,28 @@ app.get('/api/mtn/verification', requireUser, async (req, res) => {
   try {
     const response = await fetch(verificationUrl, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${HUBNET_API_KEY}`, Accept: 'application/json' },
+      headers: {
+        Authorization: `Bearer ${HUBNET_API_KEY}`,
+        token: HUBNET_API_KEY,
+        Accept: 'application/json',
+      },
       signal: AbortSignal.timeout(HUBNET_REQUEST_TIMEOUT_MS),
     });
     const data = await response.json().catch(() => ({}));
+    const result = data?.response && typeof data.response === 'object' ? data.response : data;
     const validStatuses = ['verified', 'unverified', 'queued', 'invalid'];
-    const rawStatus = data?.data?.status ?? (validStatuses.includes(String(data?.status || '').toLowerCase()) ? data.status : '');
+    const rawStatus = result?.data?.status ?? (validStatuses.includes(String(result?.status || '').toLowerCase()) ? result.status : '');
     const status = String(rawStatus).toLowerCase();
     if (!response.ok) {
       return res.status(502).json({
         ok: false,
-        error: data?.message || data?.error || `Hubnet verification failed with status ${response.status}.`,
+        error: result?.message || result?.error || `Hubnet verification failed with status ${response.status}.`,
       });
     }
     if (!validStatuses.includes(status)) {
       console.error('Hubnet MTN verification returned an unexpected response:', {
         httpStatus: response.status,
-        success: data?.status === true,
+        success: result?.status === true,
         verificationStatus: rawStatus || null,
       });
       return res.status(502).json({ ok: false, error: 'Hubnet returned an unexpected MTN verification response. Please try again later.' });
@@ -2120,9 +2125,9 @@ app.get('/api/mtn/verification', requireUser, async (req, res) => {
 
     return res.json({
       ok: true,
-      number: data.data.number || phoneNumber,
+      number: result.data.number || phoneNumber,
       status,
-      requestId: data.request_id || null,
+      requestId: result.request_id || null,
     });
   } catch (error) {
     console.error('Hubnet MTN verification request failed:', error);
